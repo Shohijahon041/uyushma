@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment & secrets (NEVER commit)
+.env
+.env.*
+!.env.example
+!.env.test.example
+!.env.staging.example
+*.pem
+*.key
+secrets/
+.staging/
+
+# Local runtime data
+.docker-data/
+.freebuff/
+uploads/
+logs/
+*.log
+.*.log
+*.pid
+.*.pid
+smoke.json
+storage-smoke.json
+sample.pdf
+downloaded.pdf
+
+# Test / tooling
+.jest-cache/
+playwright-report/
+test-results/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,62 @@
+groups:
+  - name: uyushmachilar-staging
+    rules:
+      - alert: ApiDown
+        expr: up{job="uyushma-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API javob bermayapti"
+          description: "5 daqiqadan ko'proq vaqt davomida /metrics scrape ishlamadi."
+
+      - alert: ApiHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx ulushi 5% dan yuqori"
+          description: "Oxirgi 10 daqiqada server xatolari ko'paydi."
+
+      - alert: ApiP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 kechikishi 2 soniyadan yuqori"
+
+      - alert: NotificationFailures
+        expr: increase(notification_dispatches_total{status="FAILED"}[30m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Telegram bildirishnomalari yuborilmadi"
+          description: "NotificationLog va bot tokenini tekshiring."
+
+      - alert: PaymentWebhookAuthFailures
+        expr: increase(payment_provider_operations_total{status="auth_failed"}[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Payme webhook avtorizatsiyasi ko'p marta rad etildi"
+          description: "Tenant kaliti yoki Payme kabinet sozlamalarini tekshiring."
+
+      - alert: RedisOrDatabaseDown
+        expr: |
+          increase(http_requests_total{status="503"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Servis 503 qaytarmoqda"
+          description: "Redis yoki PostgreSQL ulanishini tekshiring."

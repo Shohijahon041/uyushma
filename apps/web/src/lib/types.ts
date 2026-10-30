@@ -1,0 +1,494 @@
+export interface AuthUser {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  role: "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
+  isSuperAdmin: boolean;
+  emailVerifiedAt: string | null;
+  twoFactorEnabled: boolean;
+  createdAt: string;
+  company: { id: string; name: string; slug: string; status: string };
+}
+
+export interface DeviceSession {
+  id: string;
+  deviceLabel: string | null;
+  userAgent: string | null;
+  ip: string | null;
+  lastUsedAt: string;
+  createdAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export interface PaymeConfig {
+  configured: boolean;
+  provider?: "PAYME";
+  merchantId?: string;
+  login?: string;
+  isActive?: boolean;
+  webhookPath?: string;
+  updatedAt?: string;
+}
+
+export interface DashboardSummary {
+  counts: { vehicles: number; activeContracts: number; routes: number; users: number };
+  external: {
+    vehicles: number;
+    records: {
+      CONTRACT_APPLICATION: number;
+      CONTRACT: number;
+      CERTIFICATE: number;
+      TENDER_APPLICATION: number;
+    };
+    expiringCertificates: number;
+    lastSyncAt: string | null;
+    provider: ExternalProviderKey | null;
+  };
+  payments: {
+    pendingAmount: string;
+    pendingCount: number;
+    paidThisMonth: string;
+    recent: Array<{
+      id: string;
+      amount: string;
+      status: string;
+      method: string;
+      createdAt: string;
+      vehicle: string;
+      owner: string;
+    }>;
+  };
+  subscription: {
+    status: string;
+    planId: string;
+    planName: string;
+    currentPeriodEnd: string | null;
+    openInvoices: number;
+  } | null;
+}
+
+export interface Vehicle {
+  id: string;
+  plateNumber: string;
+  model: string;
+  capacity: number;
+  monthlyFee: string;
+  status: "ACTIVE" | "MAINTENANCE" | "INACTIVE";
+  routeId: string | null;
+  route: { id: string; name: string; monthlyPlan: string } | null;
+  owner: { id: string; fullName: string };
+  contracts: Array<{ id: string; type: string; startDate: string }>;
+  assignments: Array<{
+    id: string;
+    startDate: string;
+    driver: { id: string; fullName: string; phone: string };
+  }>;
+  externalVehicles: Array<{
+    provider: ExternalProviderKey;
+    garageNumber: string | null;
+    routeName: string | null;
+    routeNumber: string | null;
+    licenseNumber: string | null;
+    licenseExpiresAt: string | null;
+  }>;
+}
+
+export interface RouteItem {
+  id: string;
+  name: string;
+  origin: string;
+  destination: string;
+  distanceKm: string;
+  monthlyPlan: string;
+  isActive: boolean;
+  _count: { tariffs: number; vehicles: number };
+}
+
+export interface TariffRule {
+  id: string;
+  code: string;
+  label: string;
+  operation: "OVERRIDE" | "ADD";
+  amount: string;
+  priority: number;
+}
+
+export interface Tariff {
+  id: string;
+  name: string;
+  description: string | null;
+  scope: "STANDARD" | "ROUTE" | "INDIVIDUAL";
+  routeId: string | null;
+  baseAmount: string;
+  pricePerKm: string;
+  currency: string;
+  isActive: boolean;
+  rules: TariffRule[];
+  route: { id: string; name: string; distanceKm: string } | null;
+}
+
+export interface Contract {
+  id: string;
+  type: "SELF_USE" | "LEASE" | "SERVICE";
+  status: "DRAFT" | "ACTIVE" | "TERMINATED";
+  startDate: string;
+  endDate: string | null;
+  monthlyRate: string | null;
+  notes: string | null;
+  vehicle: { id: string; plateNumber: string; model: string };
+  owner: { id: string; fullName: string };
+  tariff: { id: string; name: string; scope: string } | null;
+  _count?: { payments: number };
+}
+
+export interface Payment {
+  id: string;
+  amount: string;
+  status: "PENDING" | "PAID" | "FAILED" | "CANCELLED";
+  method: "MANUAL" | "AUTOMATIC";
+  description: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  contract: {
+    id: string;
+    type: string;
+    vehicle: { plateNumber: string; model: string };
+    owner: { fullName: string };
+  };
+}
+
+export interface UserItem {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  role: "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
+  isActive: boolean;
+  lastLoginAt: string | null;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  monthlyPrice: string;
+  currency: string;
+  maxUsers: number;
+  maxVehicles: number;
+  features: Record<string, string[]>;
+}
+
+export interface SubscriptionInvoice {
+  id: string;
+  number: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: string;
+  status: "OPEN" | "PAID" | "VOID" | "OVERDUE";
+  dueDate: string;
+  paidAt: string | null;
+}
+
+export interface Subscription {
+  id: string;
+  planId: string;
+  status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+  startDate: string;
+  currentPeriodEnd: string | null;
+  plan: Plan;
+  invoices: SubscriptionInvoice[];
+}
+
+export interface AuditItem {
+  id: string;
+  actorUserId: string | null;
+  actorType: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  metadata: Record<string, unknown> | null;
+  ip: string | null;
+  createdAt: string;
+}
+
+export interface TelegramStatus {
+  linked: boolean;
+  username?: string | null;
+  chatId?: string;
+  linkedAt?: string;
+}
+
+export type ExternalProviderKey = "ETENDER" | "AUTOPARK";
+
+export interface ExternalConnection {
+  id: string;
+  provider: ExternalProviderKey;
+  label: string;
+  baseUrl: string;
+  status: "ACTIVE" | "INVALID" | "DISABLED";
+  account: string | null;
+  authMode: "LOGIN" | "TOKEN";
+  lastSyncAt: string | null;
+  lastLoginAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExternalSyncRun {
+  id: string;
+  provider: ExternalProviderKey;
+  status: "RUNNING" | "SUCCESS" | "FAILED";
+  counts: Record<string, number> | null;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export type ExternalRecordKind =
+  | "CONTRACT_APPLICATION"
+  | "CONTRACT"
+  | "CERTIFICATE"
+  | "TENDER_APPLICATION";
+
+export interface ExternalVehicleRow {
+  id: string;
+  provider: ExternalProviderKey;
+  externalId: string;
+  plateNumber: string | null;
+  garageNumber: string | null;
+  vin: string | null;
+  gpsImei: string | null;
+  organizationName: string | null;
+  routeName: string | null;
+  routeNumber: string | null;
+  vehicleClass: string | null;
+  vehicleModel: string | null;
+  licenseNumber: string | null;
+  licenseExpiresAt: string | null;
+  syncedAt: string;
+  vehicle: { id: string; status: string } | null;
+}
+
+export interface ExternalRecordRow {
+  id: string;
+  provider: ExternalProviderKey;
+  kind: ExternalRecordKind;
+  externalId: string;
+  number: string | null;
+  title: string | null;
+  status: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  issuedAt: string | null;
+  expiresAt: string | null;
+  syncedAt: string;
+}
+
+export interface CalculationResult {
+  tariffName: string;
+  baseAmount: string;
+  pricePerKm: string;
+  distanceKm: string;
+  distanceCharge: string;
+  subtotal: string;
+  total: string;
+  lines: Array<{
+    code: string;
+    label: string;
+    operation: string;
+    amount: string;
+    before: string;
+    after: string;
+  }>;
+}
+
+export interface DriverItem {
+  id: string;
+  fullName: string;
+  phone: string;
+  licenseNumber: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  notes: string | null;
+  telegram: {
+    linked: boolean;
+    username: string | null;
+    linkedAt: string | null;
+  };
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    model: string;
+    monthlyFee: string;
+    assignedSince: string;
+  } | null;
+  month: {
+    period: string;
+    due: string;
+    paid: string;
+    debt: string;
+    surplus: string;
+  };
+  totalDebt: string;
+}
+
+export interface DriverPaymentRow {
+  id: string;
+  amount: string;
+  method: "CASH" | "CARD";
+  periodStart: string;
+  paidAt: string;
+  source: string;
+  note: string | null;
+  driver: { id: string; fullName: string; phone: string };
+  vehicle: { id: string; plateNumber: string; model: string };
+  receivedBy: { id: string; fullName: string } | null;
+}
+
+export interface DriverPassport {
+  number: string | null;
+  issuedBy: string | null;
+  issuedAt: string | null;
+  pinfl: string | null;
+  birthDate: string | null;
+  hasPhoto: boolean;
+}
+
+export interface DriverLicense {
+  number: string | null;
+  categories: string | null;
+  issuedAt: string | null;
+  expiresAt: string | null;
+  hasPhoto: boolean;
+}
+
+export interface DriverProfile {
+  driver: {
+    id: string;
+    fullName: string;
+    phone: string;
+    licenseNumber: string | null;
+    status: "ACTIVE" | "INACTIVE";
+    notes: string | null;
+    telegram: {
+      linked: boolean;
+      username: string | null;
+      linkedAt: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      hasPhoto: boolean;
+    };
+    passport: DriverPassport;
+    license: DriverLicense;
+    createdAt: string;
+  };
+  currentVehicle: {
+    assignmentId: string;
+    vehicleId: string;
+    plateNumber: string;
+    model: string;
+    monthlyFee: string;
+    routeName: string | null;
+    assignedSince: string;
+  } | null;
+  currentMonth: {
+    period: string;
+    due: string;
+    paid: string;
+    debt: string;
+    surplus: string;
+  };
+  totalDebt: string;
+  months: Array<{
+    month: string;
+    due: string;
+    paid: string;
+    debt: string;
+    surplus: string;
+    planCount: number;
+  }>;
+  assignments: Array<{
+    id: string;
+    vehicle: { id: string; plateNumber: string; model: string; monthlyFee: string };
+    startDate: string;
+    endDate: string | null;
+  }>;
+  payments: DriverPaymentRow[];
+}
+
+export interface DailyBoardItem {
+  vehicleId: string;
+  plateNumber: string;
+  model: string;
+  vehicleStatus: string;
+  monthlyFee: string;
+  route: { id: string; name: string } | null;
+  assignmentId: string;
+  assignedSince: string;
+  driver: { id: string; fullName: string; phone: string; status: string };
+  planId: string | null;
+  month: {
+    period: string;
+    due: string;
+    paid: string;
+    debt: string;
+    surplus: string;
+  };
+  paidToday: string;
+  totalDebt: string;
+}
+
+export interface DailyBoard {
+  date: string;
+  period: string;
+  summary: {
+    vehicles: number;
+    withDriver: number;
+    expected: string;
+    paidMonth: string;
+    debtMonth: string;
+    collectedToday: string;
+    paymentsToday: number;
+    totalDebt: string;
+  };
+  items: DailyBoardItem[];
+  payments: DriverPaymentRow[];
+  unassignedVehicles: number;
+}
+
+export interface PaymentTotals {
+  count: number;
+  amount: string;
+  cash: string;
+  card: string;
+}
+
+export interface PlatformOverview {
+  companies: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    status: "ACTIVE" | "SUSPENDED";
+    createdAt: string;
+    users: number;
+    vehicles: number;
+    drivers: number;
+    payments: number;
+    collected: string;
+    planId: string | null;
+    subscriptionStatus: string | null;
+    periodEnd: string | null;
+    lastSyncAt: string | null;
+  }>;
+  totals: {
+    companies: number;
+    active: number;
+    suspended: number;
+    users: number;
+    vehicles: number;
+    drivers: number;
+    payments: number;
+    collected: string;
+  };
+}

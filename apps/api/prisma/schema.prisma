@@ -1,0 +1,930 @@
+// Uyushmachilar — multi-tenant data model.
+// Every tenant-owned table carries tenantId. Tenant isolation is enforced in
+// PostgreSQL with Row Level Security (see migrations/*_rls). Composite foreign
+// keys (id, tenantId) make cross-tenant references impossible at the DB level.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("MIGRATE_DATABASE_URL")
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  MANAGER
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DriverPaymentMethod {
+  CASH
+  CARD
+}
+
+enum ContractType {
+  SELF_USE // egasi avtomobilni o'zida saqlaydi
+  LEASE // firma bilan ijara shartnomasi
+  SERVICE // xizmat ko'rsatish shartnomasi
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  TERMINATED
+}
+
+enum TariffScope {
+  STANDARD
+  ROUTE
+  INDIVIDUAL
+}
+
+enum TariffRuleOperation {
+  OVERRIDE
+  ADD
+}
+
+enum PaymentMethod {
+  MANUAL
+  AUTOMATIC
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+enum PaymentProvider {
+  PAYME
+  CUSTOM_HMAC
+}
+
+enum RefundStatus {
+  PENDING
+  PROVIDER_PENDING
+  PROCESSED
+  FAILED
+}
+
+enum ReconciliationStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  VOID
+  OVERDUE
+}
+
+enum ExternalProvider {
+  ETENDER
+  AUTOPARK
+}
+
+enum ExternalConnectionStatus {
+  ACTIVE
+  INVALID
+  DISABLED
+}
+
+enum ExternalSyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum ExternalRecordKind {
+  CONTRACT_APPLICATION
+  CONTRACT
+  CERTIFICATE
+  TENDER_APPLICATION
+}
+
+enum DocumentStatus {
+  PENDING
+  UPLOADED
+}
+
+model Company {
+  id        String        @id @default(uuid()) @db.Uuid
+  slug      String        @unique @db.VarChar(64)
+  name      String        @db.VarChar(200)
+  status    CompanyStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  users              User[]
+  refreshTokens      RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  routes             Route[]
+  vehicles           Vehicle[]
+  tariffs            Tariff[]
+  tariffRules        TariffRule[]
+  contracts          Contract[]
+  payments           Payment[]
+  webhookEvents      PaymentWebhookEvent[]
+  providerAccounts   PaymentProviderAccount[]
+  providerTransactions PaymentProviderTransaction[]
+  refunds            PaymentRefund[]
+  reconciliations    PaymentReconciliation[]
+  notificationLogs   NotificationLog[]
+  auditLogs          AuditLog[]
+  documents          Document[]
+  subscriptions      Subscription[]
+  subscriptionInvoices SubscriptionInvoice[]
+  telegramLinkTokens TelegramLinkToken[]
+  telegramAccounts   TelegramAccount[]
+  drivers            Driver[]
+  vehicleAssignments VehicleAssignment[]
+  monthlyPlans       VehicleMonthlyPlan[]
+  driverPayments     DriverPayment[]
+  externalConnections ExternalConnection[]
+  externalSyncRuns   ExternalSyncRun[]
+  externalVehicles   ExternalVehicle[]
+  externalRecords    ExternalRecord[]
+
+  @@index([status])
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  email        String   @db.VarChar(320)
+  passwordHash String   @db.VarChar(255)
+  fullName     String   @db.VarChar(160)
+  phone        String?  @db.VarChar(32)
+  role         UserRole @default(MANAGER)
+  isActive     Boolean  @default(true)
+  isSuperAdmin Boolean  @default(false)
+  emailVerifiedAt DateTime?
+  twoFactorEnabled Boolean @default(false)
+  // AES-256-GCM encrypted TOTP secret; never returned to clients.
+  twoFactorSecret String? @db.VarChar(1000)
+  // Array of HMAC hashes of single-use recovery codes.
+  twoFactorRecoveryCodes Json?
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company            Company              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  refreshTokens      RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  ownedVehicles      Vehicle[]            @relation("VehicleOwner")
+  contractsAsOwner   Contract[]           @relation("ContractOwner")
+  contractsCreated   Contract[]           @relation("ContractCreator")
+  paymentsCreated    Payment[]            @relation("PaymentCreator")
+  refundsRequested   PaymentRefund[]      @relation("RefundRequester")
+  tariffsCreated     Tariff[]             @relation("TariffCreator")
+  auditLogs          AuditLog[]
+  documents          Document[]
+  telegramLinkTokens TelegramLinkToken[]
+  telegramAccounts   TelegramAccount[]
+  vehicleAssignmentsCreated VehicleAssignment[] @relation("AssignmentCreator")
+  driverPaymentsReceived DriverPayment[] @relation("DriverPaymentReceiver")
+
+  @@unique([tenantId, email])
+  @@unique([id, tenantId])
+  @@index([tenantId, role])
+  @@index([tenantId, isActive])
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @db.Uuid
+  userId          String    @db.Uuid
+  // Rotations of one login share a sessionId; revoking it ends the device session.
+  sessionId       String    @db.Uuid
+  tokenHash       String    @unique @db.VarChar(64)
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  revokedReason   String?   @db.VarChar(40)
+  replacedByHash  String?   @db.VarChar(64)
+  userAgent       String?   @db.VarChar(512)
+  ip              String?   @db.VarChar(64)
+  deviceLabel     String?   @db.VarChar(80)
+  lastUsedAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, userId, expiresAt])
+  @@index([tenantId, userId, sessionId])
+  @@index([tenantId, userId, revokedAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, userId])
+}
+
+model Route {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String   @db.VarChar(160)
+  origin      String   @db.VarChar(160)
+  destination String   @db.VarChar(160)
+  distanceKm  Decimal  @db.Decimal(10, 2)
+  monthlyPlan Decimal  @default(0) @db.Decimal(18, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company  Company   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tariffs  Tariff[]
+  vehicles Vehicle[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@index([tenantId, isActive])
+}
+
+model Vehicle {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @db.Uuid
+  ownerId     String        @db.Uuid
+  plateNumber String        @db.VarChar(20)
+  model       String        @db.VarChar(120)
+  capacity    Int           @default(0)
+  monthlyFee  Decimal       @default(0) @db.Decimal(18, 2)
+  routeId     String?       @db.Uuid
+  status      VehicleStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  company   Company    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  route     Route?     @relation(fields: [routeId, tenantId], references: [id, tenantId], onDelete: Restrict, map: "Vehicle_routeId_tenantId_fkey")
+  owner     User       @relation("VehicleOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  contracts Contract[]
+  externalVehicles ExternalVehicle[]
+  assignments VehicleAssignment[]
+  monthlyPlans VehicleMonthlyPlan[]
+  driverPayments DriverPayment[]
+
+  @@unique([tenantId, plateNumber])
+  @@unique([id, tenantId])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, status])
+  @@index([tenantId, routeId])
+}
+
+// Haydovchi — o'z profili va Telegram akkaunti bilan. Kunlik to'lovlar
+// haydovchi va avtomobilga bir vaqtda bog'lanadi.
+model Driver {
+  id                String       @id @default(uuid()) @db.Uuid
+  tenantId          String       @db.Uuid
+  fullName          String       @db.VarChar(160)
+  phone             String       @db.VarChar(32)
+  licenseNumber     String?      @db.VarChar(60)
+  status            DriverStatus @default(ACTIVE)
+  telegramChatId    BigInt?      @unique
+  telegramUsername  String?      @db.VarChar(64)
+  telegramLinkedAt  DateTime?
+  telegramLinkTokenHash String?  @unique @db.VarChar(64)
+  telegramLinkExpiresAt DateTime?
+  telegramFirstName   String?    @db.VarChar(64)
+  telegramLastName    String?    @db.VarChar(64)
+  telegramPhotoFileId String?    @db.VarChar(255)
+  passportNumber      String?    @db.VarChar(20)
+  passportIssuedBy    String?    @db.VarChar(160)
+  passportIssuedAt    DateTime?  @db.Date
+  pinfl               String?    @db.VarChar(14)
+  birthDate           DateTime?  @db.Date
+  passportPhotoFileId String?    @db.VarChar(255)
+  licenseCategories   String?    @db.VarChar(40)
+  licenseIssuedAt     DateTime?  @db.Date
+  licenseExpiresAt    DateTime?  @db.Date
+  licensePhotoFileId  String?    @db.VarChar(255)
+  notes             String?      @db.VarChar(500)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  company     Company                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments VehicleAssignment[]
+  monthlyPlans VehicleMonthlyPlan[]
+  payments    DriverPayment[]
+
+  @@unique([tenantId, phone])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, fullName])
+}
+
+// Oy mobaynida haydovchi va avtomobil biriktirilishi. Bir avtomobil va bir
+// haydovchida faqat bitta ochiq (endDate = null) biriktirish bo'ladi.
+model VehicleAssignment {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  vehicleId   String   @db.Uuid
+  driverId    String   @db.Uuid
+  startDate   DateTime @db.Date
+  endDate     DateTime? @db.Date
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  createdBy User?    @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, vehicleId, endDate])
+  @@index([tenantId, driverId, endDate])
+}
+
+// Avtomobil uchun oylik plan (to'lov normasi). Har oy uchun alohida yozuv —
+// shu bilan o'tgan oylarning qarzi yo'qolmaydi.
+model VehicleMonthlyPlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  vehicleId   String   @db.Uuid
+  driverId    String   @db.Uuid
+  periodStart DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+  note        String?  @db.VarChar(300)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company  Company         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver   Driver          @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  payments DriverPayment[]
+
+  @@unique([tenantId, vehicleId, periodStart])
+  @@unique([id, tenantId])
+  @@index([tenantId, periodStart])
+  @@index([tenantId, driverId, periodStart])
+}
+
+// Kunlik to'lov: haydovchi chiqishdan oldin naqd yoki plastik orqali to'laydi.
+// Summa istalgancha bo'ladi; qarz oylik plan va to'lovlar yig'indisidan hisoblanadi.
+model DriverPayment {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  driverId       String              @db.Uuid
+  vehicleId      String              @db.Uuid
+  monthlyPlanId  String?             @db.Uuid
+  amount         Decimal             @db.Decimal(18, 2)
+  method         DriverPaymentMethod
+  periodStart    DateTime            @db.Date
+  paidAt         DateTime            @default(now())
+  source         String              @default("PANEL") @db.VarChar(20)
+  note           String?             @db.VarChar(300)
+  receivedById   String?             @db.Uuid
+  idempotencyKey String?             @db.VarChar(120)
+  createdAt      DateTime            @default(now())
+
+  company     Company            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver      Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle     Vehicle            @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  monthlyPlan VehicleMonthlyPlan? @relation(fields: [monthlyPlanId], references: [id], onDelete: SetNull)
+  receivedBy  User?              @relation("DriverPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([id, tenantId])
+  @@index([tenantId, paidAt])
+  @@index([tenantId, driverId, periodStart])
+  @@index([tenantId, vehicleId, periodStart])
+}
+
+model Tariff {
+  id          String      @id @default(uuid()) @db.Uuid
+  tenantId    String      @db.Uuid
+  name        String      @db.VarChar(160)
+  description String?     @db.VarChar(500)
+  scope       TariffScope
+  routeId     String?     @db.Uuid
+  baseAmount  Decimal     @default(0) @db.Decimal(18, 2)
+  pricePerKm  Decimal     @default(0) @db.Decimal(18, 2)
+  currency    String      @default("UZS") @db.VarChar(3)
+  isActive    Boolean     @default(true)
+  createdById String?     @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  company   Company      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  route     Route?       @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  createdBy User?        @relation("TariffCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  rules     TariffRule[]
+  contracts Contract[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@index([tenantId, scope, isActive])
+}
+
+model TariffRule {
+  id        String              @id @default(uuid()) @db.Uuid
+  tenantId  String              @db.Uuid
+  tariffId  String              @db.Uuid
+  code      String              @db.VarChar(40)
+  label     String              @db.VarChar(120)
+  operation TariffRuleOperation
+  amount    Decimal             @db.Decimal(18, 2)
+  priority  Int                 @default(0)
+  createdAt DateTime            @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tariff  Tariff  @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+
+  @@unique([tariffId, code])
+  @@unique([id, tenantId])
+  @@index([tenantId, tariffId, priority])
+}
+
+model Contract {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @db.Uuid
+  vehicleId    String         @db.Uuid
+  ownerId      String         @db.Uuid
+  tariffId     String?        @db.Uuid
+  createdById  String         @db.Uuid
+  type         ContractType
+  status       ContractStatus @default(DRAFT)
+  startDate    DateTime       @db.Date
+  endDate      DateTime?      @db.Date
+  monthlyRate  Decimal?       @db.Decimal(18, 2)
+  notes        String?        @db.VarChar(1000)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company   Company     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  owner     User        @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  tariff    Tariff?     @relation(fields: [tariffId], references: [id], onDelete: Restrict)
+  createdBy User        @relation("ContractCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  payments  Payment[]
+  documents Document[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, vehicleId])
+  @@index([tenantId, ownerId])
+}
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenantId       String        @db.Uuid
+  contractId     String        @db.Uuid
+  createdById    String        @db.Uuid
+  amount         Decimal       @db.Decimal(18, 2)
+  currency       String        @default("UZS") @db.VarChar(3)
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  description    String?       @db.VarChar(500)
+  idempotencyKey String        @db.VarChar(120)
+  provider       String?       @db.VarChar(60)
+  externalRef    String?       @db.VarChar(160)
+  paidAt         DateTime?
+  failureReason  String?       @db.VarChar(500)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company       Company               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contract      Contract              @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  createdBy     User                  @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  webhookEvents PaymentWebhookEvent[]
+  providerTransactions PaymentProviderTransaction[]
+  refunds       PaymentRefund[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([id, tenantId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, contractId])
+  @@index([tenantId, provider, externalRef])
+}
+
+model PaymentWebhookEvent {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  paymentId       String?       @db.Uuid
+  provider        String        @db.VarChar(60)
+  externalEventId String        @db.VarChar(160)
+  payload         Json
+  status          WebhookStatus @default(RECEIVED)
+  error           String?       @db.VarChar(500)
+  receivedAt      DateTime      @default(now())
+  processedAt     DateTime?
+
+  company Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, externalEventId])
+  @@unique([id, tenantId])
+  @@index([tenantId, receivedAt])
+}
+
+// Per-tenant provider credentials. Secrets are encrypted at rest with
+// APP_ENCRYPTION_KEY and are never returned by the API.
+model PaymentProviderAccount {
+  id                    String          @id @default(uuid()) @db.Uuid
+  tenantId              String          @db.Uuid
+  provider              PaymentProvider
+  // Payme: Basic auth login ("Paycom"); merchantId: cashbox identifier.
+  login                 String          @db.VarChar(80)
+  merchantId            String          @db.VarChar(80)
+  secretEncrypted       String          @db.VarChar(1000)
+  webhookSecretEncrypted String?        @db.VarChar(1000)
+  isActive              Boolean         @default(true)
+  config                Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@unique([id, tenantId])
+  @@index([tenantId, isActive])
+}
+
+// Payme transaction mirror. State follows Payme Merchant API:
+// 1 created, 2 performed, -1 cancelled, -2 cancelled after performed.
+model PaymentProviderTransaction {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid
+  paymentId     String          @db.Uuid
+  provider      PaymentProvider
+  externalId    String          @db.VarChar(80)
+  state         Int
+  amountTiyin   BigInt
+  reason        Int?
+  createTime    BigInt
+  performTime   BigInt?
+  cancelTime    BigInt?
+  raw           Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, provider, externalId])
+  @@unique([id, tenantId])
+  @@index([tenantId, paymentId])
+  @@index([tenantId, createTime])
+}
+
+model PaymentRefund {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid
+  paymentId     String          @db.Uuid
+  requestedById String?         @db.Uuid
+  amount        Decimal         @db.Decimal(18, 2)
+  reason        String          @db.VarChar(500)
+  status        RefundStatus    @default(PENDING)
+  provider      PaymentProvider?
+  externalRef   String?         @db.VarChar(160)
+  processedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  company     Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  requestedBy User?    @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, paymentId, status])
+  @@index([tenantId, createdAt])
+}
+
+model PaymentReconciliation {
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @db.Uuid
+  provider             PaymentProvider
+  periodStart          DateTime
+  periodEnd            DateTime
+  status               ReconciliationStatus @default(RUNNING)
+  checkedCount         Int                  @default(0)
+  matchedCount         Int                  @default(0)
+  missingLocalCount    Int                  @default(0)
+  missingRemoteCount   Int                  @default(0)
+  amountMismatchCount  Int                  @default(0)
+  difference           Decimal              @default(0) @db.Decimal(18, 2)
+  details              Json?
+  error                String?              @db.VarChar(500)
+  startedAt            DateTime             @default(now())
+  finishedAt           DateTime?
+  createdAt            DateTime             @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, provider, createdAt])
+}
+
+model NotificationLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  event      String   @db.VarChar(80)
+  jobId      String?  @db.VarChar(160)
+  recipients Int      @default(0)
+  sent       Int      @default(0)
+  failed     Int      @default(0)
+  status     String   @db.VarChar(30)
+  error      String?  @db.VarChar(500)
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdAt])
+}
+
+model Plan {
+  id           String   @id @db.VarChar(40)
+  name         String   @db.VarChar(120)
+  monthlyPrice Decimal  @db.Decimal(18, 2)
+  currency     String   @default("UZS") @db.VarChar(3)
+  maxUsers     Int
+  maxVehicles  Int
+  features     Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @db.Uuid
+  planId             String             @db.VarChar(40)
+  status             SubscriptionStatus @default(TRIAL)
+  startDate          DateTime           @db.Date
+  currentPeriodEnd   DateTime?          @db.Date
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company  Company               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan     Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  invoices SubscriptionInvoice[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+}
+
+// SaaS obunasi moliyasi transport to'lovlaridan alohida yuritiladi.
+model SubscriptionInvoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenantId       String        @db.Uuid
+  subscriptionId String        @db.Uuid
+  number         String        @db.VarChar(32)
+  periodStart    DateTime      @db.Date
+  periodEnd      DateTime      @db.Date
+  amount         Decimal       @db.Decimal(18, 2)
+  currency       String        @default("UZS") @db.VarChar(3)
+  status         InvoiceStatus @default(OPEN)
+  dueDate        DateTime      @db.Date
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  company      Company      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, periodStart])
+  @@unique([tenantId, number])
+  @@unique([id, tenantId])
+  @@index([tenantId, status, dueDate])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  actorUserId  String?  @db.Uuid
+  actorType    String   @db.VarChar(30)
+  action       String   @db.VarChar(80)
+  entityType   String   @db.VarChar(60)
+  entityId     String?  @db.VarChar(80)
+  metadata     Json?
+  ip           String?  @db.VarChar(64)
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+}
+
+model Document {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @db.Uuid
+  contractId   String?        @db.Uuid
+  uploadedById String         @db.Uuid
+  key          String         @unique @db.VarChar(512)
+  fileName     String         @db.VarChar(255)
+  contentType  String         @db.VarChar(120)
+  sizeBytes    Int
+  status       DocumentStatus @default(PENDING)
+  createdAt    DateTime       @default(now())
+
+  company    Company   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contract   Contract? @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  uploadedBy User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, contractId])
+}
+
+model TelegramLinkToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, userId])
+}
+
+model TelegramAccount {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  chatId    BigInt   @unique
+  username  String?  @db.VarChar(64)
+  linkedAt  DateTime @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@unique([id, tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// External registry integration (e-tender.uztrans.uz, bm.dtransport.uz).
+// Access tokens are stored encrypted; raw payloads are kept so a mapping change
+// never requires refetching the upstream system.
+// ---------------------------------------------------------------------------
+
+model ExternalConnection {
+  id             String                   @id @default(uuid()) @db.Uuid
+  tenantId       String                   @db.Uuid
+  provider       ExternalProvider
+  baseUrl        String                   @db.VarChar(200)
+  tokenEncrypted String                   @db.Text
+  credentialsEncrypted String?             @db.Text
+  config         Json?
+  status         ExternalConnectionStatus @default(ACTIVE)
+  lastSyncAt     DateTime?
+  lastLoginAt    DateTime?
+  lastError      String?                  @db.VarChar(500)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  company Company           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs    ExternalSyncRun[]
+
+  @@unique([tenantId, provider])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+}
+
+model ExternalSyncRun {
+  id           String             @id @default(uuid()) @db.Uuid
+  tenantId     String             @db.Uuid
+  connectionId String             @db.Uuid
+  provider     ExternalProvider
+  status       ExternalSyncStatus
+  counts       Json?
+  error        String?            @db.VarChar(1000)
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+
+  company    Company            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection ExternalConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, startedAt])
+  @@index([connectionId, startedAt])
+}
+
+model ExternalVehicle {
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @db.Uuid
+  provider         ExternalProvider
+  externalId       String           @db.VarChar(120)
+  plateNumber      String?          @db.VarChar(40)
+  garageNumber     String?          @db.VarChar(40)
+  vin              String?          @db.VarChar(40)
+  gpsImei          String?          @db.VarChar(40)
+  organizationName String?          @db.VarChar(300)
+  routeName        String?          @db.VarChar(300)
+  routeNumber      String?          @db.VarChar(80)
+  vehicleClass     String?          @db.VarChar(160)
+  vehicleModel     String?          @db.VarChar(160)
+  drivers          Json?
+  licenseNumber    String?          @db.VarChar(80)
+  licenseExpiresAt DateTime?
+  vehicleId        String?          @db.Uuid
+  raw              Json
+  syncedAt         DateTime         @default(now())
+
+  company Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, externalId])
+  @@unique([id, tenantId])
+  @@index([tenantId, provider, plateNumber])
+  @@index([tenantId, vehicleId])
+}
+
+model ExternalRecord {
+  id         String             @id @default(uuid()) @db.Uuid
+  tenantId   String             @db.Uuid
+  provider   ExternalProvider
+  kind       ExternalRecordKind
+  externalId String             @db.VarChar(120)
+  number     String?            @db.VarChar(120)
+  title      String?            @db.VarChar(300)
+  status     String?            @db.VarChar(80)
+  startsAt   DateTime?
+  endsAt     DateTime?
+  issuedAt   DateTime?
+  expiresAt  DateTime?
+  raw        Json
+  syncedAt   DateTime           @default(now())
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, kind, externalId])
+  @@unique([id, tenantId])
+  @@index([tenantId, provider, kind])
+}

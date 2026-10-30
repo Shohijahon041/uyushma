@@ -1,0 +1,21 @@
+{
+  "name": "@uyushma/bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Uyushmachilar Telegram bot — faqat asosiy API bilan ishlaydi",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.9.2"
+  }
+}
