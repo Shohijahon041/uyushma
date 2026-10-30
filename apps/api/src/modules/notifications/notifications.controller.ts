@@ -26,6 +26,12 @@ export class InternalNotificationsController {
   dispatch(@Body() body: { event: unknown; jobId?: string }) {
     return this.notifications.dispatch(body.event, body.jobId ?? null);
   }
+
+  @Post("run-reminders")
+  @HttpCode(200)
+  runReminders() {
+    return this.notifications.runRemindersForAllTenants();
+  }
 }
 
 @ApiTags("notifications")
@@ -38,9 +44,16 @@ export class NotificationsController {
   ) {}
 
   @Get()
-  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.ACCOUNTANT)
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.notifications.list(user.tenantId);
+  }
+
+  @Post("run-reminders")
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  @HttpCode(200)
+  runReminders() {
+    return this.notifications.runRemindersForAllTenants();
   }
 
   @Post("test")
@@ -52,7 +65,7 @@ export class NotificationsController {
       type: "system.test",
       dedupeKey: `test__${user.userId}__${Date.now()}`,
       occurredAt: new Date().toISOString(),
-      data: { text: "Staging bildirishnoma testi muvaffaqiyatli." },
+      data: { text: "Bildirishnomalar tizimi muvaffaqiyatli ishlayapti." },
     });
     return { queued: true };
   }

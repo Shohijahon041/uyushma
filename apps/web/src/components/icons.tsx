@@ -15,7 +15,8 @@ export type IconName =
   | "plus"
   | "menu"
   | "check"
-  | "database";
+  | "database"
+  | "bell";
 
 const paths: Record<IconName, React.ReactNode> = {
   dashboard: (
@@ -97,6 +98,12 @@ const paths: Record<IconName, React.ReactNode> = {
       <ellipse cx="12" cy="5" rx="8" ry="3" />
       <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
       <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </>
   ),
 };

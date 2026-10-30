@@ -68,6 +68,12 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
         roles: ["OWNER", "ADMIN"],
       },
       {
+        href: "/notifications",
+        labelKey: "notifications",
+        icon: "bell",
+        roles: ["OWNER", "ADMIN", "ACCOUNTANT"],
+      },
+      {
         href: "/audit",
         labelKey: "audit",
         icon: "shield",
@@ -244,6 +250,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {(["OWNER", "ADMIN", "ACCOUNTANT"] as const).some((role) => role === me.role) && (
                 <QuickPayButton />
               )}
+              <Link
+                href="/notifications"
+                className="relative rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                title="Bildirishnomalar"
+              >
+                <Icon name="bell" className="h-4 w-4" />
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand-500" />
+              </Link>
               <LanguageSwitcher />
               <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 sm:flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />

@@ -12,14 +12,15 @@ O'zbekistondagi transport uyushmalari uchun ko'p kompaniyali (multi-tenant) tran
 | Auth | Kompaniya kodi + email + parol, Argon2id, qisqa access JWT, rotating refresh token, reuse detection, httpOnly BFF cookie |
 | RBAC | `OWNER`, `ADMIN`, `ACCOUNTANT`, `MANAGER` rollari bo'yicha endpoint himoyasi |
 | Avtopark | Avtomobillar, egalari, holatlari, tarif/obuna limitlari |
-| Yo'nalishlar | Cheklanmagan miqdorda yo'nalish, masofa (Decimal) |
+| Yo'nalishlar | Cheklanmagan miqdorda yo'nalish, masofa (Decimal); yo'nalish oylik plani — o'z oylik to'lovi 0 bo'lgan avtomobillarga qo'llanadi (avtomobilning o'z to'lovi ustun); `/vehicles` sahifasida avtomobillar yo'nalish bo'yicha guruhlanadi va yo'nalish tanlanadi |
 | Tariflar | `STANDARD`, `ROUTE`, `INDIVIDUAL`; `ADD` va `OVERRIDE` qoidalari; hisob faqat serverda va Decimal'da |
 | Shartnomalar | `SELF_USE`, `LEASE`, `SERVICE`; qoralama → faol → bekor qilish; bitta avtomobil uchun bitta faol shartnoma (DB darajasida) |
 | To'lovlar | Manual va automatic; `Idempotency-Key`; HMAC imzoli webhook; takroriy eventlar idempotent |
-| Haydovchilar | Haydovchi profili, avtomobilga biriktirish (bir vaqtda bitta faol biriktirish), biriktirish tarixi |
-| Kunlik to'lovlar | Avtomobilning oylik rejasi; har kuni ixtiyoriy summada naqd/plastik to'lov (haydovchi + avtomobilga bog'lanadi); qarz har oy alohida to'planadi, ortiqcha to'lov boshqa oyni yopmaydi; `/daily` sahifasida tezkor qidiruv va bir bosishda to'lov; oylik hisobot |
-| Haydovchi boti | Haydovchi web'dan olingan `/start KOD` bilan ulanadi; inline tugmalar: Profil, Mashinam, Oylik plan (qarzlar), To'lovlarim, Yangilash. Xodimlar uchun alohida menyu |
+| Haydovchilar | Haydovchi profili, avtomobilga biriktirish (bir vaqtda bitta faol biriktirish), biriktirish tarixi; pasport va haydovchilik guvohnomasi (raqam, sanalar, PINFL, rasmlar); Telegram ism/username/rasmi profilga qo'shiladi |
+| Kunlik to'lovlar | Avtomobilning oylik rejasi; har kuni ixtiyoriy summada naqd/plastik to'lov (haydovchi + avtomobilga bog'lanadi); qarz har oy alohida to'planadi, ortiqcha to'lov boshqa oyni yopmaydi; `/daily` sahifasida tezkor qidiruv va bir bosishda to'lov; har sahifadagi "Tezkor to'lov" oynasi (F2); oylik hisobot |
+| Haydovchi boti | Haydovchi `/start` bosib "📱 Telefon raqamni yuborish" tugmasi orqali ulanadi (raqam bazadagi haydovchi telefoniga mos kelishi kerak; xavfsizlik uchun faqat o'z kontakti qabul qilinadi, qo'lda yozilgan raqam emas). Zaxira usul — web'dan olingan `/start KOD`. Inline tugmalar: Profil, Mashinam, Oylik plan (qarzlar), To'lovlarim, Hujjatlarim (pasport/guvohnoma ma'lumoti va rasmlarini kiritish/o'zgartirish), Yangilash. Xodimlar uchun alohida menyu |
 | Super admin | `/admin`: barcha kompaniyalar, ularning statistikasi, kompaniyani to'xtatish/faollashtirish (`User.isSuperAdmin`) |
+| Bildirishnomalar | Haydovchiga to'lov kvitansiyasi (avtomatik Telegram kvitansiya), kunlik qarzdorlik eslatmasi (worker cron), litsenziya muddati tugashi ogohlantirishi; web interfeysda bildirishnomalar jurnali (`/notifications`) va boshqaruv |
 | SaaS obuna | Rejalar, trial, alohida invoice jadvali; transport to'lovlari bilan aralashmaydi |
 | Audit | Append-only jurnal, DB trigger va privilege bilan o'zgartirish/o'chirish taqiqlangan |
 | Hujjatlar | S3-compatible private bucket, presigned upload/download, hajm tekshiruvi |

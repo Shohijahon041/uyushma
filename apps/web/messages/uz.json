@@ -46,6 +46,7 @@
     "registry": "Tashqi reyestr",
     "drivers": "Haydovchilar",
     "daily": "Kunlik to'lovlar",
+    "notifications": "Bildirishnomalar",
     "admin": "Super admin"
   },
   "auth": {
@@ -525,7 +526,8 @@
     "documentsHint": "Haydovchi bu ma'lumotlarni Telegram botdagi \"🪪 Hujjatlarim\" bo'limidan ham kiritishi mumkin.",
     "noPhoto": "Rasm yo'q",
     "expired": "Muddati o'tgan",
-    "botDocumentsHint": "Hujjat rasmlarini haydovchi botga yuboradi"
+    "botDocumentsHint": "Hujjat rasmlarini haydovchi botga yuboradi",
+    "period": "Oy"
   },
   "daily": {
     "title": "Kunlik to'lovlar",

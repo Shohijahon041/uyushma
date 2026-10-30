@@ -9,6 +9,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { money } from "../../common/money/money";
 import { TenantPrismaService, TenantTx } from "../../common/prisma/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { NotificationsQueueService } from "../notifications/notifications.queue";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import {
   addMonths,
@@ -75,6 +76,7 @@ export class DriversService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsQueueService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -891,7 +893,7 @@ export class DriversService {
     const period = periodStartFor(paidAt);
 
     try {
-      return await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
+      const result = await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
         if (key) {
           const existing = await tx.driverPayment.findFirst({
             where: { idempotencyKey: key },
@@ -1011,6 +1013,45 @@ export class DriversService {
           idempotentReplay: false,
         };
       });
+
+      if (!result.idempotentReplay && "month" in result && result.month) {
+        const p = result.payment as {
+          id: string;
+          driverId: string;
+          vehicleId: string;
+          amount: string;
+          paidAt: unknown;
+          method: string;
+          vehicle?: { plateNumber?: string };
+          driver?: { fullName?: string };
+        };
+        await this.notifications.enqueue({
+          tenantId: actor.tenantId,
+          type: "driver.payment_received",
+          dedupeKey: `driver_pay_${p.id}`,
+          occurredAt:
+            typeof p.paidAt === "string"
+              ? p.paidAt
+              : p.paidAt instanceof Date
+                ? p.paidAt.toISOString()
+                : new Date().toISOString(),
+          data: {
+            driverPaymentId: p.id,
+            driverId: p.driverId,
+            vehicleId: p.vehicleId,
+            amount: p.amount,
+            plateNumber: p.vehicle?.plateNumber,
+            driverName: p.driver?.fullName,
+            receivedByName: actor.fullName,
+            method: p.method,
+            paidMonth: result.month.period,
+            paidTotal: result.month.paid,
+            debtAmount: result.month.debt,
+          },
+        });
+      }
+
+      return result;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

@@ -76,6 +76,11 @@ async function processBillingJob(job: Job): Promise<unknown> {
 }
 
 async function processNotificationJob(job: Job): Promise<unknown> {
+  if (job.name === "notifications.run-reminders") {
+    const result = await callInternal("notifications/run-reminders", {});
+    console.log("[notifications] run-reminders", JSON.stringify(result));
+    return result;
+  }
   const result = await callInternal("notifications/dispatch", {
     event: job.data,
     jobId: job.id,
@@ -166,6 +171,20 @@ async function main(): Promise<void> {
     { pattern: "0 9 * * *", tz: "Asia/Tashkent" },
     {
       name: "billing.run-reminders",
+      data: {},
+      opts: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 60_000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+      },
+    },
+  );
+  await notificationQueue.upsertJobScheduler(
+    "notifications-debt-and-license-reminders",
+    { pattern: "0 10 * * *", tz: "Asia/Tashkent" },
+    {
+      name: "notifications.run-reminders",
       data: {},
       opts: {
         attempts: 3,
