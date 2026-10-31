@@ -53,8 +53,8 @@ export class SaveConnectionDto {
 
 export class SyncQueryDto {
   @IsOptional()
-  @IsIn(["ETENDER", "AUTOPARK"])
-  provider?: "ETENDER" | "AUTOPARK";
+  @IsIn(["ETENDER", "AUTOPARK", "IJARA"])
+  provider?: "ETENDER" | "AUTOPARK" | "IJARA";
 
   @IsOptional()
   @Type(() => Number)
@@ -72,12 +72,23 @@ export class VehiclesQueryDto extends SyncQueryDto {
 }
 
 export class RecordsQueryDto {
-  @IsIn(["CONTRACT_APPLICATION", "CONTRACT", "CERTIFICATE", "TENDER_APPLICATION"])
-  kind!: "CONTRACT_APPLICATION" | "CONTRACT" | "CERTIFICATE" | "TENDER_APPLICATION";
+  @IsIn([
+    "CONTRACT_APPLICATION",
+    "CONTRACT",
+    "CERTIFICATE",
+    "TENDER_APPLICATION",
+    "RENT_CONTRACT",
+  ])
+  kind!:
+    | "CONTRACT_APPLICATION"
+    | "CONTRACT"
+    | "CERTIFICATE"
+    | "TENDER_APPLICATION"
+    | "RENT_CONTRACT";
 
   @IsOptional()
-  @IsIn(["ETENDER", "AUTOPARK"])
-  provider?: "ETENDER" | "AUTOPARK";
+  @IsIn(["ETENDER", "AUTOPARK", "IJARA"])
+  provider?: "ETENDER" | "AUTOPARK" | "IJARA";
 
   @IsOptional()
   @Type(() => Number)
@@ -85,4 +96,36 @@ export class RecordsQueryDto {
   @Min(1)
   @Max(500)
   limit?: number;
+}
+
+export class OneIdConnectAllRequestDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  username!: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(200)
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  ip?: string;
+}
+
+export class EImzoLoginRequestDto {
+  @IsString()
+  @MinLength(10)
+  challenge!: string;
+
+  @IsString()
+  @MinLength(50)
+  pkcs7_64!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  serialNumber?: string;
 }

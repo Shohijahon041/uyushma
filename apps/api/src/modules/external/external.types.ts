@@ -1,15 +1,21 @@
 import type { ExternalProvider, ExternalRecordKind } from "@prisma/client";
 
-export const EXTERNAL_PROVIDERS: ExternalProvider[] = ["ETENDER", "AUTOPARK"];
+export const EXTERNAL_PROVIDERS: ExternalProvider[] = [
+  "ETENDER",
+  "AUTOPARK",
+  "IJARA",
+];
 
 export const PROVIDER_LABELS: Record<ExternalProvider, string> = {
   ETENDER: "e-tender.uztrans.uz",
   AUTOPARK: "bm.dtransport.uz",
+  IJARA: "ijara.soliq.uz",
 };
 
 export const DEFAULT_BASE_URLS: Record<ExternalProvider, string> = {
   ETENDER: "https://e-tenderapi.uztrans.uz",
   AUTOPARK: "https://bmapi.dtransport.uz",
+  IJARA: "https://ijara.soliq.uz",
 };
 
 export const RECORD_KIND_LABELS: Record<ExternalRecordKind, string> = {
@@ -17,6 +23,7 @@ export const RECORD_KIND_LABELS: Record<ExternalRecordKind, string> = {
   CONTRACT: "Shartnomalar",
   CERTIFICATE: "Guvohnomalar",
   TENDER_APPLICATION: "Tender arizalari",
+  RENT_CONTRACT: "Ijara shartnomalari (Soliq)",
 };
 
 export interface NormalizedVehicle {
@@ -107,4 +114,80 @@ export interface ExternalConnector {
     token: string,
     config: ProviderConfig,
   ): Promise<ExternalFetchResult>;
+}
+
+export interface OneIdConnectAllDto {
+  username: string; // OneID login (INN or PINFL)
+  password: string;
+  ip?: string;
+}
+
+export interface OneIdConnectAllResult {
+  overallSuccess: boolean;
+  providers: Record<
+    ExternalProvider,
+    {
+      success: boolean;
+      account?: string | null;
+      error?: string;
+    }
+  >;
+}
+
+export interface EImzoChallengeResponse {
+  challenge: string;
+  origin: string;
+  expiresAt: string;
+}
+
+export interface EImzoLoginDto {
+  challenge: string;
+  pkcs7_64: string;
+  serialNumber?: string;
+}
+
+export interface CrossLinkedVehicleView {
+  plateNumber: string;
+  normalizedPlate: string;
+  model: string | null;
+  vin: string | null;
+  nativeVehicleId: string | null;
+  nativeVehicleStatus: string | null;
+  // Soliq ijara shartnomasi ma'lumotlari
+  ijara: {
+    contractId: string;
+    contractNumber: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    isExpired: boolean;
+    status: string;
+    contractViewUrl: string;
+    monthlyFee: string | null;
+    lessor: string | null;
+    lessee: {
+      fullName: string | null;
+      pinfl: string | null;
+      phone: string | null;
+    } | null;
+  } | null;
+  // E-Tender litsenziya va tender ma'lumotlari
+  etender: {
+    licenseNumber: string | null;
+    licenseExpiresAt: string | null;
+    isExpired: boolean;
+    routeName: string | null;
+    routeNumber: string | null;
+    organizationName: string | null;
+  } | null;
+  // Toshkent BM monitoring va garaj ma'lumotlari
+  autopark: {
+    garageNumber: string | null;
+    gpsImei: string | null;
+    routeName: string | null;
+    organizationName: string | null;
+    drivers: Array<{ fullName: string; phone?: string | null }>;
+  } | null;
+  // Qonuniylik va to'liqlik darajasi
+  complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
+  complianceNotes: string[];
 }

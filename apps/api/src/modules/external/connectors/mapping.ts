@@ -564,5 +564,169 @@ export function etenderRecordRaw(
         qty_reys: item.qty_reys,
       };
     }
+    case "RENT_CONTRACT": {
+      return item;
+    }
   }
+}
+
+export function formatDmY(date: Date): string {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}.${month}.${year}`;
+}
+
+/**
+ * Maps a car rental contract row from ijara.soliq.uz to NormalizedVehicle.
+ */
+export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
+  if (!isRecord(row)) return null;
+  const plate = text(
+    pick(row, [
+      "car_number",
+      "carNumber",
+      "plateNumber",
+      "plate_number",
+      "govNumber",
+      "car.number",
+      "transport_number",
+      "car.plateNumber",
+    ]),
+  );
+  if (!plate) return null;
+
+  const id =
+    text(pick(row, ["id", "contract_id", "contractId", "car_id"])) ??
+    normalizePlate(plate);
+  const vin = text(
+    pick(row, ["car_vin", "vin", "car.vin", "body_number", "chassis_number"]),
+  );
+  const model = text(
+    pick(row, ["car_model", "carModel", "model", "car.model", "marka", "car_marka"]),
+  );
+  const lessor = text(
+    pick(row, [
+      "lessor_name",
+      "lessorName",
+      "lessor.name",
+      "company_name",
+      "organization_name",
+    ]),
+  );
+  const lesseeName = text(
+    pick(row, [
+      "lessee_name",
+      "lesseeName",
+      "lessee.name",
+      "driver_name",
+      "driverName",
+      "client_name",
+    ]),
+  );
+  const lesseePinfl = text(
+    pick(row, ["lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
+  );
+  const lesseePhone = text(
+    pick(row, ["lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
+  );
+  const lesseeLicense = text(
+    pick(row, ["lessee_license", "lesseeLicense", "license_number"]),
+  );
+
+  const drivers = lesseeName
+    ? [
+        {
+          fullName: lesseeName,
+          pinfl: lesseePinfl ?? null,
+          phone: lesseePhone ?? null,
+          licenseNumber: lesseeLicense ?? null,
+        },
+      ]
+    : undefined;
+
+  return {
+    externalId: id,
+    plateNumber: plate,
+    garageNumber: null,
+    vin,
+    gpsImei: null,
+    organizationName: lessor,
+    routeName: null,
+    routeNumber: null,
+    vehicleClass: null,
+    vehicleModel: model,
+    drivers,
+    licenseNumber: lesseeLicense,
+    licenseExpiresAt: null,
+    raw: row,
+  };
+}
+
+/**
+ * Maps a car rental contract row from ijara.soliq.uz to NormalizedRecord (kind: RENT_CONTRACT).
+ */
+export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
+  if (!isRecord(row)) return null;
+  const id = text(pick(row, ["id", "contract_id", "contractId"]));
+  if (!id) return null;
+
+  const number =
+    text(pick(row, ["contract_number", "contractNumber", "number", "doc_number"])) ??
+    id;
+  const plate = text(
+    pick(row, [
+      "car_number",
+      "carNumber",
+      "plateNumber",
+      "plate_number",
+      "car.number",
+      "transport_number",
+    ]),
+  );
+  const title = plate
+    ? `Ijara shartnomasi: ${plate}`
+    : `Ijara shartnomasi #${number}`;
+
+  const startsAt = toDate(
+    pick(row, ["start_date", "startDate", "starts_at", "from_date", "contract_date"]),
+  );
+  const endsAt = toDate(
+    pick(row, ["end_date", "endDate", "ends_at", "to_date", "exp_date"]),
+  );
+  const status =
+    text(pick(row, ["status_name", "statusName", "status_text", "status"])) ??
+    "ACTIVE";
+
+  const startDmY = startsAt ? formatDmY(startsAt) : "";
+  const endDmY = endsAt ? formatDmY(endsAt) : "";
+
+  // Soliq ijara shartnomasini to'liq ko'rish havolasi
+  const contractViewUrl =
+    startDmY && endDmY
+      ? `https://ijara.soliq.uz/car/contract-view/${id}/${startDmY}/${endDmY}`
+      : `https://ijara.soliq.uz/car/renting/list?myRentType=1&statusGroup=1`;
+
+  const monthlyFee = text(
+    pick(row, ["rent_amount", "rentAmount", "amount", "monthly_amount", "summa"]),
+  );
+
+  const rawWithUrl = {
+    ...row,
+    contractViewUrl,
+    monthlyFee,
+  };
+
+  return {
+    kind: "RENT_CONTRACT",
+    externalId: id,
+    number,
+    title,
+    status,
+    startsAt,
+    endsAt,
+    issuedAt: startsAt,
+    expiresAt: endsAt,
+    raw: rawWithUrl,
+  };
 }

@@ -17,6 +17,7 @@ import { TenantPrismaService, type TenantTx } from "../../common/prisma/tenant-p
 import { AuditService } from "../audit/audit.service";
 import { AutoparkConnector } from "./connectors/autopark.connector";
 import { EtenderConnector } from "./connectors/etender.connector";
+import { IjaraConnector } from "./connectors/ijara.connector";
 import { isExternalAuthError } from "./connectors/http";
 import {
   PROVIDER_LABELS,
@@ -83,9 +84,11 @@ export class ExternalService {
   ) {
     const etender = new EtenderConnector();
     const autopark = new AutoparkConnector();
+    const ijara = new IjaraConnector();
     this.connectors = new Map<ExternalProvider, ExternalConnector>([
       [etender.provider, etender],
       [autopark.provider, autopark],
+      [ijara.provider, ijara],
     ]);
   }
 

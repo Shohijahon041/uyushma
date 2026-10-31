@@ -118,6 +118,7 @@ enum InvoiceStatus {
 enum ExternalProvider {
   ETENDER
   AUTOPARK
+  IJARA
 }
 
 enum ExternalConnectionStatus {
@@ -137,6 +138,7 @@ enum ExternalRecordKind {
   CONTRACT
   CERTIFICATE
   TENDER_APPLICATION
+  RENT_CONTRACT
 }
 
 enum DocumentStatus {

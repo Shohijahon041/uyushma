@@ -1,5 +1,6 @@
 import { AutoparkConnector } from "./autopark.connector";
 import { EtenderConnector } from "./etender.connector";
+import { IjaraConnector } from "./ijara.connector";
 
 type Handler = (url: URL, method: string, init?: RequestInit) => unknown | Promise<unknown>;
 
@@ -656,5 +657,71 @@ describe("AutoparkConnector", () => {
         {},
       ),
     ).rejects.toThrow(/BM login yoki parol xato/);
+  });
+});
+
+describe("IjaraConnector", () => {
+  const connector = new IjaraConnector();
+
+  it("authenticates via login endpoint", async () => {
+    installFetch((url, method, init) => {
+      if (url.pathname === "/api/auth/oneid") {
+        return {
+          token: "ijara-test-token",
+          company_name: "OOO Uyushma Test",
+        };
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`);
+    });
+
+    const result = await connector.login(
+      "https://ijara.soliq.uz",
+      { username: "313054621", password: "secret-password" },
+      {},
+    );
+
+    expect(result.token).toBe("ijara-test-token");
+    expect(result.account).toBe("OOO Uyushma Test");
+  });
+
+  it("fetches car rental list and parses vehicles and contracts", async () => {
+    installFetch((url, method) => {
+      if (url.pathname === "/api/user/profile") {
+        return { name: "OOO Samarqand Yo'lovchi Trans" };
+      }
+      if (url.pathname === "/api/car/renting/list" || url.pathname === "/car/renting/list") {
+        return {
+          data: [
+            {
+              id: 4586059,
+              contract_number: "4586059",
+              start_date: "31.10.2026",
+              end_date: "10.01.2027",
+              car_number: "01 A 123 AA",
+              car_model: "Chevrolet Cobalt",
+              car_vin: "XWB1234567890",
+              lessor_name: "OOO Samarqand Yo'lovchi Trans",
+              lessee_name: "Aliyev Vali",
+              lessee_pinfl: "31234567890123",
+              lessee_phone: "+998901234567",
+              rent_amount: "4000000",
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`);
+    });
+
+    const result = await connector.fetchAll("https://ijara.soliq.uz", "token-123", {});
+
+    expect(result.vehicles).toHaveLength(1);
+    expect(result.vehicles[0]?.plateNumber).toBe("01 A 123 AA");
+    expect(result.vehicles[0]?.vin).toBe("XWB1234567890");
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]?.kind).toBe("RENT_CONTRACT");
+    expect(result.records[0]?.externalId).toBe("4586059");
+    expect((result.records[0]?.raw as any)?.contractViewUrl).toBe(
+      "https://ijara.soliq.uz/car/contract-view/4586059/31.10.2026/10.01.2027",
+    );
   });
 });

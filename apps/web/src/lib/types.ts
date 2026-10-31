@@ -220,7 +220,7 @@ export interface TelegramStatus {
   linkedAt?: string;
 }
 
-export type ExternalProviderKey = "ETENDER" | "AUTOPARK";
+export type ExternalProviderKey = "ETENDER" | "AUTOPARK" | "IJARA";
 
 export interface ExternalConnection {
   id: string;
@@ -251,7 +251,8 @@ export type ExternalRecordKind =
   | "CONTRACT_APPLICATION"
   | "CONTRACT"
   | "CERTIFICATE"
-  | "TENDER_APPLICATION";
+  | "TENDER_APPLICATION"
+  | "RENT_CONTRACT";
 
 export interface ExternalVehicleRow {
   id: string;
@@ -580,4 +581,46 @@ export interface CompanyPaymentDetails {
   paymentCardHolder: string | null;
   paymentCardBank: string | null;
   paymentInstructions: string | null;
+}
+
+export interface CrossLinkedVehicleView {
+  plateNumber: string;
+  normalizedPlate: string;
+  model: string | null;
+  vin: string | null;
+  nativeVehicleId: string | null;
+  nativeVehicleStatus: string | null;
+  ijara: {
+    contractId: string;
+    contractNumber: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    isExpired: boolean;
+    status: string;
+    contractViewUrl: string;
+    monthlyFee: string | null;
+    lessor: string | null;
+    lessee: {
+      fullName: string | null;
+      pinfl: string | null;
+      phone: string | null;
+    } | null;
+  } | null;
+  etender: {
+    licenseNumber: string | null;
+    licenseExpiresAt: string | null;
+    isExpired: boolean;
+    routeName: string | null;
+    routeNumber: string | null;
+    organizationName: string | null;
+  } | null;
+  autopark: {
+    garageNumber: string | null;
+    gpsImei: string | null;
+    routeName: string | null;
+    organizationName: string | null;
+    drivers: Array<{ fullName: string; phone?: string | null }>;
+  } | null;
+  complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
+  complianceNotes: string[];
 }

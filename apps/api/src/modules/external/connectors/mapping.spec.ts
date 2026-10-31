@@ -352,4 +352,52 @@ describe("external mapping", () => {
       expect(externalIdOf({}, [])).toBeNull();
     });
   });
+
+  describe("ijara.soliq.uz mapping", () => {
+    const ijaraPayload = {
+      id: 4586059,
+      contract_number: "IJ-4586059",
+      start_date: "31.10.2026",
+      end_date: "10.01.2027",
+      status_name: "Tasdiqlangan",
+      rent_amount: "3500000",
+      car_number: "01 A 123 AA",
+      car_model: "Chevrolet Cobalt",
+      car_vin: "XWB1234567890",
+      lessor_name: "OOO TRANSPORT FLOT",
+      lessee_name: "Rasulov Bobur",
+      lessee_pinfl: "31234567890123",
+      lessee_phone: "+998901234567",
+      lessee_license: "AF1234567",
+    };
+
+    it("mapIjaraVehicle parses vehicle and driver lessee correctly", () => {
+      const { mapIjaraVehicle } = require("./mapping");
+      const veh = mapIjaraVehicle(ijaraPayload);
+      expect(veh).not.toBeNull();
+      expect(veh.plateNumber).toBe("01 A 123 AA");
+      expect(veh.vin).toBe("XWB1234567890");
+      expect(veh.vehicleModel).toBe("Chevrolet Cobalt");
+      expect(veh.organizationName).toBe("OOO TRANSPORT FLOT");
+      expect(veh.drivers).toHaveLength(1);
+      expect(veh.drivers[0].fullName).toBe("Rasulov Bobur");
+      expect(veh.drivers[0].pinfl).toBe("31234567890123");
+      expect(veh.drivers[0].phone).toBe("+998901234567");
+    });
+
+    it("mapIjaraRecord parses contract and generates soliq contract view link", () => {
+      const { mapIjaraRecord } = require("./mapping");
+      const rec = mapIjaraRecord(ijaraPayload);
+      expect(rec).not.toBeNull();
+      expect(rec.kind).toBe("RENT_CONTRACT");
+      expect(rec.externalId).toBe("4586059");
+      expect(rec.number).toBe("IJ-4586059");
+      expect(rec.status).toBe("Tasdiqlangan");
+      expect(rec.startsAt).toBeInstanceOf(Date);
+      expect(rec.endsAt).toBeInstanceOf(Date);
+      expect(rec.raw.contractViewUrl).toBe(
+        "https://ijara.soliq.uz/car/contract-view/4586059/31.10.2026/10.01.2027",
+      );
+    });
+  });
 });
