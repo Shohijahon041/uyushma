@@ -85,13 +85,54 @@ export interface ProviderConfig {
   account?: string;
 }
 
+export function extractOneIdCode(input?: string | null): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  if (trimmed.includes("?")) {
+    try {
+      const url = new URL(trimmed.startsWith("http") ? trimmed : `https://example.com/${trimmed}`);
+      const code = url.searchParams.get("one_code") ?? url.searchParams.get("code");
+      if (code) return code.trim();
+    } catch {
+      // fallback to regex
+    }
+  }
+  const match = trimmed.match(/[?&](?:one_code|code)=([^&#\s]+)/i);
+  if (match && match[1]) {
+    return decodeURIComponent(match[1]).trim();
+  }
+  return trimmed;
+}
+
+export function extractTokenFromAny(input?: string | null): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      const found =
+        obj.token ??
+        obj.access_token ??
+        obj.accessToken ??
+        (obj.data && typeof obj.data === "object" ? (obj.data as Record<string, unknown>).token ?? (obj.data as Record<string, unknown>).access_token : undefined);
+      if (typeof found === "string") return found.trim();
+    } catch {
+      // ignore
+    }
+  }
+  const match = trimmed.match(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/);
+  if (match) return match[0];
+  return trimmed.replace(/^Bearer\s+/i, "").replace(/^["'`]|["'`]$/g, "").trim();
+}
+
 /**
  * Same fields the provider websites send: e-tender wants the One ID INN,
  * bm.dtransport.uz wants its own username. Passwords are only held encrypted.
  */
 export interface ProviderCredentials {
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
+  code?: string;
   ip?: string;
 }
 
@@ -117,8 +158,9 @@ export interface ExternalConnector {
 }
 
 export interface OneIdConnectAllDto {
-  username: string; // OneID login (INN or PINFL)
-  password: string;
+  username?: string; // OneID login (INN or PINFL)
+  password?: string;
+  code?: string; // OneID authorization code or redirect URL
   ip?: string;
 }
 

@@ -14,15 +14,20 @@ import {
 } from "class-validator";
 
 export class ProviderCredentialsDto {
+  @IsOptional()
   @IsString()
-  @MinLength(3)
-  @MaxLength(120)
-  username!: string;
+  @MaxLength(500)
+  username?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(4)
   @MaxLength(200)
-  password!: string;
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  code?: string;
 
   @IsOptional()
   @IsString()
@@ -99,20 +104,32 @@ export class RecordsQueryDto {
 }
 
 export class OneIdConnectAllRequestDto {
+  @IsOptional()
   @IsString()
-  @MinLength(3)
   @MaxLength(120)
-  username!: string;
+  username?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(4)
   @MaxLength(200)
-  password!: string;
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  code?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(64)
   ip?: string;
+}
+
+export class OneIdExchangeCodeDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(1000)
+  code!: string;
 }
 
 export class EImzoLoginRequestDto {

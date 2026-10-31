@@ -20,6 +20,8 @@ import { EtenderConnector } from "./connectors/etender.connector";
 import { IjaraConnector } from "./connectors/ijara.connector";
 import { cleanBearerToken, isExternalAuthError } from "./connectors/http";
 import {
+  extractOneIdCode,
+  extractTokenFromAny,
   PROVIDER_LABELS,
   type ExternalConnector,
   type ExternalFetchResult,
@@ -124,15 +126,16 @@ export class ExternalService {
     const config = (dto.config ?? {}) as ProviderConfig;
     const credentials: ProviderCredentials | null = dto.credentials
       ? {
-          username: dto.credentials.username.trim(),
+          username: (dto.credentials.username ?? dto.credentials.code ?? "").trim(),
           password: dto.credentials.password,
+          ...(dto.credentials.code?.trim() ? { code: dto.credentials.code.trim() } : {}),
           ...(dto.credentials.ip?.trim() ? { ip: dto.credentials.ip.trim() } : {}),
         }
       : null;
-    if (credentials && !credentials.username) {
-      throw new BadRequestException("Login bo'sh bo'lmasligi kerak");
+    if (credentials && !credentials.username && !credentials.code) {
+      throw new BadRequestException("Login yoki OneID kodi kiritilishi kerak");
     }
-    const rawToken = cleanBearerToken(dto.token);
+    const rawToken = extractTokenFromAny(dto.token);
     if (!credentials && !rawToken) {
       throw new BadRequestException("Token yoki login/parol kiritilishi kerak");
     }

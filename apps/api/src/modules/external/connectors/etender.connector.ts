@@ -1,5 +1,6 @@
 import type { ExternalProvider } from "@prisma/client";
 import {
+  extractOneIdCode,
   type ExternalConnector,
   type ExternalFetchResult,
   type LoginResult,
@@ -89,6 +90,60 @@ export class EtenderConnector implements ExternalConnector {
     credentials: ProviderCredentials,
     config: ProviderConfig,
   ): Promise<LoginResult> {
+    // 1. OneID OAuth2 Authorization Code orqali kirish (one_code yoki code)
+    const rawCode =
+      credentials.code ||
+      (credentials.username &&
+      (credentials.username.includes("one_code=") ||
+        credentials.username.includes("code=") ||
+        credentials.username.startsWith("http"))
+        ? credentials.username
+        : null);
+
+    if (rawCode) {
+      const code = extractOneIdCode(rawCode);
+      if (code) {
+        try {
+          const oneIdPayload = await externalRequestJson(joinUrl(baseUrl, "/api/oneid-login"), {
+            method: "POST",
+            body: { code, state: "e-tender_uztrans_uz" },
+          });
+          const rawToken = text(
+            pick(oneIdPayload, [
+              "token",
+              "data.token",
+              "access_token",
+              "data.access_token",
+              "result.token",
+              "result.access_token",
+            ]),
+          );
+          const token = cleanBearerToken(rawToken);
+          if (token) {
+            return {
+              token,
+              account: text(
+                pick(oneIdPayload, [
+                  "company_name",
+                  "organization_name",
+                  "data.company_name",
+                  "user.company_name",
+                ]),
+              ),
+            };
+          }
+        } catch (error) {
+          if (!credentials.password) {
+            throw new ExternalHttpError(
+              401,
+              `OneID kodi qabul qilinmadi: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      }
+    }
+
+    // 2. An'anaviy INN va One ID parol orqali kirish
     const candidatePaths = config.endpoints?.login
       ? [config.endpoints.login]
       : ["/api/login", "/api/auth/login", "/api/v1/login"];
@@ -96,13 +151,13 @@ export class EtenderConnector implements ExternalConnector {
     let payload: unknown;
     let lastError: unknown = null;
 
-    const requestBody = {
-      inn: credentials.username.trim(),
-      username: credentials.username.trim(),
-      login: credentials.username.trim(),
-      password: credentials.password,
-      ip: credentials.ip?.trim() ?? "",
+    const requestBody: Record<string, string> = {
+      inn: (credentials.username ?? "").trim(),
+      password: credentials.password ?? "",
     };
+    if (credentials.ip?.trim()) {
+      requestBody.ip = credentials.ip.trim();
+    }
 
     for (const path of candidatePaths) {
       try {

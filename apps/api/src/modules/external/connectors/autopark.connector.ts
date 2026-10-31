@@ -1,5 +1,6 @@
 import type { ExternalProvider } from "@prisma/client";
 import {
+  extractOneIdCode,
   type ExternalConnector,
   type ExternalFetchResult,
   type LoginResult,
@@ -203,6 +204,73 @@ export class AutoparkConnector implements ExternalConnector {
     credentials: ProviderCredentials,
     config: ProviderConfig,
   ): Promise<LoginResult> {
+    // 1. OneID OAuth2 Authorization Code orqali kirish
+    const rawCode =
+      credentials.code ||
+      (credentials.username &&
+      (credentials.username.includes("code=") ||
+        credentials.username.startsWith("http"))
+        ? credentials.username
+        : null);
+
+    if (rawCode) {
+      const code = extractOneIdCode(rawCode);
+      if (code) {
+        try {
+          const profilesUrl = joinUrl(
+            baseUrl,
+            `/user-management/api/v1/user-profile/login-via-oneid/profiles?code=${encodeURIComponent(code)}`,
+          );
+          const oneIdPayload = (await externalRequestJson(profilesUrl, {
+            method: "POST",
+          })) as {
+            data?: {
+              token?: { access_token?: string; refresh_token?: string };
+              profiles?: Array<{ id: string; organizationName?: string; companyName?: string }>;
+            };
+          };
+
+          let token = cleanBearerToken(oneIdPayload?.data?.token?.access_token);
+          let accountName: string | null = null;
+
+          const profiles = oneIdPayload?.data?.profiles;
+          if (profiles && profiles.length > 0) {
+            const chosen = profiles[0];
+            if (chosen?.id) {
+              try {
+                const tokenUrl = joinUrl(
+                  baseUrl,
+                  `/user-management/api/v1/user-profile/get-token-by-profile/${chosen.id}`,
+                );
+                const tokenRes = (await externalRequestJson(tokenUrl, {
+                  method: "POST",
+                })) as { data?: { access_token?: string; token?: string } };
+                const subToken = cleanBearerToken(
+                  tokenRes?.data?.access_token ?? tokenRes?.data?.token,
+                );
+                if (subToken) token = subToken;
+              } catch {
+                // Agar profil tanlash xato bersa, asosiy tokenni ishlatamiz
+              }
+              accountName = chosen.organizationName ?? chosen.companyName ?? null;
+            }
+          }
+
+          if (token) {
+            return { token, account: accountName };
+          }
+        } catch (error) {
+          if (!credentials.password) {
+            throw new ExternalHttpError(
+              401,
+              `OneID kodi qabul qilinmadi: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      }
+    }
+
+    // 2. An'anaviy login va parol orqali kirish
     const path =
       config.endpoints?.login ?? "/user-management/api/v1/user-profile/login";
     let payload: unknown;
@@ -210,9 +278,8 @@ export class AutoparkConnector implements ExternalConnector {
       payload = await externalRequestJson(joinUrl(baseUrl, path), {
         method: "POST",
         body: {
-          username: credentials.username.trim(),
-          login: credentials.username.trim(),
-          password: credentials.password,
+          username: (credentials.username ?? "").trim(),
+          password: credentials.password ?? "",
         },
       });
     } catch (error) {

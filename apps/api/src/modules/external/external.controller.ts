@@ -19,6 +19,7 @@ import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import {
   EImzoLoginRequestDto,
   OneIdConnectAllRequestDto,
+  OneIdExchangeCodeDto,
   RecordsQueryDto,
   SaveConnectionDto,
   SyncQueryDto,
@@ -55,6 +56,14 @@ export class ExternalSettingsController {
   }
 
   /**
+   * OneID OAuth2 rasmiy avtorizatsiya havolalarini qaytaradi
+   */
+  @Get("oneid/urls")
+  getOneIdUrls() {
+    return this.oneIdAuth.getSsoUrls();
+  }
+
+  /**
    * Bitta OneID orqali 3 ta saytga (bm.dtransport.uz, e-tender.uztrans.uz, ijara.soliq.uz) bir vaqtda ulanish
    */
   @Post("oneid/connect-all")
@@ -65,6 +74,25 @@ export class ExternalSettingsController {
     @Req() request: Request,
   ) {
     return this.oneIdAuth.connectAll(user, dto, ip(request));
+  }
+
+  /**
+   * Aniq provayder uchun OneID kodini (yoki URL manzilini) tokenga almashtirish
+   */
+  @Post(":provider/oneid-exchange")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  exchangeOneIdCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+    @Body() dto: OneIdExchangeCodeDto,
+    @Req() request: Request,
+  ) {
+    return this.oneIdAuth.exchangeCode(
+      user,
+      providerOf(provider),
+      dto.code,
+      ip(request),
+    );
   }
 
   /**

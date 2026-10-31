@@ -111,7 +111,7 @@ export class IjaraConnector implements ExternalConnector {
         ]),
       );
 
-      return { token, account: account ?? credentials.username };
+      return { token, account: account ?? credentials.username ?? null };
     } catch (error) {
       if (error instanceof ExternalHttpError) {
         throw new Error(`Soliq Ijara login xatosi (${error.status}): ${error.message}`);
@@ -253,7 +253,7 @@ export class IjaraConnector implements ExternalConnector {
             }
 
             const rec = mapIjaraRecord(raw);
-            if (rec) {
+            if (rec && !records.some((r) => r.externalId === rec.externalId)) {
               records.push(rec);
             }
           }
