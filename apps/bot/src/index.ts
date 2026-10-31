@@ -694,8 +694,9 @@ bot.on(message("photo"), async (ctx) => {
       );
       return;
     } catch (err) {
-      console.error("Receipt upload error:", err);
-      await ctx.reply("Rasmni yuklashda xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      console.error("Receipt upload error:", describeError(err));
+      const reason = err instanceof ApiError ? err.message : "Rasmni yuklashda xatolik yuz berdi. Qaytadan urinib ko'ring.";
+      await ctx.reply(`❌ ${reason}`, { reply_markup: mainMenu("driver") });
       return;
     }
   }
@@ -786,7 +787,8 @@ bot.on(message("text"), async (ctx) => {
         );
       } catch (err) {
         console.error("Submit receipt text error:", describeError(err));
-        await ctx.reply("Chekni yuborishda xatolik yuz berdi. Qaytadan urinib ko'ring.", {
+        const reason = err instanceof ApiError ? err.message : "Chekni yuborishda xatolik yuz berdi. Qaytadan urinib ko'ring.";
+        await ctx.reply(`❌ ${reason}`, {
           reply_markup: mainMenu("driver"),
         });
       }

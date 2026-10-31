@@ -29,6 +29,7 @@ export function createAdminClient(): PrismaClient {
 
 export async function bootstrapApp(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
     rawBody: true,
     logger: false,
   });

@@ -124,7 +124,7 @@ export class BotApiClient {
         "X-Bot-Api-Key": this.botApiKey,
         ...(init.headers ?? {}),
       },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(60_000),
     });
     const text = await response.text();
     if (!response.ok) {

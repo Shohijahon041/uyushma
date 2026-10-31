@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { json, urlencoded } from "express";
 import helmet from "helmet";
 import { requestIdMiddleware } from "./common/http/request-id.middleware";
 import { GlobalExceptionFilter } from "./common/http/global-exception.filter";
@@ -8,6 +9,28 @@ import { GlobalExceptionFilter } from "./common/http/global-exception.filter";
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
   const origin = config.getOrThrow<string>("APP_ORIGIN");
+
+  app.use(
+    json({
+      limit: "50mb",
+      verify: (req: any, _res, buffer) => {
+        if (Buffer.isBuffer(buffer)) {
+          req.rawBody = buffer;
+        }
+      },
+    }),
+  );
+  app.use(
+    urlencoded({
+      limit: "50mb",
+      extended: true,
+      verify: (req: any, _res, buffer) => {
+        if (Buffer.isBuffer(buffer)) {
+          req.rawBody = buffer;
+        }
+      },
+    }),
+  );
 
   app.setGlobalPrefix("api/v1");
   if (config.get<boolean>("TRUST_PROXY", false)) {

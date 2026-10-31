@@ -7,6 +7,7 @@ import { configureApp } from "./bootstrap";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
     rawBody: true,
     logger: ["log", "warn", "error"],
   });
