@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -68,5 +69,15 @@ export class UsersController {
     @Req() request: Request,
   ) {
     return this.users.resetPassword(user, id, dto, ip(request));
+  }
+
+  @Delete(":id")
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Req() request: Request,
+  ) {
+    return this.users.delete(user, id, ip(request));
   }
 }

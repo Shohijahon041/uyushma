@@ -513,6 +513,7 @@ export interface PlatformUser {
   phone: string | null;
   role: UserRoleName;
   isActive: boolean;
+  isSuperAdmin: boolean;
   twoFactorEnabled: boolean;
   lastLoginAt: string | null;
   createdAt: string;

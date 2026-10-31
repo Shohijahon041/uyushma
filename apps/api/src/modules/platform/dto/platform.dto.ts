@@ -111,6 +111,72 @@ export class PlatformUpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isSuperAdmin?: boolean;
+}
+
+export class PlatformUpdateCompanyDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  name?: string;
+
+  @IsOptional()
+  @Transform(normalizeSlug)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(64)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: "Kompaniya kodi faqat kichik lotin harflari, raqam va defisdan iborat bo'lsin",
+  })
+  slug?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(32)
+  paymentCardNumber?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  paymentCardHolder?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  paymentCardBank?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  paymentInstructions?: string;
+}
+
+export class PlatformSetSubscriptionDto {
+  @IsOptional()
+  @IsIn(["TRIAL", "ACTIVE", "PAST_DUE", "CANCELLED"])
+  status?: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  planId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  currentPeriodEnd?: string;
+
+  @IsOptional()
+  @Matches(DECIMAL_2, { message: "Summa noto'g'ri formatda" })
+  monthlyFee?: string;
 }
 
 export class PlatformResetPasswordDto extends PasswordFields {

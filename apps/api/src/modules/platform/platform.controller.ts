@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { CurrentUser } from "../../common/auth/decorators";
@@ -8,6 +18,8 @@ import {
   PlatformCreateCompanyDto,
   PlatformCreateUserDto,
   PlatformResetPasswordDto,
+  PlatformSetSubscriptionDto,
+  PlatformUpdateCompanyDto,
   PlatformUpdateUserDto,
   RecordSubscriptionPaymentDto,
   SetCompanyStatusDto,
@@ -40,6 +52,25 @@ export class PlatformController {
     return this.platform.createCompany(user, dto, ip(request));
   }
 
+  @Patch("companies/:id")
+  updateCompany(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", uuid()) id: string,
+    @Body() dto: PlatformUpdateCompanyDto,
+    @Req() request: Request,
+  ) {
+    return this.platform.updateCompany(user, id, dto, ip(request));
+  }
+
+  @Delete("companies/:id")
+  deleteCompany(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", uuid()) id: string,
+    @Req() request: Request,
+  ) {
+    return this.platform.deleteCompany(user, id, ip(request));
+  }
+
   @Post("companies/:id/status")
   setStatus(
     @CurrentUser() user: AuthenticatedUser,
@@ -48,6 +79,16 @@ export class PlatformController {
     @Req() request: Request,
   ) {
     return this.platform.setCompanyStatus(user, id, dto.status, ip(request));
+  }
+
+  @Patch("companies/:id/subscription")
+  setSubscription(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", uuid()) id: string,
+    @Body() dto: PlatformSetSubscriptionDto,
+    @Req() request: Request,
+  ) {
+    return this.platform.setSubscription(user, id, dto, ip(request));
   }
 
   @Get("users")
@@ -76,6 +117,16 @@ export class PlatformController {
     return this.platform.updateUser(user, companyId, userId, dto, ip(request));
   }
 
+  @Delete("companies/:companyId/users/:userId")
+  deleteUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("companyId", uuid()) companyId: string,
+    @Param("userId", uuid()) userId: string,
+    @Req() request: Request,
+  ) {
+    return this.platform.deleteUser(user, companyId, userId, ip(request));
+  }
+
   @Post("companies/:companyId/users/:userId/reset-password")
   resetPassword(
     @CurrentUser() user: AuthenticatedUser,
@@ -100,6 +151,16 @@ export class PlatformController {
     @Req() request: Request,
   ) {
     return this.platform.createLicense(user, companyId, dto, ip(request));
+  }
+
+  @Delete("companies/:companyId/licenses/:licenseId")
+  deleteLicense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("companyId", uuid()) companyId: string,
+    @Param("licenseId", uuid()) licenseId: string,
+    @Req() request: Request,
+  ) {
+    return this.platform.deleteLicense(user, companyId, licenseId, ip(request));
   }
 
   @Post("companies/:companyId/subscription-payments")

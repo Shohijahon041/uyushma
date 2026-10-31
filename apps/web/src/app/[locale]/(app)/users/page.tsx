@@ -125,6 +125,26 @@ export default function UsersPage() {
     }
   }
 
+  async function onDelete(user: UserItem) {
+    if (user.id === me.data?.id) {
+      setActionError(t("selfProtected"));
+      return;
+    }
+    if (!window.confirm(`"${user.fullName}" foydalanuvchisini tizimdan butunlay o'chirishni tasdiqlaysizmi?`)) {
+      return;
+    }
+    setActionError(null);
+    setBusy(user.id);
+    try {
+      await apiRequest(`/users/${user.id}`, { method: "DELETE" });
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
@@ -285,6 +305,14 @@ export default function UsersPage() {
                             disabled={isSelf || busy === user.id}
                           >
                             {user.isActive ? t("deactivate") : t("activate")}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs font-semibold text-red-600 hover:bg-red-50"
+                            onClick={() => void onDelete(user)}
+                            disabled={isSelf || ownerLocked || busy === user.id}
+                          >
+                            {tc("delete")}
                           </button>
                         </div>
                       </td>

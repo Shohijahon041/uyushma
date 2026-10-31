@@ -55,6 +55,8 @@ export default function AdminPage() {
   const [userFormFor, setUserFormFor] = useState<Company | null>(null);
   const [licenseFormFor, setLicenseFormFor] = useState<Company | null>(null);
   const [paymentFormFor, setPaymentFormFor] = useState<Company | null>(null);
+  const [editCompanyFor, setEditCompanyFor] = useState<Company | null>(null);
+  const [subscriptionFormFor, setSubscriptionFormFor] = useState<Company | null>(null);
   const [paymentMonths, setPaymentMonths] = useState(1);
   const [companyFilter, setCompanyFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -131,6 +133,79 @@ export default function AdminPage() {
     });
   }
 
+  function updateCompanySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editCompanyFor) return;
+    const company = editCompanyFor;
+    const body = form(event);
+    void run("update-company", async () => {
+      await apiRequest(`/platform/companies/${company.id}`, {
+        method: "PATCH",
+        body,
+      });
+      setEditCompanyFor(null);
+      setMessage({ tone: "success", text: tc("success") });
+    });
+  }
+
+  function deleteCompany(company: Company) {
+    if (!window.confirm(t("confirmDeleteCompany", { name: company.name }))) return;
+    void run(`delete-company-${company.id}`, async () => {
+      await apiRequest(`/platform/companies/${company.id}`, { method: "DELETE" });
+      setMessage({ tone: "success", text: `${company.name} muvaffaqiyatli o'chirildi` });
+    });
+  }
+
+  function deleteUser(user: PlatformUser) {
+    if (!window.confirm(t("confirmDeleteUser", { name: user.fullName }))) return;
+    void run(`delete-user-${user.id}`, async () => {
+      await apiRequest(`/platform/companies/${user.companyId}/users/${user.id}`, {
+        method: "DELETE",
+      });
+      setMessage({ tone: "success", text: `${user.fullName} muvaffaqiyatli o'chirildi` });
+    });
+  }
+
+  function deleteLicense(license: LicenseContract) {
+    if (!window.confirm(t("confirmDeleteLicense", { number: license.number }))) return;
+    void run(`delete-license-${license.id}`, async () => {
+      await apiRequest(`/platform/companies/${license.companyId}/licenses/${license.id}`, {
+        method: "DELETE",
+      });
+      setMessage({ tone: "success", text: `${license.number} litsenziyasi bekor qilindi` });
+    });
+  }
+
+  function toggleSuperAdmin(user: PlatformUser) {
+    const next = !user.isSuperAdmin;
+    const confirmText = next
+      ? t("confirmGrantSuperAdmin", { name: user.fullName })
+      : t("confirmRevokeSuperAdmin", { name: user.fullName });
+    if (!window.confirm(confirmText)) return;
+    void run(`superadmin-${user.id}`, async () => {
+      await apiRequest(`/platform/companies/${user.companyId}/users/${user.id}`, {
+        method: "PATCH",
+        body: { isSuperAdmin: next },
+      });
+      setMessage({ tone: "success", text: tc("success") });
+    });
+  }
+
+  function setSubscriptionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!subscriptionFormFor) return;
+    const company = subscriptionFormFor;
+    const body = form(event);
+    void run("set-subscription", async () => {
+      await apiRequest(`/platform/companies/${company.id}/subscription`, {
+        method: "PATCH",
+        body,
+      });
+      setSubscriptionFormFor(null);
+      setMessage({ tone: "success", text: tc("success") });
+    });
+  }
+
   function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!userFormFor) return;
@@ -178,7 +253,7 @@ export default function AdminPage() {
 
   function updateUser(
     user: PlatformUser,
-    body: { role?: UserRoleName; isActive?: boolean; phone?: string },
+    body: { role?: UserRoleName; isActive?: boolean; phone?: string; isSuperAdmin?: boolean },
   ) {
     void run(`user-${user.id}`, async () => {
       await apiRequest(`/platform/companies/${user.companyId}/users/${user.id}`, {
@@ -219,6 +294,8 @@ export default function AdminPage() {
     setUserFormFor(kind === "user" ? company : null);
     setLicenseFormFor(kind === "license" ? company : null);
     setPaymentFormFor(kind === "payment" ? company : null);
+    setEditCompanyFor(null);
+    setSubscriptionFormFor(null);
     setPaymentMonths(1);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -540,6 +617,101 @@ export default function AdminPage() {
         </form>
       )}
 
+      {editCompanyFor && (
+        <form className="card card-body mb-5" onSubmit={updateCompanySubmit}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-800">
+              {t("editCompany")}: {editCompanyFor.name}
+            </h2>
+            <button type="button" className="btn-ghost text-xs" onClick={() => setEditCompanyFor(null)}>
+              {tc("cancel")}
+            </button>
+          </div>
+          <div className="form-grid mt-4">
+            <label>
+              <span className="label">{t("companyName")}</span>
+              <input name="name" className="input" required defaultValue={editCompanyFor.name} />
+            </label>
+            <label>
+              <span className="label">{t("companyCode")}</span>
+              <input name="slug" className="input font-mono" required defaultValue={editCompanyFor.slug} />
+            </label>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setEditCompanyFor(null)}>
+              {tc("cancel")}
+            </button>
+            <button type="submit" className="btn-primary" disabled={busy === "update-company"}>
+              {busy === "update-company" ? t("saving") : t("saveChanges")}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {subscriptionFormFor && (
+        <form className="card card-body mb-5" onSubmit={setSubscriptionSubmit}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">
+                {t("changeSubscription")}: {subscriptionFormFor.name}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {t("subscriptionStatus")}: <b>{subscriptionFormFor.subscriptionStatus ?? "TRIAL"}</b>
+              </p>
+            </div>
+            <button type="button" className="btn-ghost text-xs" onClick={() => setSubscriptionFormFor(null)}>
+              {tc("cancel")}
+            </button>
+          </div>
+          <div className="form-grid mt-4">
+            <label>
+              <span className="label">{t("status")}</span>
+              <select name="status" className="select" defaultValue={subscriptionFormFor.subscriptionStatus ?? "ACTIVE"}>
+                <option value="TRIAL">{t("subStatus_TRIAL")}</option>
+                <option value="ACTIVE">{t("subStatus_ACTIVE")}</option>
+                <option value="PAST_DUE">{t("subStatus_PAST_DUE")}</option>
+                <option value="CANCELLED">{t("subStatus_CANCELLED")}</option>
+              </select>
+            </label>
+            <label>
+              <span className="label">{t("plan")}</span>
+              <select name="planId" className="select" defaultValue={subscriptionFormFor.planId ?? "PRO"}>
+                {PLANS.map((plan) => (
+                  <option key={plan} value={plan}>{plan}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="label">{t("paidUntil")}</span>
+              <input
+                name="currentPeriodEnd"
+                type="date"
+                className="input"
+                defaultValue={subscriptionFormFor.periodEnd ? subscriptionFormFor.periodEnd.slice(0, 10) : todayIso()}
+              />
+            </label>
+            <label>
+              <span className="label">{t("monthlyFee")}</span>
+              <input
+                name="monthlyFee"
+                type="text"
+                className="input font-mono"
+                defaultValue={subscriptionFormFor.monthlyFee ?? ""}
+                placeholder="0.00"
+              />
+            </label>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setSubscriptionFormFor(null)}>
+              {tc("cancel")}
+            </button>
+            <button type="submit" className="btn-primary" disabled={busy === "set-subscription"}>
+              {busy === "set-subscription" ? t("saving") : t("saveChanges")}
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard tone="blue" label={t("totalCompanies")} value={totals.companies} />
         <StatCard tone="emerald" label={t("activeCompanies")} value={totals.active} />
@@ -645,6 +817,28 @@ export default function AdminPage() {
                           </button>
                           <button
                             type="button"
+                            className="btn-ghost text-xs text-indigo-700"
+                            onClick={() => {
+                              setSubscriptionFormFor(company);
+                              setEditCompanyFor(null);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                          >
+                            {t("changeSubscription")}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs text-slate-700"
+                            onClick={() => {
+                              setEditCompanyFor(company);
+                              setSubscriptionFormFor(null);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                          >
+                            {t("editCompany")}
+                          </button>
+                          <button
+                            type="button"
                             className="btn-ghost text-xs"
                             onClick={() => {
                               setCompanyFilter(company.id);
@@ -656,7 +850,7 @@ export default function AdminPage() {
                           {company.status === "ACTIVE" ? (
                             <button
                               type="button"
-                              className="btn-ghost text-xs text-red-600"
+                              className="btn-ghost text-xs text-amber-600"
                               disabled={busy === `status-${company.id}`}
                               onClick={() => changeStatus(company, "SUSPENDED")}
                             >
@@ -672,6 +866,14 @@ export default function AdminPage() {
                               {t("activate")}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs font-semibold text-red-600 hover:bg-red-50"
+                            disabled={busy === `delete-company-${company.id}`}
+                            onClick={() => deleteCompany(company)}
+                          >
+                            {t("delete")}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -727,9 +929,16 @@ export default function AdminPage() {
                   {filteredUsers.map((user) => (
                     <tr key={user.id}>
                       <td>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {user.fullName}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {user.fullName}
+                          </p>
+                          {user.isSuperAdmin && (
+                            <span className="badge bg-purple-100 text-[10px] font-bold text-purple-800">
+                              {t("superAdmin")}
+                            </span>
+                          )}
+                        </div>
                         <p className="font-mono text-[11px] text-slate-500">
                           {user.phone ?? <span className="text-red-500">{t("noPhone")}</span>}
                         </p>
@@ -784,25 +993,41 @@ export default function AdminPage() {
                           >
                             {t("resetPassword")}
                           </button>
+                          <button
+                            type="button"
+                            className={`btn-ghost text-xs ${user.isSuperAdmin ? "font-medium text-purple-700" : "text-slate-600"}`}
+                            disabled={busy === `superadmin-${user.id}`}
+                            onClick={() => toggleSuperAdmin(user)}
+                          >
+                            {user.isSuperAdmin ? t("revokeSuperAdmin") : t("grantSuperAdmin")}
+                          </button>
                           {user.isActive ? (
-                              <button
-                                type="button"
-                                className="btn-ghost text-xs text-red-600"
-                                disabled={busy === `user-${user.id}`}
-                                onClick={() => updateUser(user, { isActive: false })}
-                              >
-                                {t("block")}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn-ghost text-xs text-emerald-700"
-                                disabled={busy === `user-${user.id}`}
-                                onClick={() => updateUser(user, { isActive: true })}
-                              >
-                                {t("unblock")}
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="btn-ghost text-xs text-amber-600"
+                              disabled={busy === `user-${user.id}`}
+                              onClick={() => updateUser(user, { isActive: false })}
+                            >
+                              {t("block")}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-ghost text-xs text-emerald-700"
+                              disabled={busy === `user-${user.id}`}
+                              onClick={() => updateUser(user, { isActive: true })}
+                            >
+                              {t("unblock")}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs font-semibold text-red-600 hover:bg-red-50"
+                            disabled={busy === `delete-user-${user.id}`}
+                            onClick={() => deleteUser(user)}
+                          >
+                            {t("delete")}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -833,6 +1058,7 @@ export default function AdminPage() {
                     <th>{t("plan")}</th>
                     <th>{t("amount")}</th>
                     <th>{t("signedAt")}</th>
+                    <th>{tc("actions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -848,6 +1074,16 @@ export default function AdminPage() {
                         {formatMoney(license.amount)} / {t("perMonth")}
                       </td>
                       <td className="text-xs">{formatDate(license.signedAt)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-ghost text-xs font-semibold text-red-600 hover:bg-red-50"
+                          disabled={busy === `delete-license-${license.id}`}
+                          onClick={() => deleteLicense(license)}
+                        >
+                          {t("deleteLicense")}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

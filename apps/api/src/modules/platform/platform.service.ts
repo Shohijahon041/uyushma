@@ -17,6 +17,8 @@ import type {
   PlatformCreateCompanyDto,
   PlatformCreateUserDto,
   PlatformResetPasswordDto,
+  PlatformSetSubscriptionDto,
+  PlatformUpdateCompanyDto,
   PlatformUpdateUserDto,
   RecordSubscriptionPaymentDto,
 } from "./dto/platform.dto";
@@ -94,6 +96,7 @@ interface UserRow {
   phone: string | null;
   role: UserRole;
   is_active: boolean;
+  is_super_admin: boolean;
   two_factor_enabled: boolean;
   last_login_at: Date | null;
   created_at: Date;
@@ -262,7 +265,13 @@ export class PlatformService {
   async users(actor: AuthenticatedUser) {
     this.assertSuperAdmin(actor);
     const rows = await this.prisma.$queryRaw<UserRow[]>`
-      SELECT * FROM app_platform_users()
+      SELECT u.id, u."tenantId" AS tenant_id, c.name AS company_name, c.slug AS company_slug,
+             u."fullName" AS full_name, u.phone, u.role::text, u."isActive" AS is_active,
+             u."isSuperAdmin" AS is_super_admin, u."twoFactorEnabled" AS two_factor_enabled,
+             u."lastLoginAt" AS last_login_at, u."createdAt" AS created_at
+      FROM "User" u
+      JOIN "Company" c ON c.id = u."tenantId"
+      ORDER BY c.name, u."fullName"
     `;
     return {
       items: rows.map((row) => ({
@@ -274,6 +283,7 @@ export class PlatformService {
         phone: row.phone,
         role: row.role,
         isActive: row.is_active,
+        isSuperAdmin: row.is_super_admin ?? false,
         twoFactorEnabled: row.two_factor_enabled,
         lastLoginAt: row.last_login_at,
         createdAt: row.created_at,
@@ -403,11 +413,21 @@ export class PlatformService {
     if (userId === actor.userId && dto.role && dto.role !== actor.role) {
       throw new BadRequestException("O'z rolingizni o'zgartira olmaysiz");
     }
+    if (userId === actor.userId && dto.isSuperAdmin === false) {
+      throw new BadRequestException("O'zingizdan super admin huquqini olib tashlay olmaysiz");
+    }
     try {
       return await this.tenantPrisma.withTenant(companyId, async (tx) => {
         await this.clientCompany(tx, companyId);
         const target = await tx.user.findFirst({ where: { id: userId } });
         if (!target) throw new NotFoundException("Foydalanuvchi topilmadi");
+
+        if (dto.isSuperAdmin === false && target.isSuperAdmin) {
+          const count = await tx.user.count({ where: { isSuperAdmin: true, isActive: true } });
+          if (count <= 1) {
+            throw new BadRequestException("Tizimda kamida bitta faol super admin qolishi shart");
+          }
+        }
 
         const user = await tx.user.update({
           where: { id: userId },
@@ -416,6 +436,7 @@ export class PlatformService {
             ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
             ...(dto.role !== undefined ? { role: dto.role } : {}),
             ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+            ...(dto.isSuperAdmin !== undefined ? { isSuperAdmin: dto.isSuperAdmin } : {}),
           },
           select: USER_SELECT,
         });
@@ -706,6 +727,296 @@ export class PlatformService {
           amount: invoice.amount.toFixed(2),
         })),
       };
+    });
+  }
+
+  async updateCompany(
+    actor: AuthenticatedUser,
+    companyId: string,
+    dto: PlatformUpdateCompanyDto,
+    ip: string | null,
+  ) {
+    this.assertSuperAdmin(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const company = await this.clientCompany(tx, companyId);
+
+      const updateData: Prisma.CompanyUpdateInput = {};
+      if (dto.name !== undefined) updateData.name = dto.name.trim();
+      if (dto.slug !== undefined && dto.slug !== company.slug) {
+        const slug = slugify(dto.slug);
+        const existing = await tx.company.findFirst({ where: { slug, NOT: { id: companyId } } });
+        if (existing) throw new ConflictException("Ushbu identifikator band");
+        updateData.slug = slug;
+      }
+      if (dto.paymentCardNumber !== undefined) updateData.paymentCardNumber = dto.paymentCardNumber;
+      if (dto.paymentCardHolder !== undefined) updateData.paymentCardHolder = dto.paymentCardHolder;
+      if (dto.paymentCardBank !== undefined) updateData.paymentCardBank = dto.paymentCardBank;
+      if (dto.paymentInstructions !== undefined) updateData.paymentInstructions = dto.paymentInstructions;
+
+      const updated = await tx.company.update({
+        where: { id: companyId },
+        data: updateData,
+      });
+
+      await this.recordAudit(tx, actor, {
+        tenantId: companyId,
+        actorUserId: actor.userId,
+        action: "platform.update_company",
+        entityType: "Company",
+        entityId: companyId,
+        metadata: { old: { name: company.name, slug: company.slug }, updated: { ...dto } as Prisma.InputJsonObject },
+        ip,
+      });
+
+      return updated;
+    });
+  }
+
+  async deleteCompany(
+    actor: AuthenticatedUser,
+    companyId: string,
+    ip: string | null,
+  ) {
+    this.assertSuperAdmin(actor);
+    if (companyId === actor.tenantId) {
+      throw new BadRequestException("Super admin o'zining boshqaruv platforma korxonasini o'chira olmaydi");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const company = await tx.company.findUnique({
+        where: { id: companyId },
+      });
+      if (!company || company.isPlatform) {
+        throw new NotFoundException("Kompaniya topilmadi yoki uni o'chirish mumkin emas");
+      }
+
+      // 1. Tashqi integratsiya va keshlar
+      await tx.externalSyncRun.deleteMany({ where: { tenantId: companyId } });
+      await tx.externalRecord.deleteMany({ where: { tenantId: companyId } });
+      await tx.externalVehicle.deleteMany({ where: { tenantId: companyId } });
+      await tx.externalConnection.deleteMany({ where: { tenantId: companyId } });
+
+      // 2. Haydovchilar va avtopark
+      await tx.paymentSubmission.deleteMany({ where: { tenantId: companyId } });
+      await tx.driverPayment.deleteMany({ where: { tenantId: companyId } });
+      await tx.vehicleMonthlyPlan.deleteMany({ where: { tenantId: companyId } });
+      await tx.vehicleAssignment.deleteMany({ where: { tenantId: companyId } });
+      await tx.driver.deleteMany({ where: { tenantId: companyId } });
+
+      // 3. To'lovlar, shartnomalar, tariflar
+      await tx.paymentRefund.deleteMany({ where: { tenantId: companyId } });
+      await tx.paymentReconciliation.deleteMany({ where: { tenantId: companyId } });
+      await tx.paymentProviderTransaction.deleteMany({ where: { tenantId: companyId } });
+      await tx.paymentProviderAccount.deleteMany({ where: { tenantId: companyId } });
+      await tx.paymentWebhookEvent.deleteMany({ where: { tenantId: companyId } });
+      await tx.payment.deleteMany({ where: { tenantId: companyId } });
+      await tx.contract.deleteMany({ where: { tenantId: companyId } });
+      await tx.tariffRule.deleteMany({ where: { tenantId: companyId } });
+      await tx.tariff.deleteMany({ where: { tenantId: companyId } });
+      await tx.vehicle.deleteMany({ where: { tenantId: companyId } });
+      await tx.route.deleteMany({ where: { tenantId: companyId } });
+
+      // 4. Obuna va litsenziyalar
+      await tx.subscriptionInvoice.deleteMany({ where: { tenantId: companyId } });
+      await tx.licenseContract.deleteMany({ where: { tenantId: companyId } });
+      await tx.subscription.deleteMany({ where: { tenantId: companyId } });
+
+      // 5. Aloqa, hujjatlar va audit loglar
+      await tx.telegramLinkToken.deleteMany({ where: { tenantId: companyId } });
+      await tx.telegramAccount.deleteMany({ where: { tenantId: companyId } });
+      await tx.document.deleteMany({ where: { tenantId: companyId } });
+      await tx.notificationLog.deleteMany({ where: { tenantId: companyId } });
+      await tx.auditLog.deleteMany({ where: { tenantId: companyId } });
+
+      // 6. Foydalanuvchilar va seanslar
+      await tx.refreshToken.deleteMany({ where: { tenantId: companyId } });
+      await tx.passwordResetToken.deleteMany({ where: { tenantId: companyId } });
+      await tx.emailVerificationToken.deleteMany({ where: { tenantId: companyId } });
+      await tx.user.deleteMany({ where: { tenantId: companyId } });
+
+      // 7. Kompaniyani o'chirish
+      await tx.company.delete({ where: { id: companyId } });
+
+      await this.recordAudit(tx, actor, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: "platform.delete_company",
+        entityType: "Company",
+        entityId: companyId,
+        metadata: {
+          name: company.name,
+          slug: company.slug,
+        },
+        ip,
+      });
+
+      return { success: true };
+    });
+  }
+
+  async setSubscription(
+    actor: AuthenticatedUser,
+    companyId: string,
+    dto: PlatformSetSubscriptionDto,
+    ip: string | null,
+  ) {
+    this.assertSuperAdmin(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const company = await this.clientCompany(tx, companyId);
+      const sub = await tx.subscription.findFirst({ where: { tenantId: companyId } });
+      if (!sub) throw new NotFoundException("Obuna topilmadi");
+
+      const updateData: Prisma.SubscriptionUpdateInput = {};
+      if (dto.status) updateData.status = dto.status;
+      if (dto.planId) {
+        const plan = await tx.plan.findUnique({ where: { id: dto.planId } });
+        if (!plan) throw new BadRequestException("Reja topilmadi");
+        updateData.plan = { connect: { id: dto.planId } };
+      }
+      if (dto.currentPeriodEnd) {
+        updateData.currentPeriodEnd = new Date(dto.currentPeriodEnd);
+      }
+      if (dto.monthlyFee !== undefined) {
+        updateData.monthlyFee = dto.monthlyFee ? new Prisma.Decimal(dto.monthlyFee) : null;
+      }
+
+      const updated = await tx.subscription.update({
+        where: { id: sub.id },
+        data: updateData,
+        include: { plan: true },
+      });
+
+      await this.recordAudit(tx, actor, {
+        tenantId: companyId,
+        actorUserId: actor.userId,
+        action: "platform.update_subscription",
+        entityType: "Subscription",
+        entityId: sub.id,
+        metadata: { changes: { ...dto } as Prisma.InputJsonObject, companyName: company.name },
+        ip,
+      });
+
+      return updated;
+    });
+  }
+
+  async deleteUser(
+    actor: AuthenticatedUser,
+    companyId: string,
+    userId: string,
+    ip: string | null,
+  ) {
+    this.assertSuperAdmin(actor);
+    if (userId === actor.userId) {
+      throw new BadRequestException("O'z hisobingizni o'chira olmaysiz");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.user.findFirst({
+        where: { id: userId, tenantId: companyId },
+        include: { company: true },
+      });
+      if (!target) throw new NotFoundException("Foydalanuvchi topilmadi");
+
+      if (target.isSuperAdmin) {
+        const superAdminCount = await tx.user.count({ where: { isSuperAdmin: true, isActive: true } });
+        if (superAdminCount <= 1) {
+          throw new BadRequestException("Tizimdagi yagona faol super adminni o'chirib bo'lmaydi");
+        }
+      }
+
+      const [vehicleCount, contractCount] = await Promise.all([
+        tx.vehicle.count({ where: { ownerId: userId } }),
+        tx.contract.count({ where: { ownerId: userId, status: "ACTIVE" } }),
+      ]);
+      if (vehicleCount > 0 || contractCount > 0) {
+        throw new BadRequestException(
+          `Foydalanuvchini o'chirib bo'lmaydi: unga ${vehicleCount} ta avtomobil yoki ${contractCount} ta faol shartnoma biriktirilgan.`,
+        );
+      }
+
+      await tx.contract.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.payment.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.tariff.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.vehicleAssignment.updateMany({ where: { createdById: userId }, data: { createdById: null } });
+      await tx.driverPayment.updateMany({ where: { receivedById: userId }, data: { receivedById: null } });
+      await tx.paymentSubmission.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
+      await tx.document.updateMany({ where: { uploadedById: userId }, data: { uploadedById: actor.userId } });
+      await tx.auditLog.updateMany({ where: { actorUserId: userId }, data: { actorUserId: null } });
+
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.emailVerificationToken.deleteMany({ where: { userId } });
+      await tx.telegramAccount.deleteMany({ where: { userId } });
+      await tx.telegramLinkToken.deleteMany({ where: { userId } });
+
+      await tx.user.delete({ where: { id: userId } });
+
+      await this.recordAudit(tx, actor, {
+        tenantId: companyId,
+        actorUserId: actor.userId,
+        action: "platform.delete_user",
+        entityType: "User",
+        entityId: userId,
+        metadata: {
+          fullName: target.fullName,
+          phone: target.phone,
+          role: target.role,
+          companyName: target.company.name,
+        },
+        ip,
+      });
+
+      return { success: true };
+    });
+  }
+
+  async deleteLicense(
+    actor: AuthenticatedUser,
+    companyId: string,
+    licenseId: string,
+    ip: string | null,
+  ) {
+    this.assertSuperAdmin(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const license = await tx.licenseContract.findFirst({
+        where: { id: licenseId, tenantId: companyId },
+      });
+      if (!license) throw new NotFoundException("Litsenziya shartnomasi topilmadi");
+
+      await tx.licenseContract.delete({ where: { id: licenseId } });
+
+      const remainingLicense = await tx.licenseContract.findFirst({
+        where: { tenantId: companyId },
+        orderBy: { signedAt: "desc" },
+      });
+      if (remainingLicense) {
+        await tx.subscription.updateMany({
+          where: { tenantId: companyId },
+          data: { monthlyFee: remainingLicense.amount, planId: remainingLicense.planId },
+        });
+      } else {
+        await tx.subscription.updateMany({
+          where: { tenantId: companyId },
+          data: { monthlyFee: null },
+        });
+      }
+
+      await this.recordAudit(tx, actor, {
+        tenantId: companyId,
+        actorUserId: actor.userId,
+        action: "platform.delete_license",
+        entityType: "LicenseContract",
+        entityId: licenseId,
+        metadata: {
+          number: license.number,
+          planId: license.planId,
+          amount: license.amount.toFixed(2),
+        },
+        ip,
+      });
+
+      return { success: true };
     });
   }
 }

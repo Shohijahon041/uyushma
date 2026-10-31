@@ -214,4 +214,61 @@ export class UsersService {
     });
     return { user, password };
   }
+
+  async delete(actor: AuthenticatedUser, userId: string, ip: string | null) {
+    if (userId === actor.userId) {
+      throw new BadRequestException("O'z hisobingizni o'chira olmaysiz");
+    }
+    return this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
+      const target = await tx.user.findFirst({
+        where: { id: userId, tenantId: actor.tenantId },
+      });
+      if (!target) throw new NotFoundException("Foydalanuvchi topilmadi");
+      if (target.role === UserRole.OWNER && actor.role !== UserRole.OWNER && !actor.isSuperAdmin) {
+        throw new ForbiddenException("Faqat korxona egasi boshqa egasini o'chira oladi");
+      }
+      if (target.isSuperAdmin && !actor.isSuperAdmin) {
+        throw new ForbiddenException("Super admin hisobini faqat super admin o'chira oladi");
+      }
+
+      const [vehicleCount, contractCount] = await Promise.all([
+        tx.vehicle.count({ where: { ownerId: userId } }),
+        tx.contract.count({ where: { ownerId: userId, status: "ACTIVE" } }),
+      ]);
+      if (vehicleCount > 0 || contractCount > 0) {
+        throw new BadRequestException(
+          `Foydalanuvchini o'chirib bo'lmaydi: unga biriktirilgan ${vehicleCount} ta avtomobil yoki ${contractCount} ta faol shartnoma mavjud. Avval ularning egasini o'zgartiring.`,
+        );
+      }
+
+      await tx.contract.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.payment.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.tariff.updateMany({ where: { createdById: userId }, data: { createdById: actor.userId } });
+      await tx.vehicleAssignment.updateMany({ where: { createdById: userId }, data: { createdById: null } });
+      await tx.driverPayment.updateMany({ where: { receivedById: userId }, data: { receivedById: null } });
+      await tx.paymentSubmission.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
+      await tx.document.updateMany({ where: { uploadedById: userId }, data: { uploadedById: actor.userId } });
+      await tx.auditLog.updateMany({ where: { actorUserId: userId }, data: { actorUserId: null } });
+
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.emailVerificationToken.deleteMany({ where: { userId } });
+      await tx.telegramAccount.deleteMany({ where: { userId } });
+      await tx.telegramLinkToken.deleteMany({ where: { userId } });
+
+      await tx.user.delete({ where: { id: userId } });
+
+      await this.audit.record(tx, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: "user.delete",
+        entityType: "User",
+        entityId: userId,
+        metadata: { fullName: target.fullName, phone: target.phone, role: target.role },
+        ip,
+      });
+
+      return { success: true };
+    });
+  }
 }
