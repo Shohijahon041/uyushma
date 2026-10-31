@@ -228,3 +228,8 @@ body {
   border-color: rgb(16 185 129 / 0.35);
   color: #6ee7b7;
 }
+
+/* Next.js 15 dev indicator ('N' ikonkasi) */
+nextjs-portal {
+  display: none !important;
+}
