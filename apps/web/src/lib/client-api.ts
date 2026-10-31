@@ -31,7 +31,28 @@ async function parseError(response: Response): Promise<never> {
 
 const inFlightGets = new Map<string, Promise<unknown>>();
 const getCache = new Map<string, { data: unknown; expiresAt: number }>();
-const CACHE_TTL_MS = 3000; // 3 soniyalik kesh - takroriy va parallel so'rovlarni avtomatik birlashtiradi
+const CACHE_TTL_MS = 30_000; // 30 soniyalik xotira keshi — sahifalar o'rtasida takroriy so'rovlarni va kutishni oldini oladi
+
+export function getCachedApiData<T>(path: string): T | undefined {
+  const cleanPath = path.replace(/^\//, "");
+  const cached = getCache.get(cleanPath);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data as T;
+  }
+  if (cleanPath === "auth/me" && typeof window !== "undefined") {
+    try {
+      const stored = sessionStorage.getItem("uyushma_me");
+      if (stored) {
+        const parsed = JSON.parse(stored) as T;
+        getCache.set(cleanPath, { data: parsed, expiresAt: Date.now() + CACHE_TTL_MS });
+        return parsed;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
 
 export function invalidateApiCache(prefix?: string): void {
   if (!prefix) {
@@ -94,6 +115,13 @@ export async function apiRequest<T>(
 
     if (method === "GET") {
       getCache.set(cleanPath, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+      if (cleanPath === "auth/me" && typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("uyushma_me", JSON.stringify(data));
+        } catch {
+          // ignore
+        }
+      }
     }
     return data;
   };
@@ -148,6 +176,14 @@ export async function sessionVerifyTwoFactor(payload: {
 }
 
 export async function sessionLogout(): Promise<void> {
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.removeItem("uyushma_me");
+    } catch {
+      // ignore
+    }
+  }
+  invalidateApiCache();
   await fetch("/api/session/logout", {
     method: "POST",
     credentials: "same-origin",
