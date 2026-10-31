@@ -304,7 +304,7 @@ export class SubmissionsService {
   async approveSubmission(
     actor: AuthenticatedUser,
     id: string,
-    dto: ApproveSubmissionDto,
+    dto: ApproveSubmissionDto = {},
     ip: string | null,
   ) {
     return this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
@@ -312,7 +312,15 @@ export class SubmissionsService {
         where: { id },
         include: {
           driver: { select: { id: true, fullName: true, telegramChatId: true } },
-          vehicle: { select: { id: true, plateNumber: true, model: true, route: { select: { monthlyPlan: true } } } },
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              monthlyFee: true,
+              route: { select: { monthlyPlan: true } },
+            },
+          },
         },
       });
 
@@ -323,7 +331,9 @@ export class SubmissionsService {
 
       const now = new Date();
       const period = submission.periodStart;
-      const fee = effectiveMonthlyFee<Prisma.Decimal>(submission.vehicle as any);
+      const vehicleMonthlyFee = submission.vehicle?.monthlyFee ?? new Prisma.Decimal(0);
+      const routeMonthlyPlan = submission.vehicle?.route?.monthlyPlan ?? new Prisma.Decimal(0);
+      const fee = vehicleMonthlyFee.gt(0) ? vehicleMonthlyFee : routeMonthlyPlan;
 
       // Rejani tekshirish yoki yaratish
       let plan = await tx.vehicleMonthlyPlan.findFirst({

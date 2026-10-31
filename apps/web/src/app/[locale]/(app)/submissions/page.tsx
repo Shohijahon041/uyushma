@@ -42,6 +42,7 @@ export default function SubmissionsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Statistics calculation
@@ -55,6 +56,7 @@ export default function SubmissionsPage() {
 
   async function handleApprove() {
     if (!approveItem) return;
+    setModalError(null);
     setActionError(null);
     setActionSuccess(null);
     setBusy(true);
@@ -69,7 +71,9 @@ export default function SubmissionsPage() {
       if (inspectItem?.id === approveItem.id) setInspectItem(null);
       await reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : tc("error"));
+      const msg = err instanceof Error ? err.message : tc("error");
+      setModalError(msg);
+      setActionError(msg);
     } finally {
       setBusy(false);
     }
@@ -78,9 +82,10 @@ export default function SubmissionsPage() {
   async function handleReject() {
     if (!rejectItem) return;
     if (!rejectReason.trim()) {
-      setActionError("Iltimos, rad etish sababini yozing.");
+      setModalError("Iltimos, rad etish sababini yozing.");
       return;
     }
+    setModalError(null);
     setActionError(null);
     setActionSuccess(null);
     setBusy(true);
@@ -95,7 +100,9 @@ export default function SubmissionsPage() {
       if (inspectItem?.id === rejectItem.id) setInspectItem(null);
       await reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : tc("error"));
+      const msg = err instanceof Error ? err.message : tc("error");
+      setModalError(msg);
+      setActionError(msg);
     } finally {
       setBusy(false);
     }
@@ -547,6 +554,41 @@ export default function SubmissionsPage() {
               Mablag&apos; hisobingizga kelib tushganini tekshirganingizdan so&apos;ng tasdiqlang.
             </p>
 
+            {modalError && (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                ⚠️ {modalError}
+              </div>
+            )}
+
+            {((approveItem as any).receiptFileUrl ?? approveItem.receiptUrl) && (
+              <div className="mt-3 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/50 p-2.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={(approveItem as any).receiptFileUrl ?? approveItem.receiptUrl}
+                  alt="Chek"
+                  className="h-12 w-12 rounded-lg object-cover border border-slate-200"
+                />
+                <div className="flex-1 min-w-0 text-xs">
+                  <div className="font-medium text-slate-800 truncate">
+                    To&apos;lov cheki ilova qilingan
+                  </div>
+                  {approveItem.transactionNumber && (
+                    <div className="text-slate-500 font-mono text-[11px] truncate">
+                      Tranzaksiya: {approveItem.transactionNumber}
+                    </div>
+                  )}
+                </div>
+                <a
+                  href={(approveItem as any).receiptFileUrl ?? approveItem.receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-brand-600 hover:underline shrink-0"
+                >
+                  Katta ko&apos;rish ↗
+                </a>
+              </div>
+            )}
+
             <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-xs space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-500">Haydovchi:</span>
@@ -562,7 +604,7 @@ export default function SubmissionsPage() {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Avtomobil:</span>
                   <span className="font-medium text-slate-900">
-                    {approveItem.vehicle.plateNumber}
+                    {approveItem.vehicle.plateNumber} · {approveItem.vehicle.model}
                   </span>
                 </div>
               )}
@@ -586,7 +628,10 @@ export default function SubmissionsPage() {
               <button
                 type="button"
                 className="btn-secondary text-xs"
-                onClick={() => setApproveItem(null)}
+                onClick={() => {
+                  setApproveItem(null);
+                  setModalError(null);
+                }}
                 disabled={busy}
               >
                 {tc("cancel")}
@@ -613,6 +658,12 @@ export default function SubmissionsPage() {
               Rad etish sababini kiriting. Ushbu sabab haydovchining Telegram botiga yuboriladi.
             </p>
 
+            {modalError && (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                ⚠️ {modalError}
+              </div>
+            )}
+
             <div className="mt-4">
               <label className="label" htmlFor="reject-reason">
                 Rad etish sababi
@@ -632,7 +683,10 @@ export default function SubmissionsPage() {
               <button
                 type="button"
                 className="btn-secondary text-xs"
-                onClick={() => setRejectItem(null)}
+                onClick={() => {
+                  setRejectItem(null);
+                  setModalError(null);
+                }}
                 disabled={busy}
               >
                 {tc("cancel")}
