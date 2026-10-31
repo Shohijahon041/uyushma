@@ -227,7 +227,10 @@ export class OneIdBrowserService {
       };
     }
 
-    const ssoUrl = ONEID_SSO_URLS[provider] ?? ONEID_SSO_URLS.ETENDER;
+    const ssoUrl =
+      provider === "IJARA"
+        ? "https://ijara.soliq.uz/login"
+        : ONEID_SSO_URLS[provider] ?? ONEID_SSO_URLS.ETENDER;
 
     // Asinxron holda brauzerni ishga tushirish
     void (async () => {
@@ -249,29 +252,96 @@ export class OneIdBrowserService {
 
         let resolved = false;
 
-        page.on("framenavigated", async (frame) => {
+        const completeWithToken = async (captured: string, source: string) => {
+          if (resolved) return;
+          resolved = true;
+          this.logger.log(`Interactive ${provider} token/kod tutib olindi (${source})!`);
+          try {
+            await onCodeReceived(captured);
+          } catch (inner) {
+            this.logger.error(`onCodeReceived xatosi: ${inner}`);
+          }
+          setTimeout(() => {
+            browser?.close().catch(() => undefined);
+          }, 1500);
+        };
+
+        // 1. So'rov sarlavhalaridan Bearer tokenni tutish (ayniqsa Soliq Ijara uchun)
+        page.on("request", (req) => {
+          if (resolved) return;
+          const auth = req.headers()["authorization"];
+          if (auth && auth.toLowerCase().startsWith("bearer eyj")) {
+            const clean = auth.replace(/^Bearer\s+/i, "").trim();
+            void completeWithToken(clean, "Request Authorization Header");
+          }
+        });
+
+        // 2. JSON javoblaridan tokenni tutish
+        page.on("response", async (res) => {
+          if (resolved) return;
+          try {
+            const ct = res.headers()["content-type"] || "";
+            if (ct.includes("application/json")) {
+              const text = await res.text().catch(() => "");
+              if (text.includes("eyJ")) {
+                const match = text.match(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/);
+                if (match) {
+                  void completeWithToken(match[0], "JSON Response");
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+        });
+
+        // 3. Navigatsiya orqali OneID kodini tutish
+        page.on("framenavigated", (frame) => {
           if (resolved) return;
           const u = frame.url();
           const match = u.match(/[?&](?:one_code|code)=([^&#\s]+)/i);
           if (match && match[1]) {
-            resolved = true;
             const code = decodeURIComponent(match[1]).trim();
-            this.logger.log(`Interactive OneID kod tutib olindi: ${code.slice(0, 8)}...`);
-            try {
-              await onCodeReceived(code);
-            } catch (inner) {
-              this.logger.error(`onCodeReceived xatosi: ${inner}`);
-            }
-            setTimeout(() => {
-              browser?.close().catch(() => undefined);
-            }, 1000);
+            void completeWithToken(code, "OAuth Redirect");
           }
         });
+
+        // 4. Soliq Ijara uchun LocalStorage-ni vaqti-vaqti bilan tekshirib turish
+        let storageTimer: NodeJS.Timeout | null = null;
+        if (provider === "IJARA") {
+          storageTimer = setInterval(async () => {
+            if (resolved) {
+              if (storageTimer) clearInterval(storageTimer);
+              return;
+            }
+            try {
+              const val = await page.evaluate(() => {
+                const gStorage = (globalThis as unknown as { localStorage?: { getItem(k: string): string | null } }).localStorage;
+                if (!gStorage) return null;
+                const t = gStorage.getItem("token") || gStorage.getItem("access_token");
+                if (typeof t === "string" && t.startsWith("eyJ")) return t;
+                const root = gStorage.getItem("persist:root");
+                if (typeof root === "string") {
+                  const m = root.match(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/);
+                  if (m) return m[0];
+                }
+                return null;
+              });
+              if (val) {
+                if (storageTimer) clearInterval(storageTimer);
+                void completeWithToken(val, "LocalStorage");
+              }
+            } catch {
+              // ignore
+            }
+          }, 1500);
+        }
 
         await page.goto(ssoUrl, { waitUntil: "domcontentloaded" });
 
         // 2 daqiqa kutish, keyin avtomatik yopish
         setTimeout(() => {
+          if (storageTimer) clearInterval(storageTimer);
           if (!resolved) {
             browser?.close().catch(() => undefined);
           }

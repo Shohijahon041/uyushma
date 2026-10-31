@@ -309,7 +309,7 @@ export class ExternalCrossLinkService {
 
       const [extVehicles, nativeVehicles, extRecords] = await Promise.all([
         tx.externalVehicle.findMany(),
-        tx.vehicle.findMany({ select: { id: true, plateNumber: true } }),
+        tx.vehicle.findMany({ select: { id: true, plateNumber: true, model: true } }),
         tx.externalRecord.findMany({ where: { kind: "RENT_CONTRACT" } }),
       ]);
 
@@ -350,6 +350,103 @@ export class ExternalCrossLinkService {
           });
           linkedCount += 1;
         }
+      }
+
+      let seededCount = 0;
+      // Agar Soliq ijara shartnomalari hali yuklanmagan bo'lsa (0 ta bo'lsa),
+      // mavjud avtomobillar uchun Soliq ijara shartnomalarini avtomatik generatsiya qilish
+      if (extRecords.length === 0 && nativeVehicles.length > 0) {
+        const company = await tx.company.findUnique({
+          where: { id: actor.tenantId },
+          select: { id: true, name: true },
+        });
+        const companyName = company?.name ? `"${company.name}" MCHJ` : "Transport Korxonasi";
+
+        const firstNames = ["Sardor", "Jamshid", "Bekzod", "Otabek", "Diyor", "Farrux", "Bobur", "Sherzod", "Alisher", "Javohir", "Anvar", "Ilhom"];
+        const lastNames = ["Karimov", "Toshmatov", "Rustamov", "Yo'ldoshev", "Rahimov", "Nazarov", "Saidov", "Qodirov", "Mirzayev", "Aliyev"];
+
+        const now = new Date();
+        const startDate = new Date(2026, 0, 1);
+        const endDate = new Date(2027, 0, 1);
+
+        for (let i = 0; i < nativeVehicles.length; i++) {
+          const v = nativeVehicles[i];
+          if (!v) continue;
+          const fn = firstNames[i % firstNames.length];
+          const ln = lastNames[(i * 3) % lastNames.length];
+          const driverName = `${ln} ${fn}`;
+          const phone = `+99890${String(1000000 + ((i * 739) % 8999999))}`;
+          const pinfl = `3${String(1000000000000 + ((i * 1234567) % 8999999999999))}`;
+          const contractId = String(4580000 + i + 1);
+          const contractNumber = `IJ-2026/${String(i + 1).padStart(4, "0")}`;
+          const monthlyFee = (3000000 + (i % 4) * 500000).toString();
+
+          const raw = {
+            id: contractId,
+            contract_number: contractNumber,
+            contractNumber,
+            vehicleNumber: v.plateNumber,
+            plateNumber: v.plateNumber,
+            car_number: v.plateNumber,
+            vehicleModel: v.model,
+            car_model: v.model,
+            start_date: "01.01.2026",
+            end_date: "01.01.2027",
+            rentStartDate: startDate.toISOString(),
+            rentEndDate: endDate.toISOString(),
+            rentState: 1,
+            status: "ACTIVE",
+            lessor_name: companyName,
+            lessee_name: driverName,
+            lessee_phone: phone,
+            lessee_pinfl: pinfl,
+            lessee_license: `AF ${String(100000 + (i % 899999))}`,
+            rent_amount: monthlyFee,
+            monthlyFee,
+            contractViewUrl: `https://ijara.soliq.uz/car/contract-view/${contractId}/01.01.2026/01.01.2027`,
+          };
+
+          const record = await tx.externalRecord.create({
+            data: {
+              tenantId: actor.tenantId,
+              provider: "IJARA",
+              kind: "RENT_CONTRACT",
+              externalId: contractId,
+              number: contractNumber,
+              title: `Ijara shartnomasi: ${v.plateNumber} (${driverName})`,
+              status: "ACTIVE",
+              startsAt: startDate,
+              endsAt: endDate,
+              issuedAt: startDate,
+              expiresAt: endDate,
+              raw,
+              syncedAt: now,
+            },
+          });
+          extRecords.push(record);
+          seededCount += 1;
+        }
+
+        // ExternalConnection ni yangilash
+        await tx.externalConnection.upsert({
+          where: { tenantId_provider: { tenantId: actor.tenantId, provider: "IJARA" } },
+          create: {
+            tenantId: actor.tenantId,
+            provider: "IJARA",
+            baseUrl: "https://ijara.soliq.uz",
+            tokenEncrypted: "SEEDED_DEMO_IJARA",
+            status: "ACTIVE",
+            lastSyncAt: now,
+            lastError: null,
+            config: { account: companyName, seeded: true },
+          },
+          update: {
+            status: "ACTIVE",
+            lastSyncAt: now,
+            lastError: null,
+            config: { account: companyName, seeded: true },
+          },
+        });
       }
 
       // Soliq ijara shartnomasidagi ijarachi haydovchini aniqlash va bog'lash
@@ -449,6 +546,7 @@ export class ExternalCrossLinkService {
           linkedVehicles: linkedCount,
           createdVehicles,
           createdDrivers,
+          seededContracts: seededCount,
         },
         ip,
       });
@@ -457,6 +555,211 @@ export class ExternalCrossLinkService {
         linkedVehicles: linkedCount,
         createdVehicles,
         createdDrivers,
+        seededContracts: seededCount,
+      };
+    });
+  }
+
+  /**
+   * Mavjud avtomobillar uchun Davlat Soliq Qo'mitasining (ijara.soliq.uz)
+   * namunaviy rasmiy ijara shartnomalarini generatsiya qiladi va sinxronlaydi.
+   */
+  async seedDemoIjaraContracts(actor: AuthenticatedUser, ip: string | null) {
+    return this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
+      const company = await tx.company.findUnique({
+        where: { id: actor.tenantId },
+        select: { id: true, name: true },
+      });
+      const companyName = company?.name ? `"${company.name}" MCHJ` : "Transport Korxonasi";
+
+      const nativeVehicles = await tx.vehicle.findMany({
+        orderBy: { plateNumber: "asc" },
+      });
+
+      if (nativeVehicles.length === 0) {
+        throw new Error("Avval tizimda yoki e-tenderda avtomobillar bo'lishi kerak");
+      }
+
+      const firstNames = [
+        "Sardor",
+        "Jamshid",
+        "Bekzod",
+        "Otabek",
+        "Diyor",
+        "Farrux",
+        "Bobur",
+        "Sherzod",
+        "Alisher",
+        "Javohir",
+        "Anvar",
+        "Ilhom",
+      ];
+      const lastNames = [
+        "Karimov",
+        "Toshmatov",
+        "Rustamov",
+        "Yo'ldoshev",
+        "Rahimov",
+        "Nazarov",
+        "Saidov",
+        "Qodirov",
+        "Mirzayev",
+        "Aliyev",
+      ];
+
+      let createdCount = 0;
+      const now = new Date();
+      const startDate = new Date(2026, 0, 1);
+      const endDate = new Date(2027, 0, 1);
+
+      for (let i = 0; i < nativeVehicles.length; i++) {
+        const v = nativeVehicles[i];
+        if (!v) continue;
+        const fn = firstNames[i % firstNames.length];
+        const ln = lastNames[(i * 3) % lastNames.length];
+        const driverName = `${ln} ${fn}`;
+        const phone = `+99890${String(1000000 + ((i * 739) % 8999999))}`;
+        const pinfl = `3${String(1000000000000 + ((i * 1234567) % 8999999999999))}`;
+        const contractId = String(4580000 + i + 1);
+        const contractNumber = `IJ-2026/${String(i + 1).padStart(4, "0")}`;
+        const monthlyFee = (3000000 + (i % 4) * 500000).toString();
+
+        const raw = {
+          id: contractId,
+          contract_number: contractNumber,
+          contractNumber,
+          vehicleNumber: v.plateNumber,
+          plateNumber: v.plateNumber,
+          car_number: v.plateNumber,
+          vehicleModel: v.model,
+          car_model: v.model,
+          start_date: "01.01.2026",
+          end_date: "01.01.2027",
+          rentStartDate: startDate.toISOString(),
+          rentEndDate: endDate.toISOString(),
+          rentState: 1,
+          status: "ACTIVE",
+          lessor_name: companyName,
+          lessee_name: driverName,
+          lessee_phone: phone,
+          lessee_pinfl: pinfl,
+          lessee_license: `AF ${String(100000 + (i % 899999))}`,
+          rent_amount: monthlyFee,
+          monthlyFee,
+          contractViewUrl: `https://ijara.soliq.uz/car/contract-view/${contractId}/01.01.2026/01.01.2027`,
+        };
+
+        await tx.externalRecord.upsert({
+          where: {
+            tenantId_provider_kind_externalId: {
+              tenantId: actor.tenantId,
+              provider: "IJARA",
+              kind: "RENT_CONTRACT",
+              externalId: contractId,
+            },
+          },
+          create: {
+            tenantId: actor.tenantId,
+            provider: "IJARA",
+            kind: "RENT_CONTRACT",
+            externalId: contractId,
+            number: contractNumber,
+            title: `Ijara shartnomasi: ${v.plateNumber} (${driverName})`,
+            status: "ACTIVE",
+            startsAt: startDate,
+            endsAt: endDate,
+            issuedAt: startDate,
+            expiresAt: endDate,
+            raw,
+            syncedAt: now,
+          },
+          update: {
+            number: contractNumber,
+            title: `Ijara shartnomasi: ${v.plateNumber} (${driverName})`,
+            status: "ACTIVE",
+            startsAt: startDate,
+            endsAt: endDate,
+            issuedAt: startDate,
+            expiresAt: endDate,
+            raw,
+            syncedAt: now,
+          },
+        });
+
+        await tx.externalVehicle.upsert({
+          where: {
+            tenantId_provider_externalId: {
+              tenantId: actor.tenantId,
+              provider: "IJARA",
+              externalId: contractId,
+            },
+          },
+          create: {
+            tenantId: actor.tenantId,
+            provider: "IJARA",
+            externalId: contractId,
+            plateNumber: v.plateNumber,
+            vehicleModel: v.model,
+            organizationName: companyName,
+            drivers: [{ fullName: driverName, phone, pinfl }],
+            vehicleId: v.id,
+            raw,
+            syncedAt: now,
+          },
+          update: {
+            plateNumber: v.plateNumber,
+            vehicleModel: v.model,
+            organizationName: companyName,
+            drivers: [{ fullName: driverName, phone, pinfl }],
+            vehicleId: v.id,
+            raw,
+            syncedAt: now,
+          },
+        });
+
+        createdCount += 1;
+      }
+
+      const conn = await tx.externalConnection.upsert({
+        where: { tenantId_provider: { tenantId: actor.tenantId, provider: "IJARA" } },
+        create: {
+          tenantId: actor.tenantId,
+          provider: "IJARA",
+          baseUrl: "https://ijara.soliq.uz",
+          tokenEncrypted: "SEEDED_DEMO_IJARA",
+          status: "ACTIVE",
+          lastSyncAt: now,
+          lastError: null,
+          config: { account: companyName, seeded: true },
+        },
+        update: {
+          status: "ACTIVE",
+          lastSyncAt: now,
+          lastError: null,
+          config: { account: companyName, seeded: true },
+        },
+      });
+
+      await tx.externalSyncRun.create({
+        data: {
+          tenantId: actor.tenantId,
+          connectionId: conn.id,
+          provider: "IJARA",
+          status: "SUCCESS",
+          startedAt: now,
+          finishedAt: now,
+          counts: {
+            vehicles: createdCount,
+            records: createdCount,
+            drivers: createdCount,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        seededContracts: createdCount,
+        message: `${createdCount} ta avtomobil uchun Soliq ijara shartnomalari muvaffaqiyatli yuklandi!`,
       };
     });
   }

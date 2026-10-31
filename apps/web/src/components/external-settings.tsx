@@ -348,14 +348,41 @@ function ProviderCard({
     }
   }
 
-  const isConnected = connection?.status === "ACTIVE";
+  async function handleSeedDemoIjara() {
+    setError(null);
+    setMessage(null);
+    setBusy("save");
+    try {
+      const res = await apiRequest<{ success: boolean; seededContracts: number; message: string }>(
+        "/registry/cross-link/seed-demo-ijara",
+        { method: "POST" },
+      );
+      setMessage(res.message);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const isAuthError = !!(
+    connection?.status === "INVALID" ||
+    (connection?.lastError &&
+      (connection.lastError.includes("401") ||
+        connection.lastError.includes("muddati tugagan") ||
+        connection.lastError.includes("yaroqsiz")))
+  );
+  const isConnected = connection?.status === "ACTIVE" && !isAuthError;
 
   return (
     <div
       className={`card flex flex-col justify-between border transition-all ${
         isConnected
           ? "border-emerald-200 bg-white shadow-sm ring-1 ring-emerald-100"
-          : "border-slate-200 bg-white shadow-sm"
+          : isAuthError
+            ? "border-rose-200 bg-white shadow-sm ring-1 ring-rose-100"
+            : "border-slate-200 bg-white shadow-sm"
       }`}
     >
       <div className="card-body">
@@ -383,14 +410,14 @@ function ProviderCard({
           </div>
           <div className="shrink-0">
             <StatusBadge
-              status={badgeStatus(connection?.status ?? "DISABLED")}
-              label={t(
-                isConnected
-                  ? "connected"
-                  : connection?.status === "INVALID"
-                    ? "tokenInvalid"
-                    : "disconnected",
-              )}
+              status={isAuthError ? "FAILED" : badgeStatus(connection?.status ?? "DISABLED")}
+              label={
+                isAuthError
+                  ? "Token muddati tugagan"
+                  : isConnected
+                    ? t("connected")
+                    : t("disconnected")
+              }
             />
           </div>
         </div>
@@ -449,25 +476,50 @@ function ProviderCard({
           </div>
         )}
 
-        {/* IJARA uchun E-IMZO maxsus bloki */}
+        {/* IJARA uchun ulanish va demo yuklash bloki */}
         {meta.key === "IJARA" && (
-          <div className="mt-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-3.5">
-            <div className="flex items-center justify-between gap-3">
+          <div className="mt-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-3.5 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold text-blue-950">🪪 E-IMZO orqali avtomatik ulanish</p>
+                <p className="text-xs font-bold text-blue-950">📑 Soliq Ijara (ijara.soliq.uz) Integratsiyasi</p>
                 <p className="mt-0.5 text-[11px] text-blue-700 leading-tight">
-                  Davlat Soliq Qo'mitasi E-IMZO kaliti bilan bitta bosishda ulaning
+                  Davlat Soliq Qo&apos;mitasidan avtomobil ijara shartnomalari, to&apos;lovlar va haydovchilar
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn-primary shrink-0 bg-blue-600 hover:bg-blue-700 px-3.5 py-1.5 text-xs font-semibold shadow-sm"
-                onClick={() => void handleEImzoConnect()}
-                disabled={busy !== null}
-              >
-                {busy === "eimzo" ? "Ulanmoqda..." : "E-IMZO bilan kirish"}
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  className="btn-primary bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 text-xs font-semibold shadow-xs inline-flex items-center gap-1"
+                  onClick={() => void handleLaunchInteractiveBrowser()}
+                  disabled={busy !== null}
+                  title="Playwright orqali ijara.soliq.uz ni Chrome/Edge brauzerida ochadi va sessiyani avtomatik ulaydi"
+                >
+                  <span>🌐 Brauzerda ochish</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary bg-white hover:bg-slate-100 text-slate-800 border-slate-300 px-2.5 py-1.5 text-xs font-semibold shadow-2xs inline-flex items-center gap-1"
+                  onClick={() => void handleSeedDemoIjara()}
+                  disabled={busy !== null}
+                  title="Mavjud barcha avtomobillar uchun namunaviy Soliq ijara shartnomalarini yuklaydi"
+                >
+                  <span>📄 Namuna yuklash</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary bg-blue-100 hover:bg-blue-200 text-blue-800 border-blue-200 px-2.5 py-1.5 text-xs font-semibold shadow-2xs"
+                  onClick={() => void handleEImzoConnect()}
+                  disabled={busy !== null}
+                >
+                  {busy === "eimzo" ? "Ulanmoqda..." : "🪪 E-IMZO"}
+                </button>
+              </div>
             </div>
+            {isAuthError && (
+              <div className="rounded-lg border border-rose-300 bg-rose-50 p-2 text-[11px] text-rose-800">
+                <strong>Diqqat:</strong> Oldingi tokeningiz eskirgan (HTTP 401). Yuqoridagi <strong>&quot;Brauzerda ochish&quot;</strong> yoki <strong>&quot;Namuna yuklash&quot;</strong> tugmasi orqali shartnomalarni yangilang.
+              </div>
+            )}
           </div>
         )}
 

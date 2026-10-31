@@ -293,4 +293,16 @@ export class RegistryController {
   ) {
     return this.crossLink.autoLinkAll(user, ip(request));
   }
+
+  /**
+   * Mavjud avtomobillar uchun Soliq ijara namunaviy shartnomalarini yuklash (Demo)
+   */
+  @Post("cross-link/seed-demo-ijara")
+  @Roles("OWNER", "ADMIN")
+  seedDemoIjara(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.crossLink.seedDemoIjaraContracts(user, ip(request));
+  }
 }

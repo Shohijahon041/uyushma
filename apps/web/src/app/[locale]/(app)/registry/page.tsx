@@ -85,9 +85,10 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
         linkedVehicles: number;
         createdVehicles: number;
         createdDrivers: number;
+        seededContracts?: number;
       }>("/registry/cross-link/auto", { method: "POST" });
       setActionMsg(
-        `Bog'lash yakunlandi: ${res.linkedVehicles} ta mashina ulandi, ${res.createdVehicles} ta yangi avtomobil, ${res.createdDrivers} ta haydovchi yaratildi.`,
+        `Bog'lash yakunlandi: ${res.linkedVehicles} ta mashina ulandi, ${res.createdVehicles} ta yangi avtomobil, ${res.createdDrivers} ta haydovchi biriktirildi${res.seededContracts ? `, ${res.seededContracts} ta Soliq ijara shartnomasi bog'landi` : ""}.`,
       );
       await reload();
     } catch (err) {
