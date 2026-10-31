@@ -269,13 +269,7 @@ export class PlatformService {
   async users(actor: AuthenticatedUser) {
     this.assertSuperAdmin(actor);
     const rows = await this.prisma.$queryRaw<UserRow[]>`
-      SELECT u.id, u."tenantId" AS tenant_id, c.name AS company_name, c.slug AS company_slug,
-             u."fullName" AS full_name, u.phone, u.role::text, u."isActive" AS is_active,
-             u."isSuperAdmin" AS is_super_admin, u."twoFactorEnabled" AS two_factor_enabled,
-             u."lastLoginAt" AS last_login_at, u."createdAt" AS created_at
-      FROM "User" u
-      JOIN "Company" c ON c.id = u."tenantId"
-      ORDER BY c.name, u."fullName"
+      SELECT * FROM app_platform_users()
     `;
     return {
       items: rows.map((row) => ({

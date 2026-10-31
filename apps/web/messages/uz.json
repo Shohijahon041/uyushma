@@ -271,7 +271,16 @@
     "ACCOUNTANT": "Buxgalter",
     "MANAGER": "Menejer",
     "passwordHint": "Kamida 12 belgi, harf va raqam",
-    "selfProtected": "O'zingizni faolsizlantira olmaysiz."
+    "selfProtected": "O'zingizni faolsizlantira olmaysiz.",
+    "active": "Faol",
+    "inactive": "Nofaol",
+    "resetPassword": "Parolni yangilash",
+    "confirmReset": "{name} uchun yangi parol yaratilsinmi?",
+    "issuedTitle": "{name} uchun kirish ma'lumotlari yaratildi",
+    "issuedHint": "Ushbu parolni darhol saqlab oling yoki xodimga yuboring. U qayta ko'rsatilmaydi.",
+    "copied": "Nusxa olindi!",
+    "copy": "Nusxalash",
+    "close": "Yopish"
   },
   "subscription": {
     "title": "SaaS obunasi",
