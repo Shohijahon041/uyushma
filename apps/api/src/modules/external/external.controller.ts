@@ -103,6 +103,12 @@ export class ExternalSettingsController {
     );
   }
 
+  @Post("sync-all")
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  syncAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.external.enqueueSync(user.tenantId, undefined);
+  }
+
   @Post(":provider/sync")
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   sync(

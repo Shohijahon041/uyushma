@@ -9,6 +9,7 @@ import {
   type ProviderCredentials,
 } from "../external.types";
 import {
+  cleanBearerToken,
   ExternalHttpError,
   externalRequestJson,
   isExternalAuthError,
@@ -209,7 +210,8 @@ export class AutoparkConnector implements ExternalConnector {
       payload = await externalRequestJson(joinUrl(baseUrl, path), {
         method: "POST",
         body: {
-          username: credentials.username,
+          username: credentials.username.trim(),
+          login: credentials.username.trim(),
           password: credentials.password,
         },
       });
@@ -222,16 +224,19 @@ export class AutoparkConnector implements ExternalConnector {
       }
       throw error;
     }
-    const token = text(
+    const rawToken = text(
       pick(payload, [
         "access_token",
         "data.access_token",
         "data.data.access_token",
         "token.access_token",
         "data.token.access_token",
+        "result.access_token",
+        "result.token",
         "token",
       ]),
     );
+    const token = cleanBearerToken(rawToken);
     if (!token) {
       throw new ExternalHttpError(
         401,

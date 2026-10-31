@@ -34,6 +34,17 @@ function providerMessage(raw: string): string | null {
   return null;
 }
 
+/** Strips leading Bearer prefix, surrounding quotes, and whitespace. */
+export function cleanBearerToken(raw?: string | null): string {
+  if (!raw) return "";
+  return raw
+    .trim()
+    .replace(/^Bearer\s+/i, "")
+    .replace(/^["'`]|["'`]$/g, "")
+    .replace(/\r?\n|\r/g, "")
+    .trim();
+}
+
 /** 401/403 mean the stored token died — retrying other endpoints is pointless. */
 export function isExternalAuthError(error: unknown): boolean {
   return (
@@ -52,15 +63,14 @@ export async function externalRequestJson(
     userAgent?: string;
   },
 ): Promise<unknown> {
+  const token = cleanBearerToken(options.token);
   let response: Response;
   try {
     response = await fetch(url, {
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
-        ...(options.token
-          ? { Authorization: `Bearer ${options.token}` }
-          : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.body !== undefined
           ? { "Content-Type": "application/json" }
           : {}),

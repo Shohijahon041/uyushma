@@ -18,7 +18,7 @@ import { AuditService } from "../audit/audit.service";
 import { AutoparkConnector } from "./connectors/autopark.connector";
 import { EtenderConnector } from "./connectors/etender.connector";
 import { IjaraConnector } from "./connectors/ijara.connector";
-import { isExternalAuthError } from "./connectors/http";
+import { cleanBearerToken, isExternalAuthError } from "./connectors/http";
 import {
   PROVIDER_LABELS,
   type ExternalConnector,
@@ -132,7 +132,7 @@ export class ExternalService {
     if (credentials && !credentials.username) {
       throw new BadRequestException("Login bo'sh bo'lmasligi kerak");
     }
-    const rawToken = (dto.token?.trim() ?? "").replace(/^Bearer\s+/i, "");
+    const rawToken = cleanBearerToken(dto.token);
     if (!credentials && !rawToken) {
       throw new BadRequestException("Token yoki login/parol kiritilishi kerak");
     }
@@ -146,7 +146,7 @@ export class ExternalService {
       }
       try {
         const login = await connector.login(baseUrl, credentials, config);
-        token = login.token;
+        token = cleanBearerToken(login.token);
         account = login.account;
         lastLoginAt = new Date();
       } catch (error) {

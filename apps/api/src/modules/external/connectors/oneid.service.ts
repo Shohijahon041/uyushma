@@ -22,7 +22,6 @@ export class OneIdAuthService {
     dto: OneIdConnectAllDto,
     ip: string | null,
   ): Promise<OneIdConnectAllResult> {
-    const providers: ExternalProvider[] = ["ETENDER", "AUTOPARK", "IJARA"];
     const results: OneIdConnectAllResult["providers"] = {
       ETENDER: { success: false },
       AUTOPARK: { success: false },
@@ -31,38 +30,100 @@ export class OneIdAuthService {
 
     let anySuccess = false;
 
-    for (const provider of providers) {
-      try {
-        const res = await this.externalService.saveConnection(
-          actor,
-          provider,
-          {
-            credentials: {
-              username: dto.username.trim(),
-              password: dto.password,
-              ...(provider === "ETENDER" && dto.ip ? { ip: dto.ip } : {}),
-            },
+    // 1. e-tender.uztrans.uz ulanishi (One ID orqali)
+    try {
+      const res = await this.externalService.saveConnection(
+        actor,
+        "ETENDER",
+        {
+          credentials: {
+            username: dto.username.trim(),
+            password: dto.password,
+            ...(dto.ip?.trim() ? { ip: dto.ip.trim() } : {}),
           },
-          ip,
-        );
-        results[provider] = {
+        },
+        ip,
+      );
+      results.ETENDER = {
+        success: true,
+        account: res.account,
+      };
+      anySuccess = true;
+
+      void this.externalService.syncConnection(actor.tenantId, "ETENDER").catch((err) => {
+        this.logger.warn(`ETENDER sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`OneID ETENDER ulanish xatosi: ${message}`);
+      results.ETENDER = {
+        success: false,
+        error: message,
+      };
+    }
+
+    // 2. bm.dtransport.uz ulanishi (One ID / avtopark orqali)
+    try {
+      const res = await this.externalService.saveConnection(
+        actor,
+        "AUTOPARK",
+        {
+          credentials: {
+            username: dto.username.trim(),
+            password: dto.password,
+          },
+        },
+        ip,
+      );
+      results.AUTOPARK = {
+        success: true,
+        account: res.account,
+      };
+      anySuccess = true;
+
+      void this.externalService.syncConnection(actor.tenantId, "AUTOPARK").catch((err) => {
+        this.logger.warn(`AUTOPARK sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`OneID AUTOPARK ulanish xatosi: ${message}`);
+      results.AUTOPARK = {
+        success: false,
+        error: message,
+      };
+    }
+
+    // 3. ijara.soliq.uz tekshiruvi:
+    // Soliq tizimi E-IMZO yoki sessiya tokeni orqali autentifikatsiyani talab qiladi.
+    // Agar foydalanuvchida allaqachon faol Soliq ulanishi bo'lsa, uni saqlaymiz.
+    try {
+      const existingList = await this.externalService.listConnections(actor.tenantId);
+      const ijaraConn = existingList.items.find((item) => item.provider === "IJARA");
+
+      if (ijaraConn && ijaraConn.status === "ACTIVE") {
+        results.IJARA = {
           success: true,
-          account: res.account,
+          account: ijaraConn.account ?? "Faol Soliq sessiyasi",
         };
         anySuccess = true;
 
-        // Ulanish muvaffaqiyatli bo'lsa, navbatga sinxronizatsiyani qo'shish
-        void this.externalService.syncConnection(actor.tenantId, provider).catch((err) => {
-          this.logger.warn(`${provider} sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
+        void this.externalService.syncConnection(actor.tenantId, "IJARA").catch((err) => {
+          this.logger.warn(`IJARA sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
         });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.warn(`OneID ${provider} ulanish xatosi: ${message}`);
-        results[provider] = {
+      } else {
+        // Soliqqa OneID login/paroli bilan to'g'ridan-to'g'ri ulanib bo'lmaydi,
+        // foydalanuvchiga aniq tushunarli ko'rsatma beramiz
+        results.IJARA = {
           success: false,
-          error: message,
+          error: "ijara.soliq.uz E-IMZO elektron kaliti yoki sessiya tokeni orqali ulanadi (pastdagi 'E-IMZO bilan kirish' tugmasidan foydalaning)",
         };
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.IJARA = {
+        success: false,
+        error: `ijara.soliq.uz holatini tekshirib bo'lmadi: ${message}`,
+      };
     }
 
     return {

@@ -8,7 +8,7 @@ import {
   type ProviderConfig,
   type ProviderCredentials,
 } from "../external.types";
-import { ExternalHttpError, externalRequestJson, isExternalAuthError } from "./http";
+import { cleanBearerToken, ExternalHttpError, externalRequestJson, isExternalAuthError } from "./http";
 import {
   etenderRecordRaw,
   extractArray,
@@ -89,39 +89,67 @@ export class EtenderConnector implements ExternalConnector {
     credentials: ProviderCredentials,
     config: ProviderConfig,
   ): Promise<LoginResult> {
-    const path = config.endpoints?.login ?? "/api/login";
+    const candidatePaths = config.endpoints?.login
+      ? [config.endpoints.login]
+      : ["/api/login", "/api/auth/login", "/api/v1/login"];
+
     let payload: unknown;
-    try {
-      payload = await externalRequestJson(joinUrl(baseUrl, path), {
-        method: "POST",
-        body: {
-          inn: credentials.username,
-          password: credentials.password,
-          ip: credentials.ip ?? "",
-        },
-      });
-    } catch (error) {
-      if (isExternalAuthError(error)) {
-        throw new ExternalHttpError(
-          401,
-          "Kirish rad etildi: One ID login yoki parol xato",
-        );
+    let lastError: unknown = null;
+
+    const requestBody = {
+      inn: credentials.username.trim(),
+      username: credentials.username.trim(),
+      login: credentials.username.trim(),
+      password: credentials.password,
+      ip: credentials.ip?.trim() ?? "",
+    };
+
+    for (const path of candidatePaths) {
+      try {
+        payload = await externalRequestJson(joinUrl(baseUrl, path), {
+          method: "POST",
+          body: requestBody,
+        });
+        if (payload) break;
+      } catch (error) {
+        lastError = error;
+        if (isExternalAuthError(error)) {
+          throw new ExternalHttpError(
+            401,
+            "Kirish rad etildi: One ID login yoki parol xato",
+          );
+        }
+        // Agar 404 bo'lsa, keyingi login manzilini sinab ko'ramiz
+        if (error instanceof ExternalHttpError && error.status === 404) {
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
+
+    if (!payload && lastError) {
+      throw lastError;
+    }
+
     const body = (payload ?? {}) as {
       success?: boolean;
       error?: boolean;
       message?: string;
     };
-    const token = text(
+    const rawToken = text(
       pick(payload, [
         "token",
         "data.token",
         "access_token",
         "data.access_token",
+        "result.token",
+        "result.access_token",
+        "data.data.token",
+        "data.data.access_token",
       ]),
     );
+    const token = cleanBearerToken(rawToken);
+
     if (body.error || !token) {
       throw new ExternalHttpError(
         401,
@@ -133,7 +161,7 @@ export class EtenderConnector implements ExternalConnector {
     return {
       token,
       account: text(
-        pick(payload, ["company_name", "organization_name", "data.company_name"]),
+        pick(payload, ["company_name", "organization_name", "data.company_name", "user.company_name"]),
       ),
     };
   }

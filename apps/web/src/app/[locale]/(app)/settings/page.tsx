@@ -158,8 +158,12 @@ export default function SettingsPage() {
         <CompanyPaymentSettings role={me.data.role} />
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5">
         <PaymeSettings role={me.data.role} />
+      </div>
+
+      {/* Tashqi tizimlar integratsiyasi (Keng, qulay va to'liq ko'rinish) */}
+      <div className="mt-6 w-full">
         <ExternalSettings role={me.data.role} />
       </div>
 

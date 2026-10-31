@@ -8,7 +8,7 @@ import {
   type ProviderConfig,
   type ProviderCredentials,
 } from "../external.types";
-import { ExternalHttpError, externalRequestJson, isExternalAuthError } from "./http";
+import { cleanBearerToken, ExternalHttpError, externalRequestJson, isExternalAuthError } from "./http";
 import {
   extractArray,
   extractPagination,
@@ -124,10 +124,18 @@ export class IjaraConnector implements ExternalConnector {
    * Mavjud tokenni tekshirish
    */
   async test(baseUrl: string, token: string): Promise<{ account: string | null; personId?: string | null }> {
+    const clean = cleanBearerToken(token);
+    if (!clean) {
+      throw new Error("Token bo'sh bo'lmasligi kerak");
+    }
+    if (clean.startsWith("eimzo_")) {
+      return { account: "Soliq E-IMZO Autentifikatsiyasi" };
+    }
+
     // 1. my.soliq.uz/api/auth/oauth/account or /api/user/profile
     for (const testPath of [DEFAULT_ENDPOINTS.account, joinUrl(baseUrl, DEFAULT_ENDPOINTS.profile)]) {
       try {
-        const payload = await externalRequestJson(testPath, { token });
+        const payload = await externalRequestJson(testPath, { token: clean });
         const account = text(
           pick(payload, [
             "data.name",
@@ -149,7 +157,7 @@ export class IjaraConnector implements ExternalConnector {
     }
 
     // 2. JWT tokenidan personId va tashkilot nomini ajratib olish
-    const decoded = extractPersonIdFromToken(token);
+    const decoded = extractPersonIdFromToken(clean);
     if (decoded?.name || decoded?.tin || decoded?.pinfl) {
       const personId = decoded.tin ?? decoded.pinfl ?? null;
       return {
@@ -162,7 +170,7 @@ export class IjaraConnector implements ExternalConnector {
     try {
       await externalRequestJson(
         joinUrl(baseUrl, `${DEFAULT_ENDPOINTS.carRentingApi}?page=0&size=1&myRentType=1&statusGroup=1`),
-        { token },
+        { token: clean },
       );
       return { account: "Soliq Ijara Foydalanuvchisi" };
     } catch (inner) {
@@ -180,6 +188,7 @@ export class IjaraConnector implements ExternalConnector {
     token: string,
     config: ProviderConfig,
   ): Promise<ExternalFetchResult> {
+    const cleanToken = cleanBearerToken(token);
     const warnings: string[] = [];
     const vehicles = new Map<string, NormalizedVehicle>();
     const records = new Map<string, NormalizedRecord>();
@@ -189,7 +198,7 @@ export class IjaraConnector implements ExternalConnector {
     let personId: string | null = text(pick(config, ["personId", "tin", "pinfl", "stir"])) ?? null;
 
     try {
-      const profile = await this.test(baseUrl, token);
+      const profile = await this.test(baseUrl, cleanToken);
       organizationName = profile.account;
       if (!personId && profile.personId) {
         personId = profile.personId;
@@ -226,7 +235,7 @@ export class IjaraConnector implements ExternalConnector {
         const url = `${joinUrl(baseUrl, targetPath)}${targetPath.includes("?") ? "&" : "?"}${queryParams.toString()}`;
 
         try {
-          const payload = await externalRequestJson(url, { token });
+          const payload = await externalRequestJson(url, { token: cleanToken });
           const items = extractArray(payload);
 
           if (!items || items.length === 0) break;
