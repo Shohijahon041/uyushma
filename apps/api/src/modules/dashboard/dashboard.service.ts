@@ -27,10 +27,7 @@ export class DashboardService {
         subscription,
         openSubscriptionInvoices,
         externalVehicles,
-        externalApplications,
-        externalContracts,
-        externalCertificates,
-        externalTenders,
+        externalRecordGroups,
         expiringCertificates,
         lastExternalSync,
       ] = await Promise.all([
@@ -67,10 +64,10 @@ export class DashboardService {
           where: { status: { in: ["OPEN", "OVERDUE"] } },
         }),
         tx.externalVehicle.count(),
-        tx.externalRecord.count({ where: { kind: "CONTRACT_APPLICATION" } }),
-        tx.externalRecord.count({ where: { kind: "CONTRACT" } }),
-        tx.externalRecord.count({ where: { kind: "CERTIFICATE" } }),
-        tx.externalRecord.count({ where: { kind: "TENDER_APPLICATION" } }),
+        tx.externalRecord.groupBy({
+          by: ["kind"],
+          _count: { _all: true },
+        }),
         tx.externalRecord.count({
           where: {
             kind: "CERTIFICATE",
@@ -84,15 +81,25 @@ export class DashboardService {
         }),
       ]);
 
+      const recordCounts: Record<string, number> = {
+        CONTRACT_APPLICATION: 0,
+        CONTRACT: 0,
+        CERTIFICATE: 0,
+        TENDER_APPLICATION: 0,
+      };
+      for (const row of externalRecordGroups) {
+        recordCounts[row.kind] = row._count._all;
+      }
+
       return {
         counts: { vehicles, activeContracts, routes, users },
         external: {
           vehicles: externalVehicles,
           records: {
-            CONTRACT_APPLICATION: externalApplications,
-            CONTRACT: externalContracts,
-            CERTIFICATE: externalCertificates,
-            TENDER_APPLICATION: externalTenders,
+            CONTRACT_APPLICATION: recordCounts.CONTRACT_APPLICATION ?? 0,
+            CONTRACT: recordCounts.CONTRACT ?? 0,
+            CERTIFICATE: recordCounts.CERTIFICATE ?? 0,
+            TENDER_APPLICATION: recordCounts.TENDER_APPLICATION ?? 0,
           },
           expiringCertificates,
           lastSyncAt: lastExternalSync?.lastSyncAt ?? null,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatMoney, useApi } from "@/lib/use-api";
@@ -32,6 +32,15 @@ export default function ContractsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [extPage, setExtPage] = useState(1);
+  const extPageSize = 25;
+
+  const extItems = useMemo(() => external.data?.items ?? [], [external.data]);
+  const extTotalPages = Math.ceil(extItems.length / extPageSize) || 1;
+  const pagedExtItems = useMemo(() => {
+    const start = (extPage - 1) * extPageSize;
+    return extItems.slice(start, start + extPageSize);
+  }, [extItems, extPage, extPageSize]);
 
   useEffect(() => {
     if (!vehicleId && vehicles.data?.items[0]) {
@@ -330,7 +339,7 @@ export default function ContractsPage() {
                 </tr>
               </thead>
               <tbody>
-                {external.data.items.map((row) => (
+                {pagedExtItems.map((row) => (
                   <tr key={row.id}>
                     <td className="font-mono text-xs font-semibold text-slate-900">
                       {row.number ?? row.externalId}
@@ -353,6 +362,34 @@ export default function ContractsPage() {
                 ))}
               </tbody>
             </table>
+            {extTotalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+                <div>
+                  Jami {extItems.length} ta tashqi shartnomadan {(extPage - 1) * extPageSize + 1}–{Math.min(extPage * extPageSize, extItems.length)} ko&apos;rsatilmoqda
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={extPage <= 1}
+                    onClick={() => setExtPage((p) => p - 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    ← Oldingi
+                  </button>
+                  <span className="px-2 font-medium">
+                    {extPage} / {extTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={extPage >= extTotalPages}
+                    onClick={() => setExtPage((p) => p + 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    Keyingi →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

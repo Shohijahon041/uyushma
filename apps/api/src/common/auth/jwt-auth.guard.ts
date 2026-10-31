@@ -11,6 +11,30 @@ import { TenantPrismaService } from "../prisma/tenant-prisma.service";
 import { IS_PUBLIC_KEY } from "./decorators";
 import type { AccessTokenPayload, RequestWithUser } from "./auth.types";
 
+interface CachedUser {
+  id: string;
+  phone: string | null;
+  fullName: string;
+  role: import("@prisma/client").UserRole;
+  isSuperAdmin: boolean;
+  expiresAt: number;
+}
+
+const userAuthCache = new Map<string, CachedUser>();
+const AUTH_CACHE_TTL_MS = 10_000; // 10 soniya
+
+export function invalidateUserAuthCache(userId?: string) {
+  if (!userId) {
+    userAuthCache.clear();
+    return;
+  }
+  for (const [key, value] of userAuthCache.entries()) {
+    if (value.id === userId || key.includes(userId)) {
+      userAuthCache.delete(key);
+    }
+  }
+}
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -49,33 +73,46 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Token turi noto'g'ri");
     }
 
-    const user = await this.tenantPrisma.withTenant(payload.tenantId, async (tx) => {
-      const found = await tx.user.findFirst({
-        where: {
-          id: payload.sub,
-          isActive: true,
-          company: { status: "ACTIVE" },
-        },
-        select: { id: true, phone: true, fullName: true, role: true, isSuperAdmin: true },
-      });
-      if (!found) return null;
-      if (payload.sessionId) {
-        // Revoking a device session must invalidate its access token at once,
-        // not only when the short-lived token happens to expire.
-        const session = await tx.refreshToken.findFirst({
+    const cacheKey = `${payload.tenantId}:${payload.sub}:${payload.sessionId ?? "none"}`;
+    const cached = userAuthCache.get(cacheKey);
+    let user: Omit<CachedUser, "expiresAt"> | null = null;
+
+    if (cached && Date.now() < cached.expiresAt) {
+      user = cached;
+    } else {
+      user = await this.tenantPrisma.withTenant(payload.tenantId, async (tx) => {
+        const found = await tx.user.findFirst({
           where: {
-            tenantId: payload.tenantId,
-            userId: found.id,
-            sessionId: payload.sessionId,
-            revokedAt: null,
-            expiresAt: { gt: new Date() },
+            id: payload.sub,
+            isActive: true,
+            company: { status: "ACTIVE" },
           },
-          select: { id: true },
+          select: { id: true, phone: true, fullName: true, role: true, isSuperAdmin: true },
         });
-        if (!session) return null;
+        if (!found) return null;
+        if (payload.sessionId) {
+          // Revoking a device session must invalidate its access token at once,
+          // not only when the short-lived token happens to expire.
+          const session = await tx.refreshToken.findFirst({
+            where: {
+              tenantId: payload.tenantId,
+              userId: found.id,
+              sessionId: payload.sessionId,
+              revokedAt: null,
+              expiresAt: { gt: new Date() },
+            },
+            select: { id: true },
+          });
+          if (!session) return null;
+        }
+        return found;
+      });
+
+      if (user) {
+        if (userAuthCache.size > 2000) userAuthCache.clear();
+        userAuthCache.set(cacheKey, { ...user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
       }
-      return found;
-    });
+    }
     if (!user) {
       throw new UnauthorizedException("Foydalanuvchi faol emas");
     }

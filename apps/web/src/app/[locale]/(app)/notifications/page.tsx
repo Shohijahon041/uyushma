@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDateTime, useApi } from "@/lib/use-api";
 import { apiRequest } from "@/lib/client-api";
 import { Alert, EmptyState, Loading, PageHeader } from "@/components/ui";
@@ -96,8 +96,19 @@ export default function NotificationsPage() {
     }
   }
 
-  const items = data?.items ?? [];
-  const filtered = filter === "all" ? items : items.filter((i) => i.event === filter);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+  const filtered = useMemo(() => {
+    return filter === "all" ? items : items.filter((i) => i.event === filter);
+  }, [items, filter]);
+
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   const sentCount = items.filter((i) => i.status === "SENT").length;
   const failedCount = items.filter((i) => i.status === "FAILED").length;
@@ -215,7 +226,7 @@ export default function NotificationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => {
+                {pagedItems.map((item) => {
                   const ev = formatEventName(item.event);
                   const p = (item.payload || {}) as Record<string, string | number | undefined>;
                   return (
@@ -250,6 +261,34 @@ export default function NotificationsPage() {
                 })}
               </tbody>
             </table>
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+                <div>
+                  Jami {filtered.length} ta bildirishnomadan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} ko&apos;rsatilmoqda
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    ← Oldingi
+                  </button>
+                  <span className="px-2 font-medium">
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    Keyingi →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

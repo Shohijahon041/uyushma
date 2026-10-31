@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatMoney, useApi } from "@/lib/use-api";
@@ -25,6 +25,15 @@ export default function PaymentsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
   const idempotencyKey = useRef<string>(
     typeof crypto !== "undefined" ? crypto.randomUUID() : "web-fallback-key-0001",
   );
@@ -188,7 +197,7 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data?.items.map((payment) => (
+                {pagedItems.map((payment) => (
                   <tr key={payment.id}>
                     <td className="whitespace-nowrap text-slate-500">
                       {formatDate(payment.createdAt)}
@@ -219,6 +228,34 @@ export default function PaymentsPage() {
                 ))}
               </tbody>
             </table>
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+                <div>
+                  Jami {items.length} ta to&apos;lovdan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, items.length)} ko&apos;rsatilmoqda
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    ← Oldingi
+                  </button>
+                  <span className="px-2 font-medium">
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    Keyingi →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
