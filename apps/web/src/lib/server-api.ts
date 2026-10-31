@@ -1,4 +1,4 @@
-const API_BASE = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
+const API_BASE = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:4000";
 
 export const ACCESS_COOKIE = "uy_at";
 export const REFRESH_COOKIE = "uy_rt";

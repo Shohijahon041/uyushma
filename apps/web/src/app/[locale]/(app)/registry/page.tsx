@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatDateTime, formatMoney, useApi } from "@/lib/use-api";
@@ -44,6 +44,12 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
 
   const [linking, setLinking] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const items = useMemo(() => {
     const rows = data?.items ?? [];
@@ -64,6 +70,12 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
         .some((val) => val!.toLowerCase().includes(needle)),
     );
   }, [data, search]);
+
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
 
   async function handleAutoLink() {
     setLinking(true);
@@ -161,7 +173,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((row) => {
+              {pagedItems.map((row) => {
                 const ijara = row.ijara;
                 const etender = row.etender;
                 const bm = row.autopark;
@@ -322,6 +334,34 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
               })}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+              <div>
+                Jami {items.length} ta yozuvdan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, items.length)} ko&apos;rsatilmoqda
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                >
+                  ← Oldingi
+                </button>
+                <span className="px-2 font-medium">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                >
+                  Keyingi →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -335,6 +375,13 @@ function VehicleTable({ search }: { search: string }) {
     "/registry/vehicles?limit=500",
   );
 
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
   const items = useMemo(() => {
     const rows = data?.items ?? [];
     const needle = search.trim().toLowerCase();
@@ -345,6 +392,12 @@ function VehicleTable({ search }: { search: string }) {
         .some((value) => value!.toLowerCase().includes(needle)),
     );
   }, [data, search]);
+
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
 
   if (loading) return <Loading label={tc("loading")} />;
   if (error) return <Alert tone="error">{error}</Alert>;
@@ -367,7 +420,7 @@ function VehicleTable({ search }: { search: string }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((row) => (
+          {pagedItems.map((row) => (
             <tr key={row.id}>
               <td className="font-mono font-semibold text-slate-900">
                 {row.plateNumber ?? "—"}
@@ -412,6 +465,34 @@ function VehicleTable({ search }: { search: string }) {
           ))}
         </tbody>
       </table>
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+          <div>
+            Jami {items.length} ta yozuvdan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, items.length)} ko&apos;rsatilmoqda
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+            >
+              ← Oldingi
+            </button>
+            <span className="px-2 font-medium">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+            >
+              Keyingi →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -422,10 +503,23 @@ function RecordTable({ kind }: { kind: ExternalRecordKind }) {
   const { data, loading, error } = useApi<{ items: ExternalRecordRow[] }>(
     `/registry/records?kind=${kind}&limit=500`,
   );
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  useEffect(() => {
+    setPage(1);
+  }, [kind]);
+
+  const items = data?.items ?? [];
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
 
   if (loading) return <Loading label={tc("loading")} />;
   if (error) return <Alert tone="error">{error}</Alert>;
-  if (!data?.items.length) return <EmptyState>{t("empty")}</EmptyState>;
+  if (!items.length) return <EmptyState>{t("empty")}</EmptyState>;
 
   return (
     <div className="table-wrap">
@@ -442,7 +536,7 @@ function RecordTable({ kind }: { kind: ExternalRecordKind }) {
           </tr>
         </thead>
         <tbody>
-          {data.items.map((row) => {
+          {pagedItems.map((row) => {
             const raw = (row as any).raw ?? {};
             const viewUrl = raw.contractViewUrl;
             return (
@@ -499,6 +593,34 @@ function RecordTable({ kind }: { kind: ExternalRecordKind }) {
           })}
         </tbody>
       </table>
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+          <div>
+            Jami {items.length} ta yozuvdan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, items.length)} ko&apos;rsatilmoqda
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+            >
+              ← Oldingi
+            </button>
+            <span className="px-2 font-medium">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+            >
+              Keyingi →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ export function useApi<T>(path: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (bypassCache = false) => {
     if (!path) {
       setLoading(false);
       return;
@@ -16,7 +16,7 @@ export function useApi<T>(path: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const result = await apiRequest<T>(path);
+      const result = await apiRequest<T>(path, { bypassCache });
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Xatolik");
@@ -25,11 +25,13 @@ export function useApi<T>(path: string | null) {
     }
   }, [path]);
 
+  const reload = useCallback(() => load(true), [load]);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  return { data, loading, error, reload: load, setData };
+  return { data, loading, error, reload, setData };
 }
 
 export function formatMoney(value: string | null | undefined): string {

@@ -226,8 +226,19 @@ export default function VehiclesPage() {
     });
   }, [data, search, routeFilter]);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, routeFilter, grouped]);
+
   const groups = useMemo<VehicleGroup[]>(() => {
-    if (!grouped) return [{ key: "all", route: null, name: "", items: filtered }];
+    if (!grouped) {
+      const start = (page - 1) * pageSize;
+      const paginated = filtered.slice(start, start + pageSize);
+      return [{ key: "all", route: null, name: "", items: paginated }];
+    }
     const byRoute = new Map<string, VehicleGroup>();
     for (const vehicle of filtered) {
       const key = vehicle.routeId ?? "none";
@@ -248,7 +259,7 @@ export default function VehiclesPage() {
       if (b.key === "none") return -1;
       return a.name.localeCompare(b.name, "uz");
     });
-  }, [filtered, grouped, routeItems, t]);
+  }, [filtered, grouped, routeItems, t, page, pageSize]);
 
   function toggleGroup(key: string) {
     setCollapsed((previous) => {
@@ -562,6 +573,34 @@ export default function VehiclesPage() {
                 );
               })}
             </table>
+            {!grouped && filtered.length > pageSize && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600 bg-slate-50/50">
+                <div>
+                  Jami {filtered.length} ta transportdan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} ko&apos;rsatilmoqda
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    ← Oldingi
+                  </button>
+                  <span className="px-2 font-medium">
+                    {page} / {Math.ceil(filtered.length / pageSize)}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= Math.ceil(filtered.length / pageSize)}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="btn-secondary px-2.5 py-1 text-xs disabled:opacity-40"
+                  >
+                    Keyingi →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

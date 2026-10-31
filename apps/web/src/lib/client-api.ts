@@ -29,29 +29,84 @@ async function parseError(response: Response): Promise<never> {
   throw new ApiClientError(response.status, message);
 }
 
+const inFlightGets = new Map<string, Promise<unknown>>();
+const getCache = new Map<string, { data: unknown; expiresAt: number }>();
+const CACHE_TTL_MS = 3000; // 3 soniyalik kesh - takroriy va parallel so'rovlarni avtomatik birlashtiradi
+
+export function invalidateApiCache(prefix?: string): void {
+  if (!prefix) {
+    getCache.clear();
+    return;
+  }
+  for (const key of getCache.keys()) {
+    if (key.startsWith(prefix) || key.includes(prefix)) {
+      getCache.delete(key);
+    }
+  }
+}
+
 export async function apiRequest<T>(
   path: string,
   options: {
     method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
     body?: unknown;
     headers?: Record<string, string>;
+    bypassCache?: boolean;
   } = {},
 ): Promise<T> {
-  const response = await fetch(`/api/proxy/${path.replace(/^\//, "")}`, {
-    method: options.method ?? "GET",
-    credentials: "same-origin",
-    headers: {
-      ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers ?? {}),
-    },
-    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    await parseError(response);
+  const method = options.method ?? "GET";
+  const cleanPath = path.replace(/^\//, "");
+
+  // Faqat GET so'rovlari uchun kesh va so'rov birlashtirish (deduplication)
+  if (method === "GET") {
+    if (!options.bypassCache) {
+      const cached = getCache.get(cleanPath);
+      if (cached && Date.now() < cached.expiresAt) {
+        return cached.data as T;
+      }
+    }
+
+    const inFlight = inFlightGets.get(cleanPath);
+    if (inFlight && !options.bypassCache) {
+      return inFlight as Promise<T>;
+    }
+  } else {
+    // Ma'lumot o'zgartiruvchi so'rovlarda keshni tozalash
+    invalidateApiCache();
   }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+
+  const execute = async (): Promise<T> => {
+    const response = await fetch(`/api/proxy/${cleanPath}`, {
+      method,
+      credentials: "same-origin",
+      headers: {
+        ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers ?? {}),
+      },
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      await parseError(response);
+    }
+    if (response.status === 204) return undefined as T;
+    const data = (await response.json()) as T;
+
+    if (method === "GET") {
+      getCache.set(cleanPath, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+    }
+    return data;
+  };
+
+  if (method === "GET") {
+    const job = execute().finally(() => {
+      inFlightGets.delete(cleanPath);
+    });
+    inFlightGets.set(cleanPath, job);
+    return job;
+  }
+
+  return execute();
 }
 
 export interface SessionUser {
