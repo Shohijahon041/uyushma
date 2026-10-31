@@ -109,6 +109,9 @@ function mainMenu(kind: "user" | "driver"): InlineKeyboard {
           { text: "🧾 To'lovlarim", callback_data: "d:payments" },
         ],
         [
+          { text: "💳 Masofaviy to'lov (Karta)", callback_data: "d:pay" },
+        ],
+        [
           { text: "🪪 Hujjatlarim", callback_data: "d:docs" },
           { text: "🔄 Yangilash", callback_data: "d:refresh" },
         ],
@@ -302,6 +305,24 @@ function isDocumentField(value: string): value is DocumentField {
 
 const PENDING_TTL_MS = 10 * 60_000;
 const pendingInput = new Map<string, { field: DocumentField; expiresAt: number }>();
+
+interface PendingReceiptSession {
+  step: "WAITING_RECEIPT" | "WAITING_AMOUNT";
+  buffer?: Buffer;
+  filename?: string;
+  expiresAt: number;
+}
+const pendingReceipts = new Map<string, PendingReceiptSession>();
+
+function receiptSessionFor(chatId: string): PendingReceiptSession | null {
+  const session = pendingReceipts.get(chatId);
+  if (!session) return null;
+  if (session.expiresAt < Date.now()) {
+    pendingReceipts.delete(chatId);
+    return null;
+  }
+  return session;
+}
 
 function pendingFor(chatId: string): DocumentField | null {
   const pending = pendingInput.get(chatId);
@@ -621,10 +642,68 @@ bot.command("yordam", (ctx) =>
 
 bot.on(message("photo"), async (ctx) => {
   const chatId = chatIdOf(ctx);
+
+  // Masofaviy to'lov cheki yuborilayotgan bo'lsa
+  const receiptSession = receiptSessionFor(chatId);
+  if (receiptSession && receiptSession.step === "WAITING_RECEIPT") {
+    const sizes = ctx.message.photo;
+    const largest = sizes[sizes.length - 1];
+    if (!largest) return;
+
+    try {
+      const fileLink = await ctx.telegram.getFileLink(largest.file_id);
+      const res = await fetch(fileLink.href);
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const captionText = ctx.message.caption?.replace(/\s+/g, "").trim() || "";
+      if (/^\d{3,10}$/.test(captionText)) {
+        pendingReceipts.delete(chatId);
+        await ctx.reply("⏳ Chek AI xavfsizlik tizimi tomonidan tekshirilmoqda...");
+        const result = await api.submitReceipt(
+          chatId,
+          captionText,
+          buffer.toString("base64"),
+          "receipt.jpg",
+        );
+        const riskNote =
+          result.fraudRisk === "HIGH"
+            ? "\n⚠️ <i>Diqqat: Chekda tahrir belgilari aniqlandi va qo'shimcha tekshiruvga yuborildi.</i>"
+            : "";
+        await ctx.reply(
+          `✅ <b>To'lov cheki qabul qilindi!</b>\nSumma: <b>${money(result.amount)}</b>\nHolat: Kutilmoqda (Admin tasdiqlashi kerak)${riskNote}\n\nMas'ul xodim hisobga pul tushganini tekshirib tasdiqlagach, to'lov hisobingizga tushadi.`,
+          { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+        );
+        return;
+      }
+
+      pendingReceipts.set(chatId, {
+        step: "WAITING_AMOUNT",
+        buffer,
+        filename: "receipt.jpg",
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      });
+      await ctx.reply(
+        "✅ Chek rasmi qabul qilindi!\n\nIltimos, to'lagan summani raqamda yozib yuboring (masalan: <code>50000</code>):",
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }]],
+          },
+        },
+      );
+      return;
+    } catch (err) {
+      console.error("Receipt upload error:", err);
+      await ctx.reply("Rasmni yuklashda xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      return;
+    }
+  }
+
   const field = pendingFor(chatId);
   if (!field || !DOCUMENT_FIELDS[field].photo) {
     await ctx.reply(
-      "Rasmni hujjatga qo'shish uchun avval 🪪 Hujjatlarim → «📷 Passport rasmi» yoki «📷 Guvohnoma rasmi» tugmasini bosing.",
+      "Rasmni hujjatga qo'shish uchun 🪪 Hujjatlarim bo'limiga, to'lov cheki uchun esa 💳 Masofaviy to'lov bo'limiga o'ting.",
     );
     return;
   }
@@ -658,6 +737,75 @@ bot.on(message("text"), async (ctx) => {
     return;
   }
   const chatId = chatIdOf(ctx);
+
+  const receiptSession = receiptSessionFor(chatId);
+  if (receiptSession) {
+    if (receiptSession.step === "WAITING_AMOUNT") {
+      const cleanNum = text.replace(/\s+/g, "").replace(",", ".");
+      const amount = Number(cleanNum);
+      if (isNaN(amount) || amount <= 0 || amount > 100_000_000) {
+        await ctx.reply(
+          "⚠️ Iltimos, to'g'ri summa kiriting (masalan: <code>50000</code> yoki <code>100000</code>):",
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }]],
+            },
+          },
+        );
+        return;
+      }
+
+      if (!receiptSession.buffer) {
+        pendingReceipts.delete(chatId);
+        await ctx.reply("Chek rasmi topilmadi. Qaytadan boshlang.", {
+          reply_markup: mainMenu("driver"),
+        });
+        return;
+      }
+
+      const receiptBuffer = receiptSession.buffer;
+      const receiptFilename = receiptSession.filename || "receipt.jpg";
+      pendingReceipts.delete(chatId);
+
+      await ctx.reply("⏳ Chek AI xavfsizlik tizimi tomonidan tahlil qilinmoqda...");
+      try {
+        const result = await api.submitReceipt(
+          chatId,
+          String(amount),
+          receiptBuffer.toString("base64"),
+          receiptFilename,
+        );
+        const riskNote =
+          result.fraudRisk === "HIGH"
+            ? "\n\n⚠️ <i>Diqqat: Chekda tahrir yoki shubhali belgilar aniqlandi va ma'muriyatning maxsus tekshiruviga yo'naltirildi.</i>"
+            : "";
+        await ctx.reply(
+          `✅ <b>To'lov cheki qabul qilindi!</b>\nSumma: <b>${money(result.amount)}</b>\nHolat: <b>Kutilmoqda (Admin tasdiqlashi kerak)</b>${riskNote}\n\nMas'ul xodim hisobga pul tushganini tekshirib tasdiqlagach, to'lov balansingizga kiritiladi.`,
+          { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+        );
+      } catch (err) {
+        console.error("Submit receipt text error:", describeError(err));
+        await ctx.reply("Chekni yuborishda xatolik yuz berdi. Qaytadan urinib ko'ring.", {
+          reply_markup: mainMenu("driver"),
+        });
+      }
+      return;
+    }
+
+    if (receiptSession.step === "WAITING_RECEIPT") {
+      await ctx.reply(
+        "📷 Iltimos, to'lov chekining rasmini (skrinshotini) yuboring.\n\nAgar bekor qilmoqchi bo'lsangiz:",
+        {
+          reply_markup: {
+            inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }]],
+          },
+        },
+      );
+      return;
+    }
+  }
+
   const field = pendingFor(chatId);
   if (field) {
     if (DOCUMENT_FIELDS[field].photo) {
@@ -697,6 +845,13 @@ bot.on("callback_query", async (ctx) => {
   const chatId = chatIdOf(ctx);
 
   try {
+    if (data === "pay:cancel") {
+      pendingReceipts.delete(chatId);
+      await ctx.reply("Masofaviy to'lov jarayoni bekor qilindi.", {
+        reply_markup: mainMenu("driver"),
+      });
+      return;
+    }
     if (data === "doc:cancel") {
       pendingInput.delete(chatId);
       await showDocuments(ctx);
@@ -719,6 +874,48 @@ bot.on("callback_query", async (ctx) => {
       if (data === "d:docs") {
         await showDocuments(ctx);
         return;
+      }
+      if (data === "d:pay") {
+        try {
+          const cardInfo = await api.paymentCard(chatId);
+          if (!cardInfo.paymentCardNumber) {
+            await ctx.reply(
+              "ℹ️ Kompaniya tomonidan to'lov kartasi hali belgilanmagan. Iltimos, dispetcher yoki hisobchiga murojaat qiling.",
+              { reply_markup: mainMenu("driver") },
+            );
+            return;
+          }
+
+          pendingReceipts.set(chatId, {
+            step: "WAITING_RECEIPT",
+            expiresAt: Date.now() + PENDING_TTL_MS,
+          });
+
+          const formattedCard = cardInfo.paymentCardNumber.replace(/(\d{4})/g, "$1 ").trim();
+          const lines = [
+            "💳 <b>Masofaviy to'lov (Karta orqali)</b>",
+            "",
+            `Karta raqami: <code>${formattedCard}</code>`,
+            cardInfo.paymentCardHolder ? `Karta egasi: <b>${escapeHtml(cardInfo.paymentCardHolder)}</b>` : null,
+            cardInfo.paymentCardBank ? `Bank: <b>${escapeHtml(cardInfo.paymentCardBank)}</b>` : null,
+            cardInfo.paymentInstructions ? `\nKo'rsatma: <i>${escapeHtml(cardInfo.paymentInstructions)}</i>` : null,
+            "",
+            "📲 <i>Ilovangiz (Click, Payme, Uzum va h.k.) orqali yuqoridagi kartaga to'lovni bajaring.</i>",
+            "📥 <b>To'lov qilgach, chek rasmini (yoki skrinshotini) shu yerga yuboring:</b>",
+          ].filter(Boolean).join("\n");
+
+          await ctx.reply(lines, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }]],
+            },
+          });
+          return;
+        } catch (err) {
+          console.error("Payment card error:", describeError(err));
+          await ctx.reply("Karta ma'lumotlarini olishda xatolik yuz berdi.");
+          return;
+        }
       }
       const driver = await api.driver(chatId);
       let text: string;

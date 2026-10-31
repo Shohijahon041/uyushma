@@ -59,6 +59,13 @@ export class TenantPrismaService {
     return rows[0]?.id ?? null;
   }
 
+  async resolveTenantIdByPhone(phone: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string | null }>>`
+      SELECT app_resolve_tenant_by_phone(${phone}) AS id
+    `;
+    return rows[0]?.id ?? null;
+  }
+
   async resolveTelegramChat(
     chatId: bigint,
   ): Promise<{ tenantId: string; userId: string } | null> {

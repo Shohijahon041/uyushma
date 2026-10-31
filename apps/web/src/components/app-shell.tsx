@@ -10,6 +10,7 @@ import { Brand } from "./brand";
 import { Icon, type IconName } from "./icons";
 import { LanguageSwitcher } from "./language-switcher";
 import { QuickPayButton } from "./quick-pay";
+import { ThemeToggle } from "./theme-toggle";
 
 interface NavItem {
   href: string;
@@ -47,6 +48,12 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
         href: "/payments",
         labelKey: "payments",
         icon: "wallet",
+        roles: ["OWNER", "ADMIN", "ACCOUNTANT"],
+      },
+      {
+        href: "/submissions",
+        labelKey: "submissions",
+        icon: "file",
         roles: ["OWNER", "ADMIN", "ACCOUNTANT"],
       },
       { href: "/subscription", labelKey: "subscription", icon: "card" },
@@ -259,6 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand-500" />
               </Link>
               <LanguageSwitcher />
+              <ThemeToggle />
               <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 sm:flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 {me.company.status === "ACTIVE" ? "Faol" : me.company.status}

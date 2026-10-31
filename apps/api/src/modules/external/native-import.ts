@@ -39,6 +39,8 @@ export function seatCount(raw: unknown): number {
     positiveNumber(raw.seat_qty) ??
     positiveNumber(raw.seats) ??
     positiveNumber(raw.capacity) ??
+    positiveNumber(raw.seatCount) ??
+    positiveNumber(raw.passengerCapacity) ??
     positiveNumber(raw.bus_seats) ??
     positiveNumber(raw.seats_tonnage) ??
     positiveNumber(gaiVehicle?.pSeats) ??

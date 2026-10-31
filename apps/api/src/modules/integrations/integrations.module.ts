@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BotApiGuard } from "../../common/auth/service-guards";
 import { DriversModule } from "../drivers/drivers.module";
+import { SubmissionsModule } from "../submissions/submissions.module";
 import {
   TelegramBotController,
   TelegramSettingsController,
@@ -8,7 +9,7 @@ import {
 import { IntegrationsService } from "./integrations.service";
 
 @Module({
-  imports: [DriversModule],
+  imports: [DriversModule, SubmissionsModule],
   controllers: [TelegramSettingsController, TelegramBotController],
   providers: [IntegrationsService, BotApiGuard],
 })

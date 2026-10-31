@@ -55,6 +55,7 @@ export class SubscriptionsService {
       return {
         subscription: {
           ...subscription,
+          monthlyFee: subscription.monthlyFee?.toFixed(2) ?? null,
           plan: {
             ...subscription.plan,
             monthlyPrice: subscription.plan.monthlyPrice.toFixed(2),
@@ -98,6 +99,11 @@ export class SubscriptionsService {
         where: { status: { in: ["TRIAL", "ACTIVE", "PAST_DUE"] } },
       });
       if (!subscription) throw new NotFoundException("Faol obuna topilmadi");
+      if (subscription.monthlyFee !== null) {
+        throw new ForbiddenException(
+          "Shartnoma asosidagi obuna: tarifni faqat platforma administratori o'zgartiradi",
+        );
+      }
 
       const [activeUsers, activeVehicles] = await Promise.all([
         tx.user.count({ where: { isActive: true } }),
@@ -141,6 +147,7 @@ export class SubscriptionsService {
       return {
         subscription: {
           ...updated,
+          monthlyFee: updated.monthlyFee?.toFixed(2) ?? null,
           plan: {
             ...updated.plan,
             monthlyPrice: updated.plan.monthlyPrice.toFixed(2),
@@ -219,7 +226,7 @@ export class SubscriptionsService {
           number,
           periodStart: start,
           periodEnd: end,
-          amount: subscription.plan.monthlyPrice,
+          amount: subscription.monthlyFee ?? subscription.plan.monthlyPrice,
           dueDate,
           status: "OPEN",
         },

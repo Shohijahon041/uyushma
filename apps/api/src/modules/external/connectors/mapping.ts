@@ -309,11 +309,11 @@ export function mapEtenderVehicle(
 }
 
 export function mapBmVehicle(item: unknown): NormalizedVehicle | null {
-  const externalId = externalIdOf(item, ["plateNumber", "vehicleId"]);
+  const externalId = externalIdOf(item, ["vehicleId", "plateNumber", "plateNum"]);
   if (!externalId) return null;
   return {
     externalId,
-    plateNumber: text(pick(item, ["plateNumber", "plate_number", "stateNumber"])),
+    plateNumber: text(pick(item, ["plateNumber", "plateNum", "plate_number", "stateNumber"])),
     garageNumber: text(pick(item, ["garageNumber", "garage_number"])),
     vin: text(pick(item, ["vin", "bodyNumber"])),
     gpsImei: text(pick(item, ["gpsImei", "imei"])),

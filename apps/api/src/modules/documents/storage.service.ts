@@ -77,4 +77,15 @@ export class StorageService {
   async remove(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
+
+  async uploadBuffer(key: string, buffer: Buffer, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    );
+  }
 }

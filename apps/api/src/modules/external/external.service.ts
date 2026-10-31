@@ -23,6 +23,7 @@ import {
   type ExternalConnector,
   type ExternalFetchResult,
   type NormalizedRecord,
+  type NormalizedDriver,
   type NormalizedVehicle,
   type ProviderConfig,
   type ProviderCredentials,
@@ -258,7 +259,7 @@ export class ExternalService {
     const connections = await this.tenantPrisma.withTenant(tenantId, (tx) =>
       tx.externalConnection.findMany({
         where: {
-          status: "ACTIVE",
+          status: { not: "DISABLED" },
           ...(provider ? { provider } : {}),
         },
         select: { provider: true },
@@ -487,6 +488,7 @@ export class ExternalService {
         for (const record of result.records) {
           await this.upsertRecord(tx, tenantId, provider, record);
         }
+        const drivers = await this.importDrivers(tx, tenantId, result.drivers ?? []);
 
         return {
           vehicles: result.vehicles.length,
@@ -494,6 +496,8 @@ export class ExternalService {
           created,
           routes,
           records: result.records.length,
+          drivers: drivers.total,
+          driversCreated: drivers.created,
           warnings: result.warnings.length,
         };
       },
@@ -520,6 +524,7 @@ export class ExternalService {
       if (!names.has(key)) names.set(key, name);
     };
     for (const vehicle of result.vehicles) add(vehicle.routeName);
+    for (const name of result.routeNames ?? []) add(name);
     const distances = collectRouteDistances(result.records);
     for (const [key, route] of distances) {
       if (!names.has(key)) names.set(key, route.name);
@@ -545,6 +550,86 @@ export class ExternalService {
       created += 1;
     }
     return created;
+  }
+
+  /**
+   * Provider drivers are matched by PINFL, phone, then exact name. Matches only
+   * get empty fields filled; new drivers need a phone (the bot links by it).
+   */
+  private async importDrivers(
+    tx: TenantTx,
+    tenantId: string,
+    drivers: NormalizedDriver[],
+  ): Promise<{ total: number; created: number }> {
+    if (drivers.length === 0) return { total: 0, created: 0 };
+    const existing = await tx.driver.findMany({
+      select: {
+        id: true,
+        fullName: true,
+        phone: true,
+        pinfl: true,
+        licenseNumber: true,
+        licenseCategories: true,
+        licenseExpiresAt: true,
+      },
+    });
+    const byPinfl = new Map(existing.filter((d) => d.pinfl).map((d) => [d.pinfl!, d]));
+    const byPhone = new Map(existing.map((d) => [d.phone.replace(/\D/g, "").slice(-9), d]));
+    const byName = new Map(existing.map((d) => [d.fullName.toLowerCase(), d]));
+
+    let created = 0;
+    for (const driver of drivers) {
+      const phoneKey = driver.phone?.replace(/\D/g, "").slice(-9) ?? "";
+      const match =
+        (driver.pinfl ? byPinfl.get(driver.pinfl) : undefined) ??
+        (phoneKey ? byPhone.get(phoneKey) : undefined) ??
+        byName.get(driver.fullName.toLowerCase());
+      if (match) {
+        const patch = {
+          ...(!match.pinfl && driver.pinfl && !byPinfl.has(driver.pinfl) ? { pinfl: driver.pinfl } : {}),
+          ...(!match.licenseNumber && driver.licenseNumber
+            ? { licenseNumber: driver.licenseNumber.slice(0, 60) }
+            : {}),
+          ...(!match.licenseCategories && driver.licenseCategories
+            ? { licenseCategories: driver.licenseCategories.slice(0, 40) }
+            : {}),
+          ...(!match.licenseExpiresAt && driver.licenseExpiresAt
+            ? { licenseExpiresAt: driver.licenseExpiresAt }
+            : {}),
+        };
+        if (Object.keys(patch).length > 0) {
+          await tx.driver.update({ where: { id: match.id }, data: patch });
+        }
+        continue;
+      }
+      if (!driver.phone) continue;
+      const row = await tx.driver.create({
+        data: {
+          tenantId,
+          fullName: driver.fullName,
+          phone: driver.phone.slice(0, 32),
+          pinfl: driver.pinfl,
+          licenseNumber: driver.licenseNumber?.slice(0, 60) ?? null,
+          licenseCategories: driver.licenseCategories?.slice(0, 40) ?? null,
+          licenseExpiresAt: driver.licenseExpiresAt,
+          notes: driver.routeName ? `BM: ${driver.routeName}`.slice(0, 500) : "BM",
+        },
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          pinfl: true,
+          licenseNumber: true,
+          licenseCategories: true,
+          licenseExpiresAt: true,
+        },
+      });
+      if (row.pinfl) byPinfl.set(row.pinfl, row);
+      byPhone.set(phoneKey, row);
+      byName.set(row.fullName.toLowerCase(), row);
+      created += 1;
+    }
+    return { total: drivers.length, created };
   }
 
   private async upsertVehicle(

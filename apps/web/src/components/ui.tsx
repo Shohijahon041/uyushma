@@ -25,6 +25,11 @@ export function PageHeader({
 const toneByStatus: Record<string, string> = {
   ACTIVE: "bg-emerald-50 text-emerald-700",
   PAID: "bg-emerald-50 text-emerald-700",
+  APPROVED: "bg-emerald-50 text-emerald-700",
+  REJECTED: "bg-red-50 text-red-700",
+  LOW: "bg-emerald-50 text-emerald-700",
+  MEDIUM: "bg-amber-50 text-amber-700",
+  HIGH: "bg-red-50 text-red-700",
   UPLOADED: "bg-emerald-50 text-emerald-700",
   PROCESSED: "bg-emerald-50 text-emerald-700",
   PENDING: "bg-amber-50 text-amber-700",
@@ -74,17 +79,33 @@ export function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
+const statTones = {
+  blue: "from-brand-500 to-sky-400",
+  emerald: "from-emerald-500 to-teal-400",
+  violet: "from-violet-500 to-fuchsia-400",
+  amber: "from-amber-500 to-orange-400",
+  red: "from-red-500 to-rose-400",
+} as const;
+
 export function StatCard({
   label,
   value,
   hint,
+  tone,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
+  tone?: keyof typeof statTones;
 }) {
   return (
-    <div className="card card-body">
+    <div className="card card-body relative overflow-hidden">
+      {tone && (
+        <span
+          aria-hidden
+          className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${statTones[tone]}`}
+        />
+      )}
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}

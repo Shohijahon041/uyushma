@@ -29,10 +29,10 @@ export default function DashboardPage() {
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label={t("vehicles")} value={data.counts.vehicles} />
-        <StatCard label={t("activeContracts")} value={data.counts.activeContracts} />
-        <StatCard label={t("routes")} value={data.counts.routes} />
-        <StatCard label={t("users")} value={data.counts.users} />
+        <StatCard tone="blue" label={t("vehicles")} value={data.counts.vehicles} />
+        <StatCard tone="emerald" label={t("activeContracts")} value={data.counts.activeContracts} />
+        <StatCard tone="violet" label={t("routes")} value={data.counts.routes} />
+        <StatCard tone="amber" label={t("users")} value={data.counts.users} />
       </div>
 
       <div className="card card-body mt-4">
@@ -80,7 +80,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <div className="card card-body lg:col-span-2">
+        <div className="card card-body relative overflow-hidden border-l-4 border-l-amber-400 lg:col-span-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {t("pendingPayments")}
           </p>
@@ -98,7 +98,7 @@ export default function DashboardPage() {
             </Link>
           </div>
         </div>
-        <div className="card card-body">
+        <div className="card card-body border-l-4 border-l-emerald-500">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {t("paidThisMonth")}
           </p>
@@ -164,11 +164,23 @@ export default function DashboardPage() {
                 />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">{t("trialUntil")}</span>
+                <span className="text-slate-500">
+                  {data.subscription.status === "TRIAL" ? t("trialUntil") : tsub("paidUntil")}
+                </span>
                 <span className="font-medium text-slate-800">
                   {formatDate(data.subscription.currentPeriodEnd)}
                 </span>
               </div>
+              {data.subscription.monthlyFee && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">
+                    {data.subscription.hasContract ? tsub("contract") : tsub("plan")}
+                  </span>
+                  <span className="font-medium text-slate-800">
+                    {formatMoney(data.subscription.monthlyFee)} / {tsub("monthly")}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">{t("openInvoices")}</span>
                 <span className="font-medium text-slate-800">

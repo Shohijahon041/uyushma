@@ -9,6 +9,7 @@ import { Alert, Loading, PageHeader, StatusBadge } from "@/components/ui";
 import { SecuritySettings } from "@/components/security-settings";
 import { PaymeSettings } from "@/components/payme-settings";
 import { ExternalSettings } from "@/components/external-settings";
+import { CompanyPaymentSettings } from "@/components/company-payment-settings";
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -74,8 +75,8 @@ export default function SettingsPage() {
               </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">{t("email")}</dt>
-              <dd className="font-medium text-slate-900">{me.data.email}</dd>
+              <dt className="text-slate-500">{users("phone")}</dt>
+              <dd className="font-medium text-slate-900">{me.data.phone ?? "—"}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">{t("role")}</dt>
@@ -154,10 +155,11 @@ export default function SettingsPage() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <SecuritySettings me={me.data} onChanged={() => void me.reload()} />
-        <PaymeSettings role={me.data.role} />
+        <CompanyPaymentSettings role={me.data.role} />
       </div>
 
-      <div className="mt-5">
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <PaymeSettings role={me.data.role} />
         <ExternalSettings role={me.data.role} />
       </div>
 

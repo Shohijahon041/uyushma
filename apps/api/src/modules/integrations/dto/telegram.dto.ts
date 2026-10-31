@@ -74,3 +74,26 @@ export class DriverDocumentDto {
   @MaxLength(255)
   value!: string;
 }
+
+export class SubmitReceiptBotDto {
+  @IsString()
+  @Matches(CHAT_ID, { message: "chatId noto'g'ri" })
+  chatId!: string;
+
+  @IsString()
+  amount!: string;
+
+  @IsString()
+  base64Data!: string;
+
+  @IsString()
+  filename!: string;
+
+  @IsOptional()
+  @IsString()
+  transactionNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}

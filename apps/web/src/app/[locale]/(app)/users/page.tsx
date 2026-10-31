@@ -9,6 +9,17 @@ import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/component
 
 type Role = "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
 
+interface IssuedLogin {
+  fullName: string;
+  phone: string;
+  password: string;
+}
+
+interface UserWithPassword {
+  user: { fullName: string; phone: string | null };
+  password: string;
+}
+
 export default function UsersPage() {
   const t = useTranslations("users");
   const tc = useTranslations("common");
@@ -16,39 +27,58 @@ export default function UsersPage() {
   const me = useApi<AuthUser>("/auth/me");
 
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("+998 ");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
   const [role, setRole] = useState<Role>("MANAGER");
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [issued, setIssued] = useState<IssuedLogin | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const roleOptions: Role[] =
     me.data?.role === "OWNER"
       ? ["OWNER", "ADMIN", "ACCOUNTANT", "MANAGER"]
       : ["ADMIN", "ACCOUNTANT", "MANAGER"];
 
+  function showIssued(result: UserWithPassword) {
+    setCopied(false);
+    setIssued({
+      fullName: result.user.fullName,
+      phone: result.user.phone ?? "",
+      password: result.password,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function copyIssued() {
+    if (!issued) return;
+    await navigator.clipboard.writeText(
+      `${t("phone")}: ${issued.phone}\n${t("password")}: ${issued.password}`,
+    );
+    setCopied(true);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
     setSaving(true);
     try {
-      await apiRequest("/users", {
+      const result = await apiRequest<UserWithPassword>("/users", {
         method: "POST",
         body: {
           fullName,
-          email,
-          password,
+          phone,
           role,
-          ...(phone ? { phone } : {}),
+          ...(password ? { password } : {}),
         },
       });
       setFullName("");
-      setEmail("");
+      setPhone("+998 ");
       setPassword("");
-      setPhone("");
       setRole("MANAGER");
+      showIssued(result);
       await reload();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : tc("error"));
@@ -63,6 +93,7 @@ export default function UsersPage() {
       return;
     }
     setActionError(null);
+    setBusy(user.id);
     try {
       await apiRequest(`/users/${user.id}`, {
         method: "PATCH",
@@ -71,12 +102,61 @@ export default function UsersPage() {
       await reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resetPassword(user: UserItem) {
+    if (!window.confirm(t("confirmReset", { name: user.fullName }))) return;
+    setActionError(null);
+    setBusy(user.id);
+    try {
+      const result = await apiRequest<UserWithPassword>(`/users/${user.id}/reset-password`, {
+        method: "POST",
+        body: {},
+      });
+      showIssued(result);
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBusy(null);
     }
   }
 
   return (
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
+
+      {issued && (
+        <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-900">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold">{t("issuedTitle", { name: issued.fullName })}</h2>
+              <p className="mt-1 text-xs opacity-80">{t("issuedHint")}</p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary text-xs" onClick={() => void copyIssued()}>
+                {copied ? t("copied") : t("copy")}
+              </button>
+              <button type="button" className="btn-ghost text-xs" onClick={() => setIssued(null)}>
+                {t("close")}
+              </button>
+            </div>
+          </div>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs opacity-70">{t("phone")}</dt>
+              <dd className="font-mono font-semibold">{issued.phone}</dd>
+            </div>
+            <div>
+              <dt className="text-xs opacity-70">{t("password")}</dt>
+              <dd className="font-mono text-base font-bold tracking-wide">{issued.password}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
 
       <div className="card card-body mb-5">
         <h2 className="mb-4 text-sm font-bold text-slate-800">{t("addTitle")}</h2>
@@ -96,32 +176,18 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <label className="label" htmlFor="user-email">
-                {t("email")}
+              <label className="label" htmlFor="user-phone">
+                {t("phone")}
               </label>
               <input
-                id="user-email"
-                type="email"
-                className="input"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                id="user-phone"
+                type="tel"
+                className="input font-mono"
+                placeholder="+998 90 123 45 67"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
                 required
               />
-            </div>
-            <div>
-              <label className="label" htmlFor="user-password">
-                {t("password")}
-              </label>
-              <input
-                id="user-password"
-                type="password"
-                className="input"
-                minLength={12}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <p className="mt-1 text-xs text-slate-500">{t("passwordHint")}</p>
             </div>
             <div>
               <label className="label" htmlFor="user-role">
@@ -141,15 +207,19 @@ export default function UsersPage() {
               </select>
             </div>
             <div>
-              <label className="label" htmlFor="user-phone">
-                {t("phone")}
+              <label className="label" htmlFor="user-password">
+                {t("password")}
               </label>
               <input
-                id="user-phone"
-                className="input"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
+                id="user-password"
+                type="text"
+                className="input font-mono"
+                autoComplete="off"
+                minLength={12}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
               />
+              <p className="mt-1 text-xs text-slate-500">{t("passwordHint")}</p>
             </div>
           </div>
           <button type="submit" className="btn-primary" disabled={saving}>
@@ -173,7 +243,7 @@ export default function UsersPage() {
               <thead>
                 <tr>
                   <th>{t("fullName")}</th>
-                  <th>{t("email")}</th>
+                  <th>{t("phone")}</th>
                   <th>{t("role")}</th>
                   <th>{tc("status")}</th>
                   <th>{t("lastLogin")}</th>
@@ -181,35 +251,46 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {data?.items.map((user) => (
-                  <tr key={user.id}>
-                    <td>
-                      <p className="font-semibold text-slate-900">{user.fullName}</p>
-                      {user.phone && <p className="text-xs text-slate-400">{user.phone}</p>}
-                    </td>
-                    <td className="text-slate-600">{user.email}</td>
-                    <td>{t(user.role)}</td>
-                    <td>
-                      <StatusBadge
-                        status={user.isActive ? "ACTIVE" : "INACTIVE"}
-                        label={user.isActive ? "Faol" : "Faolsiz"}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap text-slate-500">
-                      {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : t("never")}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn-ghost text-xs"
-                        onClick={() => void toggle(user)}
-                        disabled={user.id === me.data?.id}
-                      >
-                        {user.isActive ? t("deactivate") : t("activate")}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {data?.items.map((user) => {
+                  const isSelf = user.id === me.data?.id;
+                  const ownerLocked = user.role === "OWNER" && me.data?.role !== "OWNER";
+                  return (
+                    <tr key={user.id}>
+                      <td className="font-semibold text-slate-900">{user.fullName}</td>
+                      <td className="font-mono text-sm text-slate-600">{user.phone ?? "—"}</td>
+                      <td>{t(user.role)}</td>
+                      <td>
+                        <StatusBadge
+                          status={user.isActive ? "ACTIVE" : "INACTIVE"}
+                          label={user.isActive ? t("active") : t("inactive")}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap text-slate-500">
+                        {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : t("never")}
+                      </td>
+                      <td>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs text-brand-700"
+                            onClick={() => void resetPassword(user)}
+                            disabled={isSelf || ownerLocked || busy === user.id}
+                          >
+                            {t("resetPassword")}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs"
+                            onClick={() => void toggle(user)}
+                            disabled={isSelf || busy === user.id}
+                          >
+                            {user.isActive ? t("deactivate") : t("activate")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

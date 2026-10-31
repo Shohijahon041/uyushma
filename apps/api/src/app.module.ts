@@ -29,6 +29,7 @@ import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { ExternalModule } from "./modules/external/external.module";
 import { DriversModule } from "./modules/drivers/drivers.module";
 import { PlatformModule } from "./modules/platform/platform.module";
+import { SubmissionsModule } from "./modules/submissions/submissions.module";
 import { HealthModule } from "./modules/health/health.module";
 
 @Module({
@@ -71,6 +72,7 @@ import { HealthModule } from "./modules/health/health.module";
     ExternalModule,
     DriversModule,
     PlatformModule,
+    SubmissionsModule,
     HealthModule,
   ],
   providers: [

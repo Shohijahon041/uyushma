@@ -56,7 +56,7 @@ export class JwtAuthGuard implements CanActivate {
           isActive: true,
           company: { status: "ACTIVE" },
         },
-        select: { id: true, email: true, fullName: true, role: true, isSuperAdmin: true },
+        select: { id: true, phone: true, fullName: true, role: true, isSuperAdmin: true },
       });
       if (!found) return null;
       if (payload.sessionId) {
@@ -84,7 +84,7 @@ export class JwtAuthGuard implements CanActivate {
       userId: user.id,
       tenantId: payload.tenantId,
       role: user.role,
-      email: user.email,
+      phone: user.phone,
       fullName: user.fullName,
       isSuperAdmin: user.isSuperAdmin,
       sessionId: payload.sessionId,

@@ -14,7 +14,7 @@ import type { Request } from "express";
 import { CurrentUser, Roles } from "../../common/auth/decorators";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import { UsersService } from "./users.service";
-import { CreateUserDto, UpdateUserDto } from "./dto/user.dto";
+import { CreateUserDto, ResetUserPasswordDto, UpdateUserDto } from "./dto/user.dto";
 
 function ip(request: Request): string | null {
   return request.ip ?? request.socket?.remoteAddress ?? null;
@@ -57,5 +57,16 @@ export class UsersController {
     @Req() request: Request,
   ) {
     return this.users.update(user, id, dto, ip(request));
+  }
+
+  @Post(":id/reset-password")
+  @Roles(UserRole.OWNER, UserRole.ADMIN)
+  resetPassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() dto: ResetUserPasswordDto,
+    @Req() request: Request,
+  ) {
+    return this.users.resetPassword(user, id, dto, ip(request));
   }
 }

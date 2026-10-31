@@ -114,13 +114,8 @@ export function SecuritySettings({
 
       <dl className="mt-4 space-y-2 text-sm">
         <div className="flex items-center justify-between gap-4">
-          <dt className="text-slate-500">{t("emailStatus")}</dt>
-          <dd>
-            <StatusBadge
-              status={me.emailVerifiedAt ? "ACTIVE" : "PENDING"}
-              label={me.emailVerifiedAt ? t("verified") : t("notVerified")}
-            />
-          </dd>
+          <dt className="text-slate-500">Telefon raqam</dt>
+          <dd className="font-mono text-slate-800">{me.phone ?? "Kiritilmagan"}</dd>
         </div>
       </dl>
 

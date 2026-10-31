@@ -118,6 +118,8 @@ export class DashboardService {
               planId: subscription.planId,
               planName: subscription.plan.name,
               currentPeriodEnd: subscription.currentPeriodEnd,
+              monthlyFee: (subscription.monthlyFee ?? subscription.plan.monthlyPrice).toFixed(2),
+              hasContract: subscription.monthlyFee !== null,
               openInvoices: openSubscriptionInvoices,
             }
           : null,

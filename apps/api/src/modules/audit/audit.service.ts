@@ -5,7 +5,7 @@ import { TenantPrismaService, TenantTx } from "../../common/prisma/tenant-prisma
 export interface AuditInput {
   tenantId: string;
   actorUserId?: string | null;
-  actorType?: "USER" | "SYSTEM" | "INTEGRATION";
+  actorType?: "USER" | "SYSTEM" | "INTEGRATION" | "PLATFORM";
   action: string;
   entityType: string;
   entityId?: string | null;

@@ -19,6 +19,7 @@ import {
   DriverDocumentDto,
   LinkPhoneDto,
   LinkTelegramDto,
+  SubmitReceiptBotDto,
   TelegramProfileDto,
 } from "./dto/telegram.dto";
 
@@ -121,5 +122,16 @@ export class TelegramBotController {
   @HttpCode(200)
   updateDriverDocument(@Body() dto: DriverDocumentDto, @Req() request: Request) {
     return this.integrations.updateBotDriverDocument(dto, ip(request));
+  }
+
+  @Get("driver/payment-card")
+  driverPaymentCard(@Query("chatId") chatId: string) {
+    return this.integrations.botPaymentCard(chatId);
+  }
+
+  @Post("driver/submit-receipt")
+  @HttpCode(200)
+  submitReceipt(@Body() dto: SubmitReceiptBotDto) {
+    return this.integrations.submitReceipt(dto);
   }
 }

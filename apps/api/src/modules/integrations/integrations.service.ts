@@ -9,6 +9,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { TenantPrismaService } from "../../common/prisma/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { DriversService } from "../drivers/drivers.service";
+import { SubmissionsService } from "../submissions/submissions.service";
+import { SubmitReceiptBotDto } from "./dto/telegram.dto";
 import type { DriverDocumentField } from "../drivers/documents";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 
@@ -29,6 +31,7 @@ export class IntegrationsService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly drivers: DriversService,
+    private readonly submissions: SubmissionsService,
   ) {}
 
   async linkStatus(tenantId: string, userId: string) {
@@ -276,6 +279,21 @@ export class IntegrationsService {
   async botDriverDocuments(chatIdRaw: string) {
     const { tenantId, driverId } = await this.resolveDriverChat(chatIdRaw);
     return this.drivers.documents(tenantId, driverId);
+  }
+
+  async botPaymentCard(chatIdRaw: string) {
+    const { tenantId } = await this.resolveDriverChat(chatIdRaw);
+    return this.submissions.getPaymentInfo(tenantId);
+  }
+
+  async submitReceipt(dto: SubmitReceiptBotDto) {
+    const { tenantId, driverId } = await this.resolveDriverChat(dto.chatId);
+    const buffer = Buffer.from(dto.base64Data, "base64");
+    return this.submissions.createSubmission(tenantId, driverId, buffer, dto.filename, {
+      amount: dto.amount,
+      transactionNumber: dto.transactionNumber,
+      note: dto.note,
+    });
   }
 
   async updateBotDriverDocument(

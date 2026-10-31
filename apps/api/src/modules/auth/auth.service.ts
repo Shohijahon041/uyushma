@@ -1,19 +1,15 @@
 import {
   BadRequestException,
-  ConflictException,
-  ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
   OnModuleInit,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, User, UserRole } from "@prisma/client";
 import { hash, verify } from "@node-rs/argon2";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { TenantPrismaService, TenantTx } from "../../common/prisma/tenant-prisma.service";
 import { EncryptionService } from "../../common/crypto/encryption.service";
 import { deviceLabel } from "../../common/auth/device";
@@ -25,17 +21,7 @@ import {
   verifyTotp,
 } from "../../common/auth/totp";
 import { AuditService } from "../audit/audit.service";
-import { EmailService } from "./email.service";
-import {
-  DisableTwoFactorDto,
-  ForgotPasswordDto,
-  LoginDto,
-  RefreshDto,
-  RegisterCompanyDto,
-  ResetPasswordDto,
-  VerifyEmailDto,
-  VerifyTwoFactorDto,
-} from "./dto/auth.dto";
+import { DisableTwoFactorDto, LoginDto, RefreshDto, VerifyTwoFactorDto } from "./dto/auth.dto";
 import type { RefreshTokenPayload } from "../../common/auth/auth.types";
 
 const ARGON_OPTIONS = {
@@ -45,27 +31,10 @@ const ARGON_OPTIONS = {
   outputLen: 32,
 };
 
-const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const MFA_TOKEN_TTL_SECONDS = 5 * 60;
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function randomToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-function startOfToday(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
-function addDays(date: Date, days: number): Date {
-  const copy = new Date(date);
-  copy.setUTCDate(copy.getUTCDate() + days);
-  return copy;
 }
 
 export interface SessionMeta {
@@ -82,10 +51,9 @@ export interface AuthTokens {
 
 export interface AuthUserView {
   id: string;
-  email: string;
+  phone: string | null;
   fullName: string;
   role: UserRole;
-  emailVerifiedAt: Date | null;
   twoFactorEnabled: boolean;
 }
 
@@ -93,7 +61,10 @@ interface CompanyView {
   id: string;
   name: string;
   slug: string;
+  isPlatform: boolean;
 }
+
+const COMPANY_VIEW = { id: true, name: true, slug: true, isPlatform: true } as const;
 
 export interface AuthResult extends AuthTokens {
   user: AuthUserView;
@@ -106,13 +77,8 @@ export interface MfaChallenge {
   expiresIn: number;
 }
 
-export type RegistrationResult =
-  | AuthResult
-  | { verificationRequired: true; user: AuthUserView; company: CompanyView };
-
 @Injectable()
 export class AuthService implements OnModuleInit {
-  private readonly logger = new Logger(AuthService.name);
   private dummyHash = "";
 
   constructor(
@@ -121,12 +87,7 @@ export class AuthService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly audit: AuditService,
     private readonly encryption: EncryptionService,
-    private readonly email: EmailService,
   ) {}
-
-  private get requireEmailVerification(): boolean {
-    return this.config.get<boolean>("REQUIRE_EMAIL_VERIFICATION", false);
-  }
 
   async onModuleInit(): Promise<void> {
     this.dummyHash = await hash("timing-equalizer-not-a-real-password", ARGON_OPTIONS);
@@ -136,123 +97,22 @@ export class AuthService implements OnModuleInit {
   // Registration and login
   // -------------------------------------------------------------------------
 
-  async register(
-    dto: RegisterCompanyDto,
-    meta: SessionMeta,
-  ): Promise<RegistrationResult> {
-    const tenantId = randomUUID();
-    const slug = dto.companySlug.toLowerCase();
-    const passwordHash = await hash(dto.password, ARGON_OPTIONS);
-    const today = startOfToday();
-    const requireVerification = this.requireEmailVerification;
-    const sessionId = randomUUID();
-    let verificationToken: string | null = null;
-
-    try {
-      const result = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-        const plan = await tx.plan.findUnique({ where: { id: "START" } });
-        if (!plan || !plan.isActive) {
-          throw new ServiceUnavailableException(
-            "Obuna rejalari sozlanmagan. Administrator bilan bog'laning.",
-          );
-        }
-
-        const company = await tx.company.create({
-          data: { id: tenantId, slug, name: dto.companyName.trim() },
-        });
-        const user = await tx.user.create({
-          data: {
-            tenantId,
-            email: dto.email,
-            passwordHash,
-            fullName: dto.fullName.trim(),
-            phone: dto.phone?.trim() || null,
-            role: UserRole.OWNER,
-            emailVerifiedAt: requireVerification ? null : new Date(),
-          },
-        });
-        await tx.subscription.create({
-          data: {
-            tenantId,
-            planId: plan.id,
-            status: "TRIAL",
-            startDate: today,
-            currentPeriodEnd: addDays(today, 14),
-          },
-        });
-
-        if (requireVerification) {
-          verificationToken = await this.createEmailToken(tx, user);
-        }
-
-        await this.audit.record(tx, {
-          tenantId,
-          actorUserId: user.id,
-          action: "auth.company_registered",
-          entityType: "Company",
-          entityId: tenantId,
-          metadata: { slug, plan: plan.id, verificationRequired: requireVerification },
-          ip: meta.ip,
-        });
-
-        if (requireVerification) {
-          return {
-            verificationRequired: true as const,
-            user: this.toUserView(user),
-            company: { id: company.id, name: company.name, slug: company.slug },
-          };
-        }
-
-        const tokens = await this.issueTokens(tx, user, {
-          sessionId,
-          ip: meta.ip,
-          userAgent: meta.userAgent,
-        });
-        return {
-          ...tokens,
-          user: this.toUserView(user),
-          company: { id: company.id, name: company.name, slug: company.slug },
-        };
-      });
-
-      if ("verificationRequired" in result && verificationToken) {
-        await this.sendVerificationEmail(
-          { to: dto.email, fullName: dto.fullName, companySlug: dto.companySlug },
-          verificationToken,
-        );
-      }
-      return result;
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new ConflictException(
-          "Bu kompaniya kodi yoki email allaqachon ro'yxatdan o'tgan",
-        );
-      }
-      throw error;
-    }
-  }
-
   async login(dto: LoginDto, meta: SessionMeta): Promise<AuthResult | MfaChallenge> {
-    const tenantId = await this.tenantPrisma.resolveTenantIdBySlug(dto.companySlug);
+    const tenantId = await this.tenantPrisma.resolveTenantIdByPhone(dto.phone);
     if (!tenantId) {
       await verify(this.dummyHash, dto.password).catch(() => false);
-      throw new UnauthorizedException("Kompaniya kodi, email yoki parol xato");
+      throw new UnauthorizedException("Telefon raqam yoki parol xato");
     }
 
     const result = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-      const user = await tx.user.findUnique({
-        where: { tenantId_email: { tenantId, email: dto.email } },
-      });
+      const user = await tx.user.findUnique({ where: { phone: dto.phone } });
       if (!user) {
         await verify(this.dummyHash, dto.password).catch(() => false);
         return null;
       }
       const valid = await verify(user.passwordHash, dto.password).catch(() => false);
-      if (!valid || !user.isActive) {
+      if (!valid || !user.isActive || user.tenantId !== tenantId) {
         return null;
-      }
-      if (this.requireEmailVerification && !user.emailVerifiedAt) {
-        return { kind: "unverified" as const };
       }
 
       if (user.twoFactorEnabled && user.twoFactorSecret) {
@@ -286,18 +146,13 @@ export class AuthService implements OnModuleInit {
       });
       const company = await tx.company.findUniqueOrThrow({
         where: { id: tenantId },
-        select: { id: true, name: true, slug: true },
+        select: COMPANY_VIEW,
       });
       return { kind: "ok" as const, result: { ...tokens, user: this.toUserView(user), company } };
     });
 
     if (!result) {
-      throw new UnauthorizedException("Kompaniya kodi, email yoki parol xato");
-    }
-    if (result.kind === "unverified") {
-      throw new ForbiddenException(
-        "Email manzilingiz tasdiqlanmagan. Pochtangizga yuborilgan havolani oching.",
-      );
+      throw new UnauthorizedException("Telefon raqam yoki parol xato");
     }
     if (result.kind === "mfa") {
       return {
@@ -389,7 +244,7 @@ export class AuthService implements OnModuleInit {
       });
       const company = await tx.company.findUniqueOrThrow({
         where: { id: payload.tenantId },
-        select: { id: true, name: true, slug: true },
+        select: COMPANY_VIEW,
       });
       return { ...tokens, user: this.toUserView(user), company };
     });
@@ -411,7 +266,7 @@ export class AuthService implements OnModuleInit {
   ): Promise<{ secret: string; otpauthUri: string }> {
     const secret = generateTotpSecret();
     const encrypted = this.encryption.encrypt(secret);
-    const email = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
+    const label = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
       const user = await tx.user.findFirstOrThrow({ where: { id: userId } });
       if (user.twoFactorEnabled) {
         throw new BadRequestException("Ikki bosqichli tasdiqlash allaqachon yoqilgan");
@@ -428,11 +283,11 @@ export class AuthService implements OnModuleInit {
         entityId: user.id,
         ip,
       });
-      return user.email;
+      return user.phone ?? user.fullName;
     });
     return {
       secret,
-      otpauthUri: totpUri(secret, email),
+      otpauthUri: totpUri(secret, label),
     };
   }
 
@@ -534,192 +389,6 @@ export class AuthService implements OnModuleInit {
       });
     });
     return { enabled: false };
-  }
-
-  // -------------------------------------------------------------------------
-  // Password reset and email verification
-  // -------------------------------------------------------------------------
-
-  async forgotPassword(dto: ForgotPasswordDto, ip: string | null): Promise<{ sent: true }> {
-    const tenantId = await this.tenantPrisma.resolveTenantIdBySlug(dto.companySlug);
-    if (!tenantId) {
-      await verify(this.dummyHash, "constant-time-placeholder").catch(() => false);
-      return { sent: true };
-    }
-
-    const outcome = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-      const user = await tx.user.findUnique({
-        where: { tenantId_email: { tenantId, email: dto.email } },
-      });
-      if (!user || !user.isActive) return null;
-      await tx.passwordResetToken.updateMany({
-        where: { userId: user.id, usedAt: null },
-        data: { usedAt: new Date() },
-      });
-      const token = randomToken();
-      await tx.passwordResetToken.create({
-        data: {
-          tenantId,
-          userId: user.id,
-          tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
-        },
-      });
-      await this.audit.record(tx, {
-        tenantId,
-        actorUserId: user.id,
-        action: "auth.password_reset_requested",
-        entityType: "User",
-        entityId: user.id,
-        ip,
-      });
-      const company = await tx.company.findUniqueOrThrow({
-        where: { id: tenantId },
-        select: { slug: true },
-      });
-      return { user, token, slug: company.slug };
-    });
-
-    if (outcome) {
-      await this.sendPasswordResetEmail(outcome.user, outcome.slug, outcome.token);
-    }
-    return { sent: true };
-  }
-
-  async resetPassword(dto: ResetPasswordDto, ip: string | null): Promise<{ reset: true }> {
-    const tenantId = await this.tenantPrisma.resolveTenantIdBySlug(dto.companySlug);
-    if (!tenantId) throw new BadRequestException("Havola yaroqsiz yoki muddati tugagan");
-
-    const passwordHash = await hash(dto.password, ARGON_OPTIONS);
-    const user = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-      const token = await tx.passwordResetToken.findUnique({
-        where: { tokenHash: sha256(dto.token) },
-      });
-      if (
-        !token ||
-        token.tenantId !== tenantId ||
-        token.usedAt ||
-        token.expiresAt.getTime() <= Date.now()
-      ) {
-        throw new BadRequestException("Havola yaroqsiz yoki muddati tugagan");
-      }
-      const target = await tx.user.findFirst({
-        where: { id: token.userId, isActive: true },
-      });
-      if (!target) throw new BadRequestException("Foydalanuvchi topilmadi");
-
-      await tx.passwordResetToken.update({
-        where: { id: token.id },
-        data: { usedAt: new Date() },
-      });
-      const updated = await tx.user.update({
-        where: { id: target.id },
-        data: {
-          passwordHash,
-          emailVerifiedAt: target.emailVerifiedAt ?? new Date(),
-        },
-      });
-      // A password reset invalidates every device session.
-      await tx.refreshToken.updateMany({
-        where: { userId: target.id, revokedAt: null },
-        data: { revokedAt: new Date(), revokedReason: "password_reset" },
-      });
-      await this.audit.record(tx, {
-        tenantId,
-        actorUserId: target.id,
-        action: "auth.password_reset",
-        entityType: "User",
-        entityId: target.id,
-        ip,
-      });
-      return updated;
-    });
-
-    await this.email
-      .sendSecurityAlert({
-        to: user.email,
-        fullName: user.fullName,
-        action: "parol tiklandi",
-        ip,
-      })
-      .catch((error: unknown) =>
-        this.logger.warn(
-          `Xavfsizlik xabari yuborilmadi: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        ),
-      );
-    return { reset: true };
-  }
-
-  async verifyEmail(dto: VerifyEmailDto, ip: string | null): Promise<{ verified: true }> {
-    const tenantId = await this.tenantPrisma.resolveTenantIdBySlug(dto.companySlug);
-    if (!tenantId) throw new BadRequestException("Havola yaroqsiz yoki muddati tugagan");
-
-    await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-      const token = await tx.emailVerificationToken.findUnique({
-        where: { tokenHash: sha256(dto.token) },
-      });
-      if (
-        !token ||
-        token.tenantId !== tenantId ||
-        token.usedAt ||
-        token.expiresAt.getTime() <= Date.now()
-      ) {
-        throw new BadRequestException("Havola yaroqsiz yoki muddati tugagan");
-      }
-      await tx.emailVerificationToken.update({
-        where: { id: token.id },
-        data: { usedAt: new Date() },
-      });
-      await tx.user.update({
-        where: { id: token.userId },
-        data: { emailVerifiedAt: new Date() },
-      });
-      await this.audit.record(tx, {
-        tenantId,
-        actorUserId: token.userId,
-        action: "auth.email_verified",
-        entityType: "User",
-        entityId: token.userId,
-        ip,
-      });
-    });
-    return { verified: true };
-  }
-
-  async resendVerification(dto: ForgotPasswordDto): Promise<{ sent: true }> {
-    const tenantId = await this.tenantPrisma.resolveTenantIdBySlug(dto.companySlug);
-    if (!tenantId) return { sent: true };
-
-    const outcome = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
-      const user = await tx.user.findUnique({
-        where: { tenantId_email: { tenantId, email: dto.email } },
-      });
-      if (!user || !user.isActive || user.emailVerifiedAt) return null;
-      await tx.emailVerificationToken.updateMany({
-        where: { userId: user.id, usedAt: null },
-        data: { usedAt: new Date() },
-      });
-      const token = await this.createEmailToken(tx, user);
-      const company = await tx.company.findUniqueOrThrow({
-        where: { id: tenantId },
-        select: { slug: true },
-      });
-      return { user, token, slug: company.slug };
-    });
-
-    if (outcome) {
-      await this.sendVerificationEmail(
-        {
-          to: outcome.user.email,
-          fullName: outcome.user.fullName,
-          companySlug: outcome.slug,
-        },
-        outcome.token,
-      );
-    }
-    return { sent: true };
   }
 
   // -------------------------------------------------------------------------
@@ -885,7 +554,7 @@ export class AuthService implements OnModuleInit {
       });
       const company = await tx.company.findFirst({
         where: { id: payload.tenantId, status: "ACTIVE" },
-        select: { id: true, name: true, slug: true },
+        select: COMPANY_VIEW,
       });
       if (!user || !company) {
         return { kind: "invalid" as const };
@@ -968,16 +637,16 @@ export class AuthService implements OnModuleInit {
         where: { id: userId, isActive: true },
         select: {
           id: true,
-          email: true,
           fullName: true,
           phone: true,
           role: true,
           isSuperAdmin: true,
-          emailVerifiedAt: true,
           twoFactorEnabled: true,
           lastLoginAt: true,
           createdAt: true,
-          company: { select: { id: true, name: true, slug: true, status: true } },
+          company: {
+            select: { id: true, name: true, slug: true, status: true, isPlatform: true },
+          },
         },
       });
       return user;
@@ -998,55 +667,6 @@ export class AuthService implements OnModuleInit {
         expiresIn: MFA_TOKEN_TTL_SECONDS,
       },
     );
-  }
-
-  private async createEmailToken(tx: TenantTx, user: User): Promise<string> {
-    const token = randomToken();
-    await tx.emailVerificationToken.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        tokenHash: sha256(token),
-        expiresAt: new Date(Date.now() + EMAIL_TOKEN_TTL_MS),
-      },
-    });
-    return token;
-  }
-
-  private async sendVerificationEmail(
-    input: { to: string; fullName: string; companySlug: string },
-    token: string,
-  ): Promise<void> {
-    try {
-      await this.email.sendVerification({ ...input, token });
-    } catch (error) {
-      this.logger.warn(
-        `Tasdiqlash xati yuborilmadi: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  private async sendPasswordResetEmail(
-    user: User,
-    companySlug: string,
-    token: string,
-  ): Promise<void> {
-    try {
-      await this.email.sendPasswordReset({
-        to: user.email,
-        fullName: user.fullName,
-        companySlug,
-        token,
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Parol tiklash xati yuborilmadi: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 
   private async issueTokens(
@@ -1119,10 +739,9 @@ export class AuthService implements OnModuleInit {
   private toUserView(user: User): AuthUserView {
     return {
       id: user.id,
-      email: user.email,
+      phone: user.phone,
       fullName: user.fullName,
       role: user.role,
-      emailVerifiedAt: user.emailVerifiedAt,
       twoFactorEnabled: user.twoFactorEnabled,
     };
   }

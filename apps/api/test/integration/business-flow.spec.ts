@@ -27,7 +27,7 @@ describe("Business flow: tariffs, payments, webhooks, refresh and RBAC", () => {
     admin = createAdminClient();
     await resetDatabase(admin);
     app = await bootstrapApp();
-    owner = await registerTenant(app, "gamma-trans", "owner@gamma.uz", PASSWORD);
+    owner = await registerTenant(app, "gamma-trans", "+998901112233", PASSWORD);
 
     const route = await request(app.getHttpServer())
       .post("/api/v1/routes")
@@ -232,7 +232,7 @@ describe("Business flow: tariffs, payments, webhooks, refresh and RBAC", () => {
   it("rotates refresh tokens and revokes the family on reuse", async () => {
     const login = await request(app.getHttpServer())
       .post("/api/v1/auth/login")
-      .send({ companySlug: owner.slug, email: owner.email, password: PASSWORD })
+      .send({ phone: owner.phone, password: PASSWORD })
       .expect(200);
 
     const rotated = await request(app.getHttpServer())
@@ -254,22 +254,22 @@ describe("Business flow: tariffs, payments, webhooks, refresh and RBAC", () => {
   });
 
   it("enforces RBAC for finance and fleet operations", async () => {
-    const accountantEmail = "accountant@gamma.uz";
+    const accountantPhone = "+998901112244";
     const created = await request(app.getHttpServer())
       .post("/api/v1/users")
       .set(auth(owner.accessToken))
       .send({
-        email: accountantEmail,
+        phone: accountantPhone,
         fullName: "Gamma Accountant",
         password: PASSWORD,
         role: "ACCOUNTANT",
       })
       .expect(201);
-    expect(created.body.role).toBe("ACCOUNTANT");
+    expect(created.body.user.role).toBe("ACCOUNTANT");
 
     const login = await request(app.getHttpServer())
       .post("/api/v1/auth/login")
-      .send({ companySlug: owner.slug, email: accountantEmail, password: PASSWORD })
+      .send({ phone: accountantPhone, password: PASSWORD })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -363,7 +363,7 @@ describe("Business flow: tariffs, payments, webhooks, refresh and RBAC", () => {
     const actions = audit.body.items.map((item: { action: string }) => item.action);
     expect(actions).toEqual(
       expect.arrayContaining([
-        "auth.company_registered",
+        "platform.company_created",
         "contract.activated",
         "payment.created",
         "payment.webhook_processed",

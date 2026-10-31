@@ -56,20 +56,15 @@ export async function apiRequest<T>(
 
 export interface SessionUser {
   user: { fullName: string };
-  company: { name: string };
+  company: { name: string; isPlatform: boolean };
 }
 
 export type SessionLoginResult =
   | SessionUser
   | { mfaRequired: true; mfaToken: string; expiresIn: number };
 
-export type SessionRegisterResult =
-  | SessionUser
-  | { verificationRequired: true; user: { fullName: string }; company: { name: string } };
-
 export async function sessionLogin(payload: {
-  companySlug: string;
-  email: string;
+  phone: string;
   password: string;
 }): Promise<SessionLoginResult> {
   const response = await fetch("/api/session/login", {
@@ -88,24 +83,6 @@ export async function sessionVerifyTwoFactor(payload: {
   recoveryCode?: string;
 }): Promise<SessionUser> {
   const response = await fetch("/api/session/2fa/verify", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) await parseError(response);
-  return response.json();
-}
-
-export async function sessionRegister(payload: {
-  companyName: string;
-  companySlug: string;
-  fullName: string;
-  email: string;
-  password: string;
-  phone?: string;
-}): Promise<SessionRegisterResult> {
-  const response = await fetch("/api/session/register", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },

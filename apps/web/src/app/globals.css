@@ -86,3 +86,145 @@ body {
     @apply rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Tungi rejim. Sahifalar oddiy slate/white utilitylardan foydalanadi, shu
+ * sababli ular bu yerda markazlashgan holda qayta bo'yaladi.
+ * ---------------------------------------------------------------------- */
+.dark {
+  --brand: #4d94ff;
+  --ink: #e5ebf5;
+  --muted: #8b97ad;
+  --line: #24324f;
+  color-scheme: dark;
+}
+
+.dark body,
+.dark .bg-\[\#f5f7fb\] {
+  background: #0b1220;
+  color: #e5ebf5;
+}
+
+/* Sirtlar */
+.dark .bg-white { background-color: #111a2e; }
+.dark .bg-white\/90,
+.dark .bg-white\/80 { background-color: rgb(17 26 46 / 0.88); }
+.dark .bg-slate-50,
+.dark .bg-slate-50\/70,
+.dark .bg-slate-50\/60 { background-color: #16213a; }
+.dark .bg-slate-100 { background-color: #1c2944; }
+.dark .bg-slate-200 { background-color: #24324f; }
+.dark .bg-slate-900\/40 { background-color: rgb(2 6 23 / 0.7); }
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover { background-color: #1f2d4b; }
+
+/* Matn */
+.dark .text-slate-900 { color: #f1f5f9; }
+.dark .text-slate-800 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #a8b3c7; }
+.dark .text-slate-500 { color: #8b97ad; }
+.dark .text-slate-400 { color: #6b7891; }
+.dark .text-slate-300 { color: #4b5874; }
+.dark .hover\:text-slate-900:hover,
+.dark .hover\:text-slate-700:hover { color: #f8fafc; }
+
+/* Chegaralar */
+.dark .border-slate-100,
+.dark .divide-slate-100 > * + * { border-color: #1d2a45; }
+.dark .border-slate-200 { border-color: #24324f; }
+.dark .border-slate-300,
+.dark .hover\:border-slate-300:hover { border-color: #33425f; }
+
+/* Rangli belgilar va ogohlantirishlar */
+.dark .bg-brand-50 { background-color: rgb(27 111 240 / 0.16); }
+.dark .bg-brand-100 { background-color: rgb(27 111 240 / 0.28); }
+.dark .bg-emerald-50 { background-color: rgb(16 185 129 / 0.14); }
+.dark .bg-red-50 { background-color: rgb(239 68 68 / 0.14); }
+.dark .hover\:bg-red-100:hover { background-color: rgb(239 68 68 / 0.24); }
+.dark .bg-amber-50,
+.dark .bg-amber-50\/70 { background-color: rgb(245 158 11 / 0.13); }
+.dark .bg-amber-100 { background-color: rgb(245 158 11 / 0.22); }
+.dark .bg-blue-50 { background-color: rgb(59 130 246 / 0.15); }
+.dark .bg-violet-50,
+.dark .bg-violet-100 { background-color: rgb(139 92 246 / 0.18); }
+
+.dark .text-brand-700,
+.dark .text-brand-800 { color: #7fb6ff; }
+.dark .hover\:text-brand-800:hover { color: #a9cdff; }
+.dark .text-emerald-600,
+.dark .text-emerald-700 { color: #34d399; }
+.dark .text-red-500,
+.dark .text-red-600,
+.dark .text-red-700,
+.dark .hover\:text-red-600:hover { color: #f87171; }
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 { color: #fbbf24; }
+.dark .text-amber-900,
+.dark .text-amber-950 { color: #fde68a; }
+.dark .text-blue-600,
+.dark .text-blue-700 { color: #60a5fa; }
+.dark .text-blue-900 { color: #bfdbfe; }
+.dark .text-violet-700 { color: #a78bfa; }
+.dark .text-sky-700 { color: #38bdf8; }
+
+.dark .border-red-200 { border-color: rgb(239 68 68 / 0.35); }
+.dark .border-emerald-200 { border-color: rgb(16 185 129 / 0.35); }
+.dark .border-amber-100,
+.dark .border-amber-200,
+.dark .border-amber-300 { border-color: rgb(245 158 11 / 0.35); }
+.dark .border-blue-100,
+.dark .border-blue-200 { border-color: rgb(59 130 246 / 0.32); }
+
+/* Komponentlar (@apply bilan yig'ilgani uchun alohida) */
+.dark .card {
+  background-color: #111a2e;
+  border-color: #1f2c48;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+.dark .label { color: #cbd5e1; }
+.dark .input,
+.dark .select {
+  background-color: #0f1729;
+  border-color: #2b3a59;
+  color: #e5ebf5;
+}
+.dark .input::placeholder { color: #5d6a84; }
+.dark .input:focus,
+.dark .select:focus {
+  border-color: #4d94ff;
+  --tw-ring-color: rgb(77 148 255 / 0.25);
+}
+.dark .input:disabled,
+.dark .select:disabled { background-color: #16213a; color: #6b7891; }
+.dark .btn-secondary {
+  background-color: #16213a;
+  border-color: #2b3a59;
+  color: #dbe3ef;
+}
+.dark .btn-secondary:hover { background-color: #1f2d4b; }
+.dark .btn-ghost { color: #a8b3c7; }
+.dark .btn-ghost:hover { background-color: #1f2d4b; }
+.dark .btn-danger {
+  background-color: rgb(239 68 68 / 0.14);
+  border-color: rgb(239 68 68 / 0.35);
+  color: #f87171;
+}
+.dark .table thead th {
+  background-color: #141e34;
+  border-color: #24324f;
+  color: #8b97ad;
+}
+.dark .table tbody td { border-color: #1d2a45; color: #cbd5e1; }
+.dark .table tbody tr:hover { background-color: #16213a; }
+.dark .alert-error {
+  background-color: rgb(239 68 68 / 0.12);
+  border-color: rgb(239 68 68 / 0.35);
+  color: #fca5a5;
+}
+.dark .alert-success {
+  background-color: rgb(16 185 129 / 0.12);
+  border-color: rgb(16 185 129 / 0.35);
+  color: #6ee7b7;
+}

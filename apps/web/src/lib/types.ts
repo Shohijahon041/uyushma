@@ -1,14 +1,12 @@
 export interface AuthUser {
   id: string;
-  email: string;
   fullName: string;
   phone: string | null;
   role: "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
   isSuperAdmin: boolean;
-  emailVerifiedAt: string | null;
   twoFactorEnabled: boolean;
   createdAt: string;
-  company: { id: string; name: string; slug: string; status: string };
+  company: { id: string; name: string; slug: string; status: string; isPlatform: boolean };
 }
 
 export interface DeviceSession {
@@ -65,6 +63,8 @@ export interface DashboardSummary {
     planId: string;
     planName: string;
     currentPeriodEnd: string | null;
+    monthlyFee?: string;
+    hasContract?: boolean;
     openInvoices: number;
   } | null;
 }
@@ -161,11 +161,11 @@ export interface Payment {
 
 export interface UserItem {
   id: string;
-  email: string;
   fullName: string;
   phone: string | null;
   role: "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
   isActive: boolean;
+  twoFactorEnabled: boolean;
   lastLoginAt: string | null;
 }
 
@@ -196,6 +196,7 @@ export interface Subscription {
   status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
   startDate: string;
   currentPeriodEnd: string | null;
+  monthlyFee?: string | null;
   plan: Plan;
   invoices: SubscriptionInvoice[];
 }
@@ -479,16 +480,104 @@ export interface PlatformOverview {
     planId: string | null;
     subscriptionStatus: string | null;
     periodEnd: string | null;
+    monthlyFee: string | null;
+    hasContract: boolean;
+    unpaidCount: number;
+    unpaidTotal: string;
     lastSyncAt: string | null;
   }>;
   totals: {
     companies: number;
     active: number;
     suspended: number;
+    contracts: number;
+    monthlyRevenue: string;
+    unpaid: string;
     users: number;
     vehicles: number;
     drivers: number;
     payments: number;
     collected: string;
   };
+}
+
+export type UserRoleName = "OWNER" | "ADMIN" | "ACCOUNTANT" | "MANAGER";
+
+export interface PlatformUser {
+  id: string;
+  companyId: string;
+  companyName: string;
+  companySlug: string;
+  fullName: string;
+  phone: string | null;
+  role: UserRoleName;
+  isActive: boolean;
+  twoFactorEnabled: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface LicenseContract {
+  id: string;
+  companyId: string;
+  companyName: string;
+  number: string;
+  planId: string;
+  amount: string;
+  currency: string;
+  signedAt: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export type SubmissionStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type FraudRiskLevel = "LOW" | "MEDIUM" | "HIGH";
+
+export interface PaymentSubmission {
+  id: string;
+  driverId: string;
+  driver: {
+    id: string;
+    fullName: string;
+    phone: string;
+  };
+  vehicleId: string | null;
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    model: string;
+  } | null;
+  amount: string;
+  receiptUrl: string;
+  transactionNumber: string | null;
+  senderPhone: string | null;
+  paidAt: string | null;
+  status: SubmissionStatus;
+  fraudRisk: FraudRiskLevel;
+  fraudScore: number;
+  fraudFlags: string[];
+  fraudAnalysis: Record<string, unknown> | null;
+  reviewedAt: string | null;
+  reviewerId: string | null;
+  reviewer: {
+    id: string;
+    fullName: string;
+  } | null;
+  rejectionReason: string | null;
+  driverPaymentId: string | null;
+  driverPayment: {
+    id: string;
+    amount: string;
+    paidAt: string;
+  } | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyPaymentDetails {
+  paymentCardNumber: string | null;
+  paymentCardHolder: string | null;
+  paymentCardBank: string | null;
+  paymentInstructions: string | null;
 }

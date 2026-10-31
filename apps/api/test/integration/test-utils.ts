@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { hash } from "@node-rs/argon2";
 import request from "supertest";
 import { AppModule } from "../../src/app.module";
 import { configureApp } from "../../src/bootstrap";
@@ -14,9 +15,11 @@ export interface RegisteredTenant {
   refreshToken: string;
   tenantId: string;
   userId: string;
-  email: string;
+  phone: string;
   slug: string;
 }
+
+const ARGON_OPTIONS = { memoryCost: 19_456, timeCost: 2, parallelism: 1, outputLen: 32 };
 
 export function createAdminClient(): PrismaClient {
   return new PrismaClient({
@@ -77,29 +80,75 @@ export async function resetDatabase(admin: PrismaClient): Promise<void> {
   }
 }
 
+const PLATFORM_PHONE = "+998900000000";
+const PLATFORM_PASSWORD = "PlatformPass12345";
+let phoneSequence = 0;
+
+export function nextTestPhone(): string {
+  phoneSequence += 1;
+  return `+99891${String(phoneSequence).padStart(7, "0")}`;
+}
+
+/** Super admin faqat platforma tenantida yashaydi; korxonalarni u yaratadi. */
+async function platformAdminToken(app: INestApplication): Promise<string> {
+  const admin = createAdminClient();
+  try {
+    const existing = await admin.user.findUnique({ where: { phone: PLATFORM_PHONE } });
+    if (!existing) {
+      const company = await admin.company.create({
+        data: { slug: "platforma", name: "Platforma", isPlatform: true },
+      });
+      await admin.user.create({
+        data: {
+          tenantId: company.id,
+          phone: PLATFORM_PHONE,
+          fullName: "Platform Admin",
+          passwordHash: await hash(PLATFORM_PASSWORD, ARGON_OPTIONS),
+          role: "OWNER",
+          isSuperAdmin: true,
+        },
+      });
+    }
+  } finally {
+    await admin.$disconnect();
+  }
+  const login = await request(app.getHttpServer())
+    .post("/api/v1/auth/login")
+    .send({ phone: PLATFORM_PHONE, password: PLATFORM_PASSWORD })
+    .expect(200);
+  return login.body.accessToken;
+}
+
 export async function registerTenant(
   app: INestApplication,
   slug: string,
-  email = `owner@${slug}.uz`,
+  phone = nextTestPhone(),
   password = "StrongPass12345",
 ): Promise<RegisteredTenant> {
-  const response = await request(app.getHttpServer())
-    .post("/api/v1/auth/register")
+  const adminToken = await platformAdminToken(app);
+  await request(app.getHttpServer())
+    .post("/api/v1/platform/companies")
+    .set(auth(adminToken))
     .send({
       companyName: `${slug} Transport`,
       companySlug: slug,
-      fullName: `${slug} Owner`,
-      email,
+      ownerFullName: `${slug} Owner`,
+      ownerPhone: phone,
       password,
     })
     .expect(201);
+
+  const response = await request(app.getHttpServer())
+    .post("/api/v1/auth/login")
+    .send({ phone, password })
+    .expect(200);
 
   return {
     accessToken: response.body.accessToken,
     refreshToken: response.body.refreshToken,
     tenantId: response.body.company.id,
     userId: response.body.user.id,
-    email,
+    phone,
     slug,
   };
 }

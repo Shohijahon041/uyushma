@@ -17,13 +17,9 @@ import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import { AuthService, type SessionMeta } from "./auth.service";
 import {
   DisableTwoFactorDto,
-  ForgotPasswordDto,
   LoginDto,
   RefreshDto,
-  RegisterCompanyDto,
-  ResetPasswordDto,
   TwoFactorCodeDto,
-  VerifyEmailDto,
   VerifyTwoFactorDto,
 } from "./dto/auth.dto";
 
@@ -43,13 +39,6 @@ function meta(request: Request): SessionMeta {
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
-
-  @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post("register")
-  register(@Body() dto: RegisterCompanyDto, @Req() request: Request) {
-    return this.auth.register(dto, meta(request));
-  }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
@@ -109,38 +98,6 @@ export class AuthController {
       dto,
       clientIp(request),
     );
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @HttpCode(200)
-  @Post("forgot-password")
-  forgotPassword(@Body() dto: ForgotPasswordDto, @Req() request: Request) {
-    return this.auth.forgotPassword(dto, clientIp(request));
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @HttpCode(200)
-  @Post("reset-password")
-  resetPassword(@Body() dto: ResetPasswordDto, @Req() request: Request) {
-    return this.auth.resetPassword(dto, clientIp(request));
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @HttpCode(200)
-  @Post("verify-email")
-  verifyEmail(@Body() dto: VerifyEmailDto, @Req() request: Request) {
-    return this.auth.verifyEmail(dto, clientIp(request));
-  }
-
-  @Public()
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
-  @HttpCode(200)
-  @Post("verify-email/resend")
-  resendVerification(@Body() dto: ForgotPasswordDto) {
-    return this.auth.resendVerification(dto);
   }
 
   @Public()

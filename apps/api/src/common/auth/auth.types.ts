@@ -22,7 +22,7 @@ export interface AuthenticatedUser {
   userId: string;
   tenantId: string;
   role: UserRole;
-  email: string;
+  phone: string | null;
   fullName: string;
   isSuperAdmin: boolean;
   sessionId?: string;

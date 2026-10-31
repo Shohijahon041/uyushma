@@ -72,9 +72,6 @@ const values = {
 
   PAYME_CHECKOUT_URL: "https://checkout.paycom.uz",
   PAYME_TIMEOUT_MINUTES: "720",
-  REQUIRE_EMAIL_VERIFICATION: "false",
-  EMAIL_DRIVER: "log",
-  EMAIL_FROM: "Uyushmachilar <no-reply@uyushmachilar.uz>",
 
   GRAFANA_ADMIN_USER: "admin",
   GRAFANA_ADMIN_PASSWORD: hex(16),

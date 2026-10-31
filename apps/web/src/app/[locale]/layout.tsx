@@ -5,6 +5,9 @@ import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import "../globals.css";
 
+// Runs before paint so a saved dark theme never flashes light first.
+const THEME_SCRIPT = `try{var t=localStorage.getItem("uyushma-theme");var d=t?t==="dark":matchMedia("(prefers-color-scheme: dark)").matches;if(d){document.documentElement.classList.add("dark");document.documentElement.style.colorScheme="dark"}}catch(e){}`;
+
 export const metadata: Metadata = {
   title: "Uyushmachilar — transport boshqaruv platformasi",
   description:
@@ -30,7 +33,10 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-screen antialiased">
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}

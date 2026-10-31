@@ -378,8 +378,101 @@ describe("EtenderConnector", () => {
 describe("AutoparkConnector", () => {
   const connector = new AutoparkConnector();
 
-  it("pages through the autopark list and maps columns", async () => {
-    const fetchMock = installFetch((url) => {
+  it("walks the route tree of the token's organisation and lists vehicles and drivers", async () => {
+    const claims = Buffer.from(JSON.stringify({ organizationId: "org-1" })).toString("base64url");
+    const orgToken = `h.${claims}.s`;
+    const tree = [
+      {
+        id: "region-1",
+        name: "Toshkent",
+        entityType: "REGION",
+        children: [
+          {
+            id: "org-1",
+            name: "CARLUX MCHJ",
+            entityType: "ORGANIZATION",
+            children: [
+              {
+                id: "park-1",
+                name: "Park",
+                entityType: "PARK",
+                children: [{ id: "rv-1", name: "B-11", entityType: "ROUTE", children: [] }],
+              },
+            ],
+          },
+          {
+            id: "org-2",
+            name: "Boshqa",
+            entityType: "ORGANIZATION",
+            children: [{ id: "rv-9", name: "X-1", entityType: "ROUTE" }],
+          },
+        ],
+      },
+    ];
+    const fetchMock = installFetch((url, method) => {
+      const path = url.pathname;
+      if (method === "POST" && path.endsWith("/vehicles")) {
+        return jsonResponse({ message: "METHOD_NOT_ALLOWED" }, 405);
+      }
+      if (path.endsWith("/account-authorities")) return { data: { orgName: "CARLUX MCHJ" } };
+      if (path === "/route-management/api/v1/route-variants/tree") {
+        return url.searchParams.get("isBrutto") === "false" ? { data: tree } : { data: [] };
+      }
+      if (path === "/non-brutto-management/api/v1/vehicles/by-route-variant/rv-1") {
+        return jsonResponse({ message: "METHOD_NOT_ALLOWED" }, 405);
+      }
+      if (path === "/brutto-management/api/v1/vehicles/by-route-variant/rv-1") {
+        return { data: [{ vehicleId: "v-1", plateNum: "01 A 123 BC", vehicleModel: "Isuzu" }] };
+      }
+      if (path === "/non-brutto-management/api/v1/drivers/by-route-variant/rv-1") {
+        return jsonResponse({}, 404);
+      }
+      if (path === "/brutto-management/api/v1/drivers/by-route-variant/rv-1") {
+        return { data: { content: [{ id: "d-1", fullName: "Aliyev Vali" }] } };
+      }
+      if (path === "/brutto-management/api/v1/drivers") return { data: { content: [] } };
+      if (path === "/brutto-management/api/v1/drivers/d-1") {
+        return {
+          data: {
+            id: "d-1",
+            fullName: "Aliyev Vali",
+            phoneNumber: "90 123 45 67",
+            pinfl: "12345678901234",
+            licenseNumber: "AF1234567",
+            category: "B,D",
+          },
+        };
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const result = await connector.fetchAll("https://bmapi.dtransport.uz", orgToken, {});
+
+    expect(result.routeNames).toEqual(["B-11"]);
+    expect(result.vehicles).toHaveLength(1);
+    expect(result.vehicles[0]).toMatchObject({
+      externalId: "v-1",
+      plateNumber: "01 A 123 BC",
+      routeName: "B-11",
+      organizationName: "CARLUX MCHJ",
+    });
+    expect(result.drivers).toEqual([
+      expect.objectContaining({
+        externalId: "d-1",
+        phone: "+998901234567",
+        pinfl: "12345678901234",
+        licenseCategories: "B,D",
+        routeName: "B-11",
+      }),
+    ]);
+    expect(result.warnings).toEqual([]);
+    const paths = fetchMock.mock.calls.map((call) => new URL(String(call[0])).pathname);
+    expect(paths.some((path) => path.includes("rv-9"))).toBe(false);
+  });
+
+  it("pages through the legacy GET autopark list and maps columns", async () => {
+    const fetchMock = installFetch((url, method) => {
+      if (method === "POST") return jsonResponse({ message: "METHOD_NOT_ALLOWED" }, 405);
       if (url.pathname === "/user-management/api/v1/user-profile/account-authorities") {
         return { code: 200, data: { orgName: "Avtopark MCHJ", fullName: "Dispetcher" } };
       }
@@ -419,13 +512,15 @@ describe("AutoparkConnector", () => {
     expect(result.warnings).toEqual([]);
 
     const requestedPages = fetchMock.mock.calls
+      .filter((call) => (call[1]?.method ?? "GET") === "GET")
       .map((call) => new URL(String(call[0])).searchParams.get("page"))
       .filter(Boolean);
     expect(requestedPages).toEqual(["0", "1", "2"]);
   });
 
   it("keeps partial data when a later page fails", async () => {
-    installFetch((url) => {
+    installFetch((url, method) => {
+      if (method === "POST") return jsonResponse({ message: "METHOD_NOT_ALLOWED" }, 405);
       if (url.pathname === "/user-management/api/v1/user-profile/account-authorities") {
         return { data: { organizationName: "Avtopark" } };
       }
@@ -443,16 +538,87 @@ describe("AutoparkConnector", () => {
     expect(result.warnings.join(" ")).toContain("2-sahifa");
   });
 
-  it("fails fast on 403", async () => {
-    installFetch((url) => {
+  it("fails fast when the token is rejected (401)", async () => {
+    const fetchMock = installFetch((url) => {
       if (url.pathname === "/user-management/api/v1/user-profile/account-authorities") {
-        return jsonResponse({ message: "Forbidden" }, 403);
+        return jsonResponse({ message: "Unauthorized" }, 401);
       }
       return { data: [] };
     });
     await expect(
       connector.fetchAll("https://bmapi.dtransport.uz", token, {}),
-    ).rejects.toThrow(/ruxsat yo'q/);
+    ).rejects.toThrow(/HTTP 401/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a role that can read no autopark data (403 everywhere)", async () => {
+    installFetch(() => jsonResponse({ code: 403, message: "FORBIDDEN", data: "Access Denied" }, 403));
+    await expect(
+      connector.fetchAll("https://bmapi.dtransport.uz", token, {}),
+    ).rejects.toThrow(/avtopark ma'lumotlari yopiq/);
+  });
+
+  // Shapes copied from the live BM API for a non-brutto carrier (2026-10).
+  it("reads the organisation-wide POST list even when per-route endpoints are forbidden", async () => {
+    const fetchMock = installFetch((url, method) => {
+      const path = url.pathname;
+      if (path.endsWith("/account-authorities")) {
+        return { data: { orgName: "\"CARLUX\" MCHJ", authorities: ["NB_AUTOPARK_VEHICLES"] } };
+      }
+      if (path === "/route-management/api/v1/route-variants/tree") {
+        return url.searchParams.get("isBrutto") === "false"
+          ? { data: [{ id: "r", entityType: "REGION", name: "Andijon", children: [{ id: "o", entityType: "ORG", name: "\"CARLUX\" MCHJ", children: [{ id: "rv-369", entityType: "ROUTE", name: "369", children: [] }] }] }] }
+          : { data: [] };
+      }
+      if (path.includes("/by-route-variant/")) {
+        return jsonResponse({ code: 403, message: "FORBIDDEN", data: "Access Denied" }, 403);
+      }
+      if (method === "POST" && path === "/non-brutto-management/api/v1/vehicles") {
+        return {
+          code: null,
+          data: {
+            content: [
+              {
+                id: "veh-1",
+                tenderId: 1328475,
+                status: "ACTIVE",
+                plateNumber: "60A613CB",
+                routeVariantNumber: "369",
+                routeVariantName: "Узумзор автостанцияси-Иттифоқ",
+                routeVariantId: "rv-369",
+                gpsImei: null,
+                organizationName: "\"CARLUX\" MCHJ",
+                vehicleModel: "ZK6118",
+                vehicleClass: "\"M\"",
+                garageNumber: null,
+              },
+            ],
+            page: { size: 200, number: 0, totalElements: 1, totalPages: 1 },
+          },
+        };
+      }
+      if (method === "POST" && path === "/brutto-management/api/v1/vehicles") {
+        return { data: { content: [], page: { totalElements: 0, totalPages: 0 } } };
+      }
+      if (path === "/non-brutto-management/api/v1/drivers") {
+        return { data: { content: [], page: { totalElements: 0, totalPages: 0 } } };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+
+    const result = await connector.fetchAll("https://bmapi.dtransport.uz", token, {});
+
+    expect(result.vehicles).toEqual([
+      expect.objectContaining({
+        externalId: "veh-1",
+        plateNumber: "60A613CB",
+        routeName: "Узумзор автостанцияси-Иттифоқ",
+        routeNumber: "369",
+      }),
+    ]);
+    expect(result.warnings).toEqual([]);
+    const paths = fetchMock.mock.calls.map((call) => new URL(String(call[0])).pathname);
+    expect(paths.some((path) => path.includes("/by-route-variant/"))).toBe(false);
   });
 
   it("logs in with BM username and password", async () => {

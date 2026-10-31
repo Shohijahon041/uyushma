@@ -64,6 +64,8 @@ export default function SubscriptionPage() {
   if (error) return <Alert tone="error">{error}</Alert>;
 
   const subscription = data?.subscription ?? null;
+  const contract = Boolean(subscription?.monthlyFee);
+  const monthlyFee = subscription?.monthlyFee ?? subscription?.plan.monthlyPrice ?? "0";
 
   return (
     <>
@@ -100,8 +102,11 @@ export default function SubscriptionPage() {
                 {subscription.plan.name}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                {formatMoney(subscription.plan.monthlyPrice)} / {t("monthly")}
+                {formatMoney(monthlyFee)} / {t("monthly")}
               </p>
+              {contract && (
+                <span className="badge mt-2 bg-amber-100 text-amber-800">{t("contract")}</span>
+              )}
             </div>
             <div className="flex items-center gap-6 text-sm">
               <div>
@@ -111,18 +116,20 @@ export default function SubscriptionPage() {
                 </div>
               </div>
               <div>
-                <p className="text-xs text-slate-400">{t("periodEnd")}</p>
+                <p className="text-xs text-slate-400">{contract ? t("paidUntil") : t("periodEnd")}</p>
                 <p className="mt-1 font-semibold text-slate-800">
                   {formatDate(subscription.currentPeriodEnd)}
                 </p>
               </div>
             </div>
           </div>
+          {contract && <p className="mt-4 text-sm text-slate-600">{t("contractHint")}</p>}
         </div>
       ) : (
         <Alert tone="error">Faol obuna topilmadi.</Alert>
       )}
 
+      {!contract && (
       <div className="mb-5">
         <h2 className="mb-3 text-sm font-bold text-slate-800">{t("plans")}</h2>
         <div className="grid gap-4 lg:grid-cols-3">
@@ -172,6 +179,7 @@ export default function SubscriptionPage() {
           })}
         </div>
       </div>
+      )}
 
       <div className="card">
         <div className="border-b border-slate-100 px-5 py-4">

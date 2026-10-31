@@ -227,4 +227,34 @@ export class BotApiClient {
       `/balance?chatId=${encodeURIComponent(chatId)}`,
     );
   }
+
+  paymentCard(chatId: string) {
+    return this.request<{
+      id: string;
+      name: string;
+      paymentCardNumber: string | null;
+      paymentCardHolder: string | null;
+      paymentCardBank: string | null;
+      paymentInstructions: string | null;
+    }>(`/driver/payment-card?chatId=${encodeURIComponent(chatId)}`);
+  }
+
+  submitReceipt(
+    chatId: string,
+    amount: string,
+    base64Data: string,
+    filename: string,
+    note?: string,
+  ) {
+    return this.request<{
+      id: string;
+      amount: string;
+      status: string;
+      fraudRisk: string;
+      recommendation: string;
+    }>("/driver/submit-receipt", {
+      method: "POST",
+      body: JSON.stringify({ chatId, amount, base64Data, filename, note }),
+    });
+  }
 }

@@ -389,6 +389,7 @@ export function ExternalSettings({ role }: { role: string }) {
                             vehicles: run.counts.vehicles ?? 0,
                             created: run.counts.created ?? 0,
                             routes: run.counts.routes ?? 0,
+                            drivers: run.counts.drivers ?? 0,
                             records: run.counts.records ?? 0,
                           })
                         : "—"}

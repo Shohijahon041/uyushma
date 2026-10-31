@@ -144,84 +144,108 @@ enum DocumentStatus {
   UPLOADED
 }
 
-model Company {
-  id        String        @id @default(uuid()) @db.Uuid
-  slug      String        @unique @db.VarChar(64)
-  name      String        @db.VarChar(200)
-  status    CompanyStatus @default(ACTIVE)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+enum PaymentSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 
-  users              User[]
-  refreshTokens      RefreshToken[]
+enum FraudRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Company {
+  id         String        @id @default(uuid()) @db.Uuid
+  slug       String        @unique @db.VarChar(64)
+  name       String        @db.VarChar(200)
+  status     CompanyStatus @default(ACTIVE)
+  // Super admin joylashgan yagona platforma tenanti; korxonalar ro'yxatiga kirmaydi.
+  isPlatform Boolean       @default(false)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  users                   User[]
+  refreshTokens           RefreshToken[]
   emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens PasswordResetToken[]
-  routes             Route[]
-  vehicles           Vehicle[]
-  tariffs            Tariff[]
-  tariffRules        TariffRule[]
-  contracts          Contract[]
-  payments           Payment[]
-  webhookEvents      PaymentWebhookEvent[]
-  providerAccounts   PaymentProviderAccount[]
-  providerTransactions PaymentProviderTransaction[]
-  refunds            PaymentRefund[]
-  reconciliations    PaymentReconciliation[]
-  notificationLogs   NotificationLog[]
-  auditLogs          AuditLog[]
-  documents          Document[]
-  subscriptions      Subscription[]
-  subscriptionInvoices SubscriptionInvoice[]
-  telegramLinkTokens TelegramLinkToken[]
-  telegramAccounts   TelegramAccount[]
-  drivers            Driver[]
-  vehicleAssignments VehicleAssignment[]
-  monthlyPlans       VehicleMonthlyPlan[]
-  driverPayments     DriverPayment[]
-  externalConnections ExternalConnection[]
-  externalSyncRuns   ExternalSyncRun[]
-  externalVehicles   ExternalVehicle[]
-  externalRecords    ExternalRecord[]
+  passwordResetTokens     PasswordResetToken[]
+  routes                  Route[]
+  vehicles                Vehicle[]
+  tariffs                 Tariff[]
+  tariffRules             TariffRule[]
+  contracts               Contract[]
+  payments                Payment[]
+  webhookEvents           PaymentWebhookEvent[]
+  providerAccounts        PaymentProviderAccount[]
+  providerTransactions    PaymentProviderTransaction[]
+  refunds                 PaymentRefund[]
+  reconciliations         PaymentReconciliation[]
+  notificationLogs        NotificationLog[]
+  auditLogs               AuditLog[]
+  documents               Document[]
+  subscriptions           Subscription[]
+  licenseContracts        LicenseContract[]
+  subscriptionInvoices    SubscriptionInvoice[]
+  telegramLinkTokens      TelegramLinkToken[]
+  telegramAccounts        TelegramAccount[]
+  drivers                 Driver[]
+  vehicleAssignments      VehicleAssignment[]
+  monthlyPlans            VehicleMonthlyPlan[]
+  driverPayments          DriverPayment[]
+  externalConnections     ExternalConnection[]
+  externalSyncRuns        ExternalSyncRun[]
+  externalVehicles        ExternalVehicle[]
+  externalRecords         ExternalRecord[]
+
+  // Haydovchilar masofaviy to'lov qilishi uchun karta va to'lov rekvizitlari
+  paymentCardNumber       String?                  @db.VarChar(32)
+  paymentCardHolder       String?                  @db.VarChar(120)
+  paymentCardBank         String?                  @db.VarChar(120)
+  paymentInstructions     String?                  @db.VarChar(500)
+  paymentSubmissions      PaymentSubmission[]
 
   @@index([status])
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @db.Uuid
-  email        String   @db.VarChar(320)
-  passwordHash String   @db.VarChar(255)
-  fullName     String   @db.VarChar(160)
-  phone        String?  @db.VarChar(32)
-  role         UserRole @default(MANAGER)
-  isActive     Boolean  @default(true)
-  isSuperAdmin Boolean  @default(false)
-  emailVerifiedAt DateTime?
-  twoFactorEnabled Boolean @default(false)
+  id                     String    @id @default(uuid()) @db.Uuid
+  tenantId               String    @db.Uuid
+  email                  String?   @db.VarChar(320)
+  passwordHash           String    @db.VarChar(255)
+  fullName               String    @db.VarChar(160)
+  // Login identifikatori (+998XXXXXXXXX), butun platformada yagona.
+  phone                  String?   @unique @db.VarChar(32)
+  role                   UserRole  @default(MANAGER)
+  isActive               Boolean   @default(true)
+  isSuperAdmin           Boolean   @default(false)
+  emailVerifiedAt        DateTime?
+  twoFactorEnabled       Boolean   @default(false)
   // AES-256-GCM encrypted TOTP secret; never returned to clients.
-  twoFactorSecret String? @db.VarChar(1000)
+  twoFactorSecret        String?   @db.VarChar(1000)
   // Array of HMAC hashes of single-use recovery codes.
   twoFactorRecoveryCodes Json?
-  lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  lastLoginAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  company            Company              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  refreshTokens      RefreshToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens PasswordResetToken[]
-  ownedVehicles      Vehicle[]            @relation("VehicleOwner")
-  contractsAsOwner   Contract[]           @relation("ContractOwner")
-  contractsCreated   Contract[]           @relation("ContractCreator")
-  paymentsCreated    Payment[]            @relation("PaymentCreator")
-  refundsRequested   PaymentRefund[]      @relation("RefundRequester")
-  tariffsCreated     Tariff[]             @relation("TariffCreator")
-  auditLogs          AuditLog[]
-  documents          Document[]
-  telegramLinkTokens TelegramLinkToken[]
-  telegramAccounts   TelegramAccount[]
-  vehicleAssignmentsCreated VehicleAssignment[] @relation("AssignmentCreator")
-  driverPaymentsReceived DriverPayment[] @relation("DriverPaymentReceiver")
+  company                   Company                  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  refreshTokens             RefreshToken[]
+  emailVerificationTokens   EmailVerificationToken[]
+  passwordResetTokens       PasswordResetToken[]
+  ownedVehicles             Vehicle[]                @relation("VehicleOwner")
+  contractsAsOwner          Contract[]               @relation("ContractOwner")
+  contractsCreated          Contract[]               @relation("ContractCreator")
+  paymentsCreated           Payment[]                @relation("PaymentCreator")
+  refundsRequested          PaymentRefund[]          @relation("RefundRequester")
+  tariffsCreated            Tariff[]                 @relation("TariffCreator")
+  auditLogs                 AuditLog[]
+  documents                 Document[]
+  telegramLinkTokens        TelegramLinkToken[]
+  telegramAccounts          TelegramAccount[]
+  vehicleAssignmentsCreated VehicleAssignment[]      @relation("AssignmentCreator")
+  driverPaymentsReceived    DriverPayment[]          @relation("DriverPaymentReceiver")
+  reviewedSubmissions       PaymentSubmission[]      @relation("SubmissionReviewer")
 
   @@unique([tenantId, email])
   @@unique([id, tenantId])
@@ -230,21 +254,21 @@ model User {
 }
 
 model RefreshToken {
-  id              String    @id @default(uuid()) @db.Uuid
-  tenantId        String    @db.Uuid
-  userId          String    @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @db.Uuid
+  userId         String    @db.Uuid
   // Rotations of one login share a sessionId; revoking it ends the device session.
-  sessionId       String    @db.Uuid
-  tokenHash       String    @unique @db.VarChar(64)
-  expiresAt       DateTime
-  revokedAt       DateTime?
-  revokedReason   String?   @db.VarChar(40)
-  replacedByHash  String?   @db.VarChar(64)
-  userAgent       String?   @db.VarChar(512)
-  ip              String?   @db.VarChar(64)
-  deviceLabel     String?   @db.VarChar(80)
-  lastUsedAt      DateTime  @default(now())
-  createdAt       DateTime  @default(now())
+  sessionId      String    @db.Uuid
+  tokenHash      String    @unique @db.VarChar(64)
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  revokedReason  String?   @db.VarChar(40)
+  replacedByHash String?   @db.VarChar(64)
+  userAgent      String?   @db.VarChar(512)
+  ip             String?   @db.VarChar(64)
+  deviceLabel    String?   @db.VarChar(80)
+  lastUsedAt     DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -321,14 +345,15 @@ model Vehicle {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  company   Company    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  route     Route?     @relation(fields: [routeId, tenantId], references: [id, tenantId], onDelete: Restrict, map: "Vehicle_routeId_tenantId_fkey")
-  owner     User       @relation("VehicleOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  contracts Contract[]
+  company          Company              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  route            Route?               @relation(fields: [routeId, tenantId], references: [id, tenantId], onDelete: Restrict, map: "Vehicle_routeId_tenantId_fkey")
+  owner            User                 @relation("VehicleOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  contracts        Contract[]
   externalVehicles ExternalVehicle[]
-  assignments VehicleAssignment[]
-  monthlyPlans VehicleMonthlyPlan[]
-  driverPayments DriverPayment[]
+  assignments      VehicleAssignment[]
+  monthlyPlans     VehicleMonthlyPlan[]
+  driverPayments   DriverPayment[]
+  submissions      PaymentSubmission[]
 
   @@unique([tenantId, plateNumber])
   @@unique([id, tenantId])
@@ -340,38 +365,39 @@ model Vehicle {
 // Haydovchi — o'z profili va Telegram akkaunti bilan. Kunlik to'lovlar
 // haydovchi va avtomobilga bir vaqtda bog'lanadi.
 model Driver {
-  id                String       @id @default(uuid()) @db.Uuid
-  tenantId          String       @db.Uuid
-  fullName          String       @db.VarChar(160)
-  phone             String       @db.VarChar(32)
-  licenseNumber     String?      @db.VarChar(60)
-  status            DriverStatus @default(ACTIVE)
-  telegramChatId    BigInt?      @unique
-  telegramUsername  String?      @db.VarChar(64)
-  telegramLinkedAt  DateTime?
-  telegramLinkTokenHash String?  @unique @db.VarChar(64)
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @db.Uuid
+  fullName              String       @db.VarChar(160)
+  phone                 String       @db.VarChar(32)
+  licenseNumber         String?      @db.VarChar(60)
+  status                DriverStatus @default(ACTIVE)
+  telegramChatId        BigInt?      @unique
+  telegramUsername      String?      @db.VarChar(64)
+  telegramLinkedAt      DateTime?
+  telegramLinkTokenHash String?      @unique @db.VarChar(64)
   telegramLinkExpiresAt DateTime?
-  telegramFirstName   String?    @db.VarChar(64)
-  telegramLastName    String?    @db.VarChar(64)
-  telegramPhotoFileId String?    @db.VarChar(255)
-  passportNumber      String?    @db.VarChar(20)
-  passportIssuedBy    String?    @db.VarChar(160)
-  passportIssuedAt    DateTime?  @db.Date
-  pinfl               String?    @db.VarChar(14)
-  birthDate           DateTime?  @db.Date
-  passportPhotoFileId String?    @db.VarChar(255)
-  licenseCategories   String?    @db.VarChar(40)
-  licenseIssuedAt     DateTime?  @db.Date
-  licenseExpiresAt    DateTime?  @db.Date
-  licensePhotoFileId  String?    @db.VarChar(255)
-  notes             String?      @db.VarChar(500)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  telegramFirstName     String?      @db.VarChar(64)
+  telegramLastName      String?      @db.VarChar(64)
+  telegramPhotoFileId   String?      @db.VarChar(255)
+  passportNumber        String?      @db.VarChar(20)
+  passportIssuedBy      String?      @db.VarChar(160)
+  passportIssuedAt      DateTime?    @db.Date
+  pinfl                 String?      @db.VarChar(14)
+  birthDate             DateTime?    @db.Date
+  passportPhotoFileId   String?      @db.VarChar(255)
+  licenseCategories     String?      @db.VarChar(40)
+  licenseIssuedAt       DateTime?    @db.Date
+  licenseExpiresAt      DateTime?    @db.Date
+  licensePhotoFileId    String?      @db.VarChar(255)
+  notes                 String?      @db.VarChar(500)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
-  company     Company                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignments VehicleAssignment[]
+  company      Company              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments  VehicleAssignment[]
   monthlyPlans VehicleMonthlyPlan[]
-  payments    DriverPayment[]
+  payments     DriverPayment[]
+  submissions  PaymentSubmission[]
 
   @@unique([tenantId, phone])
   @@unique([id, tenantId])
@@ -382,20 +408,20 @@ model Driver {
 // Oy mobaynida haydovchi va avtomobil biriktirilishi. Bir avtomobil va bir
 // haydovchida faqat bitta ochiq (endDate = null) biriktirish bo'ladi.
 model VehicleAssignment {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  vehicleId   String   @db.Uuid
-  driverId    String   @db.Uuid
-  startDate   DateTime @db.Date
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  vehicleId   String    @db.Uuid
+  driverId    String    @db.Uuid
+  startDate   DateTime  @db.Date
   endDate     DateTime? @db.Date
-  createdById String?  @db.Uuid
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdById String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  company   Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Restrict)
-  createdBy User?    @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  company   Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driver    Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  createdBy User?   @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@unique([id, tenantId])
   @@index([tenantId, vehicleId, endDate])
@@ -444,11 +470,12 @@ model DriverPayment {
   idempotencyKey String?             @db.VarChar(120)
   createdAt      DateTime            @default(now())
 
-  company     Company            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  driver      Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
-  vehicle     Vehicle            @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  company     Company             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver      Driver              @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle     Vehicle             @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   monthlyPlan VehicleMonthlyPlan? @relation(fields: [monthlyPlanId], references: [id], onDelete: SetNull)
-  receivedBy  User?              @relation("DriverPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  receivedBy  User?               @relation("DriverPaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  submission  PaymentSubmission?
 
   @@unique([tenantId, idempotencyKey])
   @@unique([id, tenantId])
@@ -503,26 +530,26 @@ model TariffRule {
 }
 
 model Contract {
-  id           String         @id @default(uuid()) @db.Uuid
-  tenantId     String         @db.Uuid
-  vehicleId    String         @db.Uuid
-  ownerId      String         @db.Uuid
-  tariffId     String?        @db.Uuid
-  createdById  String         @db.Uuid
-  type         ContractType
-  status       ContractStatus @default(DRAFT)
-  startDate    DateTime       @db.Date
-  endDate      DateTime?      @db.Date
-  monthlyRate  Decimal?       @db.Decimal(18, 2)
-  notes        String?        @db.VarChar(1000)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @db.Uuid
+  vehicleId   String         @db.Uuid
+  ownerId     String         @db.Uuid
+  tariffId    String?        @db.Uuid
+  createdById String         @db.Uuid
+  type        ContractType
+  status      ContractStatus @default(DRAFT)
+  startDate   DateTime       @db.Date
+  endDate     DateTime?      @db.Date
+  monthlyRate Decimal?       @db.Decimal(18, 2)
+  notes       String?        @db.VarChar(1000)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  company   Company     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle   Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  owner     User        @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  tariff    Tariff?     @relation(fields: [tariffId], references: [id], onDelete: Restrict)
-  createdBy User        @relation("ContractCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  company   Company    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  owner     User       @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  tariff    Tariff?    @relation(fields: [tariffId], references: [id], onDelete: Restrict)
+  createdBy User       @relation("ContractCreator", fields: [createdById], references: [id], onDelete: Restrict)
   payments  Payment[]
   documents Document[]
 
@@ -550,12 +577,12 @@ model Payment {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  company       Company               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contract      Contract              @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  createdBy     User                  @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  webhookEvents PaymentWebhookEvent[]
+  company              Company                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contract             Contract                     @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  createdBy            User                         @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  webhookEvents        PaymentWebhookEvent[]
   providerTransactions PaymentProviderTransaction[]
-  refunds       PaymentRefund[]
+  refunds              PaymentRefund[]
 
   @@unique([tenantId, idempotencyKey])
   @@unique([id, tenantId])
@@ -587,18 +614,18 @@ model PaymentWebhookEvent {
 // Per-tenant provider credentials. Secrets are encrypted at rest with
 // APP_ENCRYPTION_KEY and are never returned by the API.
 model PaymentProviderAccount {
-  id                    String          @id @default(uuid()) @db.Uuid
-  tenantId              String          @db.Uuid
-  provider              PaymentProvider
+  id                     String          @id @default(uuid()) @db.Uuid
+  tenantId               String          @db.Uuid
+  provider               PaymentProvider
   // Payme: Basic auth login ("Paycom"); merchantId: cashbox identifier.
-  login                 String          @db.VarChar(80)
-  merchantId            String          @db.VarChar(80)
-  secretEncrypted       String          @db.VarChar(1000)
-  webhookSecretEncrypted String?        @db.VarChar(1000)
-  isActive              Boolean         @default(true)
-  config                Json?
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  login                  String          @db.VarChar(80)
+  merchantId             String          @db.VarChar(80)
+  secretEncrypted        String          @db.VarChar(1000)
+  webhookSecretEncrypted String?         @db.VarChar(1000)
+  isActive               Boolean         @default(true)
+  config                 Json?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -610,20 +637,20 @@ model PaymentProviderAccount {
 // Payme transaction mirror. State follows Payme Merchant API:
 // 1 created, 2 performed, -1 cancelled, -2 cancelled after performed.
 model PaymentProviderTransaction {
-  id            String          @id @default(uuid()) @db.Uuid
-  tenantId      String          @db.Uuid
-  paymentId     String          @db.Uuid
-  provider      PaymentProvider
-  externalId    String          @db.VarChar(80)
-  state         Int
-  amountTiyin   BigInt
-  reason        Int?
-  createTime    BigInt
-  performTime   BigInt?
-  cancelTime    BigInt?
-  raw           Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @db.Uuid
+  paymentId   String          @db.Uuid
+  provider    PaymentProvider
+  externalId  String          @db.VarChar(80)
+  state       Int
+  amountTiyin BigInt
+  reason      Int?
+  createTime  BigInt
+  performTime BigInt?
+  cancelTime  BigInt?
+  raw         Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
@@ -635,22 +662,22 @@ model PaymentProviderTransaction {
 }
 
 model PaymentRefund {
-  id            String          @id @default(uuid()) @db.Uuid
-  tenantId      String          @db.Uuid
-  paymentId     String          @db.Uuid
-  requestedById String?         @db.Uuid
-  amount        Decimal         @db.Decimal(18, 2)
-  reason        String          @db.VarChar(500)
-  status        RefundStatus    @default(PENDING)
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @db.Uuid
+  paymentId     String           @db.Uuid
+  requestedById String?          @db.Uuid
+  amount        Decimal          @db.Decimal(18, 2)
+  reason        String           @db.VarChar(500)
+  status        RefundStatus     @default(PENDING)
   provider      PaymentProvider?
-  externalRef   String?         @db.VarChar(160)
+  externalRef   String?          @db.VarChar(160)
   processedAt   DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
-  company     Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  requestedBy User?    @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  company     Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  requestedBy User?   @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
 
   @@unique([id, tenantId])
   @@index([tenantId, paymentId, status])
@@ -658,23 +685,23 @@ model PaymentRefund {
 }
 
 model PaymentReconciliation {
-  id                   String               @id @default(uuid()) @db.Uuid
-  tenantId             String               @db.Uuid
-  provider             PaymentProvider
-  periodStart          DateTime
-  periodEnd            DateTime
-  status               ReconciliationStatus @default(RUNNING)
-  checkedCount         Int                  @default(0)
-  matchedCount         Int                  @default(0)
-  missingLocalCount    Int                  @default(0)
-  missingRemoteCount   Int                  @default(0)
-  amountMismatchCount  Int                  @default(0)
-  difference           Decimal              @default(0) @db.Decimal(18, 2)
-  details              Json?
-  error                String?              @db.VarChar(500)
-  startedAt            DateTime             @default(now())
-  finishedAt           DateTime?
-  createdAt            DateTime             @default(now())
+  id                  String               @id @default(uuid()) @db.Uuid
+  tenantId            String               @db.Uuid
+  provider            PaymentProvider
+  periodStart         DateTime
+  periodEnd           DateTime
+  status              ReconciliationStatus @default(RUNNING)
+  checkedCount        Int                  @default(0)
+  matchedCount        Int                  @default(0)
+  missingLocalCount   Int                  @default(0)
+  missingRemoteCount  Int                  @default(0)
+  amountMismatchCount Int                  @default(0)
+  difference          Decimal              @default(0) @db.Decimal(18, 2)
+  details             Json?
+  error               String?              @db.VarChar(500)
+  startedAt           DateTime             @default(now())
+  finishedAt          DateTime?
+  createdAt           DateTime             @default(now())
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -712,19 +739,22 @@ model Plan {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  subscriptions Subscription[]
+  subscriptions    Subscription[]
+  licenseContracts LicenseContract[]
 }
 
 model Subscription {
-  id                 String             @id @default(uuid()) @db.Uuid
-  tenantId           String             @db.Uuid
-  planId             String             @db.VarChar(40)
-  status             SubscriptionStatus @default(TRIAL)
-  startDate          DateTime           @db.Date
-  currentPeriodEnd   DateTime?          @db.Date
-  cancelAtPeriodEnd  Boolean            @default(false)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @db.Uuid
+  planId            String             @db.VarChar(40)
+  status            SubscriptionStatus @default(TRIAL)
+  startDate         DateTime           @db.Date
+  currentPeriodEnd  DateTime?          @db.Date
+  cancelAtPeriodEnd Boolean            @default(false)
+  // Shartnomadagi oylik summa; bo'sh bo'lsa tarif narxi qo'llanadi.
+  monthlyFee        Decimal?           @db.Decimal(18, 2)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   company  Company               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plan     Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -732,6 +762,26 @@ model Subscription {
 
   @@unique([id, tenantId])
   @@index([tenantId, status])
+}
+
+// Korxona egasi bilan oylik to'lov asosidagi shartnoma (amount = oylik summa).
+model LicenseContract {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  number      String   @unique @db.VarChar(40)
+  planId      String   @db.VarChar(40)
+  amount      Decimal  @db.Decimal(18, 2)
+  currency    String   @default("UZS") @db.VarChar(3)
+  signedAt    DateTime @db.Date
+  note        String?  @db.VarChar(500)
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, signedAt])
 }
 
 // SaaS obunasi moliyasi transport to'lovlaridan alohida yuritiladi.
@@ -759,16 +809,16 @@ model SubscriptionInvoice {
 }
 
 model AuditLog {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @db.Uuid
-  actorUserId  String?  @db.Uuid
-  actorType    String   @db.VarChar(30)
-  action       String   @db.VarChar(80)
-  entityType   String   @db.VarChar(60)
-  entityId     String?  @db.VarChar(80)
-  metadata     Json?
-  ip           String?  @db.VarChar(64)
-  createdAt    DateTime @default(now())
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  actorUserId String?  @db.Uuid
+  actorType   String   @db.VarChar(30)
+  action      String   @db.VarChar(80)
+  entityType  String   @db.VarChar(60)
+  entityId    String?  @db.VarChar(80)
+  metadata    Json?
+  ip          String?  @db.VarChar(64)
+  createdAt   DateTime @default(now())
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   actor   User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
@@ -814,12 +864,12 @@ model TelegramLinkToken {
 }
 
 model TelegramAccount {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid
-  userId    String   @db.Uuid
-  chatId    BigInt   @unique
-  username  String?  @db.VarChar(64)
-  linkedAt  DateTime @default(now())
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @db.Uuid
+  userId   String   @db.Uuid
+  chatId   BigInt   @unique
+  username String?  @db.VarChar(64)
+  linkedAt DateTime @default(now())
 
   company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -835,19 +885,19 @@ model TelegramAccount {
 // ---------------------------------------------------------------------------
 
 model ExternalConnection {
-  id             String                   @id @default(uuid()) @db.Uuid
-  tenantId       String                   @db.Uuid
-  provider       ExternalProvider
-  baseUrl        String                   @db.VarChar(200)
-  tokenEncrypted String                   @db.Text
-  credentialsEncrypted String?             @db.Text
-  config         Json?
-  status         ExternalConnectionStatus @default(ACTIVE)
-  lastSyncAt     DateTime?
-  lastLoginAt    DateTime?
-  lastError      String?                  @db.VarChar(500)
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
+  id                   String                   @id @default(uuid()) @db.Uuid
+  tenantId             String                   @db.Uuid
+  provider             ExternalProvider
+  baseUrl              String                   @db.VarChar(200)
+  tokenEncrypted       String                   @db.Text
+  credentialsEncrypted String?                  @db.Text
+  config               Json?
+  status               ExternalConnectionStatus @default(ACTIVE)
+  lastSyncAt           DateTime?
+  lastLoginAt          DateTime?
+  lastError            String?                  @db.VarChar(500)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
 
   company Company           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   runs    ExternalSyncRun[]
@@ -927,4 +977,44 @@ model ExternalRecord {
   @@unique([tenantId, provider, kind, externalId])
   @@unique([id, tenantId])
   @@index([tenantId, provider, kind])
+}
+
+// Haydovchilar tomonidan yuborilgan masofaviy to'lov arizalari (chek skrinshotlari).
+// AI va grafik redaktorlarda soxtalashtirilgan cheklarni aniqlash tahlili bilan saqlanadi.
+model PaymentSubmission {
+  id                String                  @id @default(uuid()) @db.Uuid
+  tenantId          String                  @db.Uuid
+  driverId          String                  @db.Uuid
+  vehicleId         String                  @db.Uuid
+  amount            Decimal                 @db.Decimal(18, 2)
+  periodStart       DateTime                @db.Date
+  receiptFileKey    String                  @db.VarChar(512)
+  receiptFileUrl    String?                 @db.VarChar(1024)
+  transactionNumber String?                 @db.VarChar(120)
+  imageHash         String?                 @db.VarChar(64)
+  status            PaymentSubmissionStatus @default(PENDING)
+  fraudRisk         FraudRiskLevel          @default(LOW)
+  fraudScore        Int                     @default(0)
+  fraudFlags        String[]                @default([])
+  fraudAnalysis     Json?
+  note              String?                 @db.VarChar(500)
+  reviewedById      String?                 @db.Uuid
+  reviewedAt        DateTime?
+  rejectReason      String?                 @db.VarChar(500)
+  driverPaymentId   String?                 @unique @db.Uuid
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  company           Company                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver            Driver                  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle           Vehicle                 @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  reviewedBy        User?                   @relation("SubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  driverPayment     DriverPayment?          @relation(fields: [driverPaymentId], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, driverId])
+  @@index([imageHash])
+  @@index([transactionNumber])
 }

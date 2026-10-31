@@ -49,9 +49,23 @@ export interface NormalizedRecord {
   raw: unknown;
 }
 
+export interface NormalizedDriver {
+  externalId: string;
+  fullName: string;
+  phone: string | null;
+  pinfl: string | null;
+  licenseNumber: string | null;
+  licenseCategories: string | null;
+  licenseExpiresAt: Date | null;
+  routeName: string | null;
+}
+
 export interface ExternalFetchResult {
   vehicles: NormalizedVehicle[];
   records: NormalizedRecord[];
+  drivers?: NormalizedDriver[];
+  /** Routes the provider lists for the company, including ones with no vehicles today. */
+  routeNames?: string[];
   warnings: string[];
 }
 

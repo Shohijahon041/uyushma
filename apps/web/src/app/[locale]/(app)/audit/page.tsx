@@ -114,7 +114,9 @@ export default function AuditPage() {
                           ? t("system")
                           : item.actorType === "INTEGRATION"
                             ? "Integration"
-                            : item.actorUserId
+                            : item.actorType === "PLATFORM"
+                              ? "Super admin"
+                              : item.actorUserId
                               ? `${item.actorUserId.slice(0, 8)}…`
                               : "—"}
                       </td>

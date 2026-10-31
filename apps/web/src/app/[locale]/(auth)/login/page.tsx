@@ -2,15 +2,14 @@
 
 import { useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
-import { Link, useRouter } from "@/i18n/navigation";
-import { sessionLogin, sessionVerifyTwoFactor } from "@/lib/client-api";
+import { useRouter } from "@/i18n/navigation";
+import { sessionLogin, sessionVerifyTwoFactor, type SessionUser } from "@/lib/client-api";
 import { Alert } from "@/components/ui";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
   const router = useRouter();
-  const [companySlug, setCompanySlug] = useState("");
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("+998 ");
   const [password, setPassword] = useState("");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -18,18 +17,22 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  function enter(session: SessionUser) {
+    router.replace(session.company.isPlatform ? "/admin" : "/dashboard");
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const result = await sessionLogin({ companySlug, email, password });
+      const result = await sessionLogin({ phone, password });
       if ("mfaRequired" in result) {
         setMfaToken(result.mfaToken);
         setSubmitting(false);
         return;
       }
-      router.replace("/dashboard");
+      enter(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("invalidCredentials"));
       setSubmitting(false);
@@ -42,10 +45,10 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await sessionVerifyTwoFactor(
+      const session = await sessionVerifyTwoFactor(
         recoveryMode ? { mfaToken, recoveryCode: code } : { mfaToken, code },
       );
-      router.replace("/dashboard");
+      enter(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("invalidCredentials"));
       setSubmitting(false);
@@ -108,31 +111,20 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
         {error && <Alert tone="error">{error}</Alert>}
         <div>
-          <label htmlFor="companySlug" className="label">
-            {t("companyCode")}
+          <label htmlFor="phone" className="label">
+            {t("phone")}
           </label>
           <input
-            id="companySlug"
-            className="input"
-            autoComplete="organization"
-            placeholder={t("companyCodeHint")}
-            value={companySlug}
-            onChange={(event) => setCompanySlug(event.target.value)}
+            id="phone"
+            type="tel"
+            className="input font-mono tracking-wide"
+            autoComplete="tel"
+            inputMode="tel"
+            placeholder={t("phoneHint")}
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
             required
-          />
-        </div>
-        <div>
-          <label htmlFor="email" className="label">
-            {t("email")}
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="input"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
+            autoFocus
           />
         </div>
         <div>
@@ -149,24 +141,13 @@ export default function LoginPage() {
             required
           />
         </div>
-        <div className="flex justify-end">
-          <Link
-            href="/forgot-password"
-            className="text-sm font-semibold text-brand-700 hover:text-brand-800"
-          >
-            {t("forgotPassword")}
-          </Link>
-        </div>
         <button type="submit" className="btn-primary w-full" disabled={submitting}>
           {submitting ? t("loggingIn") : t("login")}
         </button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-500">
-        {t("noAccount")}{" "}
-        <Link href="/register" className="font-semibold text-brand-700 hover:text-brand-800">
-          {t("registerLink")}
-        </Link>
+      <p className="mt-6 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-center text-xs leading-relaxed text-slate-500">
+        {t("noAccountHint")}
       </p>
     </div>
   );
