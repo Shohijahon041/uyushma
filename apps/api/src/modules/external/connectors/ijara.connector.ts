@@ -192,6 +192,7 @@ export class IjaraConnector implements ExternalConnector {
     const warnings: string[] = [];
     const vehicles = new Map<string, NormalizedVehicle>();
     const records: NormalizedRecord[] = [];
+    const drivers = new Map<string, import("../external.types").NormalizedDriver>();
 
     // Profil va personId (STIR yoki JSHSHIR) ni aniqlash
     let organizationName: string | null = null;
@@ -215,62 +216,106 @@ export class IjaraConnector implements ExternalConnector {
     const customRentType = (config as Record<string, unknown>).myRentType;
     const rentTypes = customRentType ? [Number(customRentType)] : [1, 2];
 
+    // statusGroup: 1 - faol, 2 - tugagan/boshqa
+    const customStatus = (config as Record<string, unknown>).statusGroup;
+    const statusGroups = customStatus ? [String(customStatus)] : ["1", "2"];
+
     for (const rentType of rentTypes) {
-      let page = 0;
-      let maxPages = 50;
+      for (const statusGroup of statusGroups) {
+        let page = 0;
+        let maxPages = 50;
 
-      while (page <= maxPages) {
-        const queryParams = new URLSearchParams({
-          page: String(page),
-          size: "50",
-          limit: "50",
-          myRentType: String(rentType),
-          statusGroup: "1",
-        });
+        while (page <= maxPages) {
+          const queryParams = new URLSearchParams({
+            page: String(page),
+            size: "50",
+            limit: "50",
+            myRentType: String(rentType),
+            statusGroup,
+          });
 
-        if (personId) {
-          queryParams.set("personId", personId);
-        }
+          if (personId) {
+            queryParams.set("personId", personId);
+          }
 
-        const url = `${joinUrl(baseUrl, targetPath)}${targetPath.includes("?") ? "&" : "?"}${queryParams.toString()}`;
+          const url = `${joinUrl(baseUrl, targetPath)}${targetPath.includes("?") ? "&" : "?"}${queryParams.toString()}`;
 
-        try {
-          const payload = await externalRequestJson(url, { token: cleanToken });
-          const items = extractArray(payload);
+          try {
+            const payload = await externalRequestJson(url, { token: cleanToken });
+            const items = extractArray(payload);
 
-          if (!items || items.length === 0) break;
+            if (!items || items.length === 0) break;
 
-          for (const raw of items) {
-            const veh = mapIjaraVehicle(raw);
-            if (veh && veh.plateNumber) {
-              const plateKey = normalizePlate(veh.plateNumber);
-              if (!vehicles.has(plateKey)) {
-                vehicles.set(plateKey, {
-                  ...veh,
-                  organizationName: veh.organizationName ?? organizationName,
-                });
+            for (const raw of items) {
+              const veh = mapIjaraVehicle(raw);
+              if (veh && veh.plateNumber) {
+                const plateKey = normalizePlate(veh.plateNumber);
+                if (!vehicles.has(plateKey)) {
+                  vehicles.set(plateKey, {
+                    ...veh,
+                    organizationName: veh.organizationName ?? organizationName,
+                  });
+                }
+              }
+
+              // Ijarachi haydovchini ajratib olish
+              const lesseeName = text(
+                pick(raw, [
+                  "lessee_name",
+                  "lesseeName",
+                  "lessee.name",
+                  "driver_name",
+                  "driverName",
+                  "client_name",
+                ]),
+              );
+              const lesseePinfl = text(
+                pick(raw, ["lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
+              );
+              const lesseePhone = text(
+                pick(raw, ["lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
+              );
+              const lesseeLicense = text(
+                pick(raw, ["lessee_license", "lesseeLicense", "license_number"]),
+              );
+
+              if (lesseeName) {
+                const driverKey = (lesseePinfl ?? lesseePhone ?? lesseeName).toLowerCase();
+                if (!drivers.has(driverKey)) {
+                  drivers.set(driverKey, {
+                    externalId: driverKey,
+                    fullName: lesseeName,
+                    phone: lesseePhone,
+                    pinfl: lesseePinfl,
+                    licenseNumber: lesseeLicense,
+                    licenseCategories: null,
+                    licenseExpiresAt: null,
+                    routeName: null,
+                  });
+                }
+              }
+
+              const rec = mapIjaraRecord(raw);
+              if (rec && !records.some((r) => r.externalId === rec.externalId)) {
+                records.push(rec);
               }
             }
 
-            const rec = mapIjaraRecord(raw);
-            if (rec && !records.some((r) => r.externalId === rec.externalId)) {
-              records.push(rec);
+            const pagination = extractPagination(payload);
+            if (pagination.lastPage && pagination.lastPage > 0) {
+              maxPages = Math.min(pagination.lastPage, 100);
+            } else if (items.length < 20) {
+              break;
             }
-          }
 
-          const pagination = extractPagination(payload);
-          if (pagination.lastPage && pagination.lastPage > 0) {
-            maxPages = Math.min(pagination.lastPage, 100);
-          } else if (items.length < 20) {
+            page += 1;
+          } catch (err) {
+            if (isExternalAuthError(err)) throw err;
+            warnings.push(
+              `Ijara shartnomalari (tur=${rentType}, holat=${statusGroup}, sahifa=${page + 1}): ${errorText(err)}`,
+            );
             break;
           }
-
-          page += 1;
-        } catch (err) {
-          if (isExternalAuthError(err)) throw err;
-          // Agar 1-turda xatolik bo'lsa yoki bo'sh bo'lsa, ogohlantirishga yoziladi
-          warnings.push(`Ijara shartnomalari (tur=${rentType}, sahifa=${page + 1}): ${errorText(err)}`);
-          break;
         }
       }
     }
@@ -278,6 +323,7 @@ export class IjaraConnector implements ExternalConnector {
     return {
       vehicles: Array.from(vehicles.values()),
       records,
+      drivers: Array.from(drivers.values()),
       warnings,
     };
   }

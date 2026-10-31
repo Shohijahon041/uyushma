@@ -175,6 +175,29 @@ function ProviderCard({
     }
   }
 
+  async function handleLaunchInteractiveBrowser() {
+    if (meta.key === "IJARA") return;
+    setError(null);
+    setMessage(null);
+    setBusy("save");
+    try {
+      await apiRequest(`/settings/integrations/${meta.key}/oneid-browser-interactive`, {
+        method: "POST",
+      });
+      setMessage(
+        "🌐 Kompyuterda Chrome/Edge oynasi ochildi. Unda OneID bilan kiring, sessiya avtomatik saqlanadi!",
+      );
+      const timer = setInterval(() => {
+        void onChanged();
+      }, 5000);
+      setTimeout(() => clearInterval(timer), 60000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Brauzer ochishda xatolik");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleSsoSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -534,18 +557,29 @@ function ProviderCard({
         {mode === "sso" && meta.key !== "IJARA" ? (
           <form onSubmit={handleSsoSubmit} className="mt-3 space-y-3">
             <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3 text-xs space-y-2">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-purple-900">1-qadam: Rasmiy OneID orqali kiring</span>
-                {SSO_URLS[meta.key] && (
-                  <a
-                    href={SSO_URLS[meta.key]}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-primary bg-purple-600 hover:bg-purple-700 px-3 py-1 text-xs font-semibold shadow-xs inline-flex items-center gap-1"
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="btn-secondary bg-white hover:bg-purple-100 text-purple-700 border-purple-300 px-2.5 py-1 text-xs font-semibold shadow-2xs inline-flex items-center gap-1"
+                    onClick={() => void handleLaunchInteractiveBrowser()}
+                    disabled={busy !== null}
+                    title="Playwright orqali kompyuteringizda real brauzer oynasini ochadi va sessiyani avtomatik ulaydi"
                   >
-                    <span>↗ OneID oynasini ochish</span>
-                  </a>
-                )}
+                    <span>🌐 Brauzerda ochish</span>
+                  </button>
+                  {SSO_URLS[meta.key] && (
+                    <a
+                      href={SSO_URLS[meta.key]}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-primary bg-purple-600 hover:bg-purple-700 px-3 py-1 text-xs font-semibold shadow-xs inline-flex items-center gap-1"
+                    >
+                      <span>↗ OneID oynasi</span>
+                    </a>
+                  )}
+                </div>
               </div>
               <p className="text-[11px] text-purple-800 leading-relaxed">
                 Tugmani bosib OneID tizimida kiring. Kirgandan keyin brauzer manzil satridagi URL manzilni (masalan: <code className="bg-white/80 px-1 py-0.5 rounded font-mono">https://.../?{meta.key === "ETENDER" ? "one_code=" : "code="}...</code>) nusxalab pastdagi maydonga qo&apos;ying.
@@ -736,12 +770,12 @@ function ProviderCard({
 }
 
 /**
- * Bitta OneID orqali portallarga ulanish markazi (SSO kod orqali yoki Login/Parol orqali)
+ * Bitta OneID orqali portallarga ulanish markazi (SSO kod, Playwright avtomatika yoki Login/Parol orqali)
  */
 function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void> }) {
   const t = useTranslations("settings");
   const tc = useTranslations("common");
-  const [activeTab, setActiveTab] = useState<"sso" | "login">("sso");
+  const [activeTab, setActiveTab] = useState<"sso" | "playwright" | "login">("sso");
 
   // SSO state
   const [ssoTarget, setSsoTarget] = useState<"ETENDER" | "AUTOPARK">("ETENDER");
@@ -749,6 +783,11 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
   const [ssoBusy, setSsoBusy] = useState(false);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [ssoSuccess, setSsoSuccess] = useState<string | null>(null);
+
+  // Playwright interactive state
+  const [browserBusy, setBrowserBusy] = useState<"ETENDER" | "AUTOPARK" | null>(null);
+  const [browserMsg, setBrowserMsg] = useState<string | null>(null);
+  const [browserError, setBrowserError] = useState<string | null>(null);
 
   // Login/parol state
   const [username, setUsername] = useState("");
@@ -798,6 +837,64 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
     }
   }
 
+  async function handleLaunchBrowser(target: "ETENDER" | "AUTOPARK") {
+    setBrowserBusy(target);
+    setBrowserError(null);
+    setBrowserMsg(null);
+    try {
+      await apiRequest<{ success: boolean; message: string }>(
+        `/settings/integrations/${target}/oneid-browser-interactive`,
+        { method: "POST" },
+      );
+      setBrowserMsg(
+        "🌐 Kompyuteringizda Chrome/Edge oynasi ochildi! Unda OneID hisobingizga kiring. Kirishingiz bilan dastur sessiyani avtomatik ulaydi va oynani o'zi yopadi.",
+      );
+      // Periodik tekshirib turish
+      let checks = 0;
+      const interval = setInterval(async () => {
+        checks += 1;
+        await onChanged();
+        if (checks > 24) clearInterval(interval);
+      }, 5000);
+    } catch (err) {
+      setBrowserError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBrowserBusy(null);
+    }
+  }
+
+  async function handlePlaywrightLogin(target: "ETENDER" | "AUTOPARK") {
+    setError(null);
+    setResult(null);
+    setBusy(true);
+    try {
+      const res = await apiRequest<{ success: boolean; account?: string }>(
+        `/settings/integrations/${target}/oneid-browser-login`,
+        {
+          method: "POST",
+          body: {
+            username: username.trim(),
+            password,
+          },
+        },
+      );
+      setResult({
+        overallSuccess: true,
+        providers: {
+          [target]: {
+            success: true,
+            account: res.account,
+          },
+        },
+      });
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleOneIdSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -840,7 +937,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
         </div>
 
         {/* Tab switcher */}
-        <div className="inline-flex rounded-lg border border-brand-200 bg-white p-1 text-xs shadow-2xs shrink-0">
+        <div className="inline-flex rounded-lg border border-brand-200 bg-white p-1 text-xs shadow-2xs shrink-0 flex-wrap gap-1">
           <button
             type="button"
             className={`rounded-md px-3 py-1.5 font-bold transition-all ${
@@ -850,7 +947,18 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
             }`}
             onClick={() => setActiveTab("sso")}
           >
-            ⚡ Usul 1: OneID SSO (Tavsiya etiladi)
+            ⚡ Usul 1: SSO Kod
+          </button>
+          <button
+            type="button"
+            className={`rounded-md px-3 py-1.5 font-bold transition-all ${
+              activeTab === "playwright"
+                ? "bg-brand-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+            onClick={() => setActiveTab("playwright")}
+          >
+            🌐 Usul 2: Brauzer (Playwright)
           </button>
           <button
             type="button"
@@ -861,7 +969,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
             }`}
             onClick={() => setActiveTab("login")}
           >
-            🔑 Usul 2: Login va Parol
+            🔑 Usul 3: Login va Parol
           </button>
         </div>
       </div>
@@ -987,6 +1095,70 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
             {ssoSuccess && <Alert tone="success">{ssoSuccess}</Alert>}
           </form>
         </div>
+      ) : activeTab === "playwright" ? (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs text-indigo-950 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-indigo-900 text-sm">🌐 Playwright Brauzer Avtomatizatsiyasi</span>
+              <span className="rounded-md bg-indigo-200/80 px-2 py-0.5 text-[10px] font-bold text-indigo-800">100% Avtomatik</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-indigo-800">
+              Ushbu tugmani bosganingizda kompyuteringizda real Chrome/Edge brauzer oynasi ochiladi. Siz OneID oynasida xohlagan usulda (QR-kod, Mobile-ID, E-IMZO yoki login/parol) kirasiz. 
+              <strong> Hech qanday kod nusxalashingiz shart emas</strong> — Playwright tizimi kirganingizni avtomatik sezib, sessiyani dasturga ulaydi va oynani o&apos;zi yopadi!
+            </p>
+          </div>
+
+          {browserError && <Alert tone="error">{browserError}</Alert>}
+          {browserMsg && <Alert tone="success">{browserMsg}</Alert>}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs">🚛 e-tender.uztrans.uz</span>
+                  <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Transport Vazirligi</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Litsenziyalar, tenderlar va rasmiy guvohnomalar uchun OneID oynasini ochish.
+                </p>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="btn-primary w-full bg-indigo-600 hover:bg-indigo-700 text-xs py-2.5 font-bold shadow-sm inline-flex items-center justify-center gap-2"
+                  onClick={() => void handleLaunchBrowser("ETENDER")}
+                  disabled={browserBusy !== null}
+                >
+                  <span>🌐</span>
+                  <span>{browserBusy === "ETENDER" ? "Ochilmoqda..." : "e-tender uchun brauzerda ochish"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs">🚌 bm.dtransport.uz</span>
+                  <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Toshkent Avtopark</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Avtobuslar ro&apos;yxati, GPS IMEI va haydovchilar uchun OneID oynasini ochish.
+                </p>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="btn-primary w-full bg-indigo-600 hover:bg-indigo-700 text-xs py-2.5 font-bold shadow-sm inline-flex items-center justify-center gap-2"
+                  onClick={() => void handleLaunchBrowser("AUTOPARK")}
+                  disabled={browserBusy !== null}
+                >
+                  <span>🌐</span>
+                  <span>{browserBusy === "AUTOPARK" ? "Ochilmoqda..." : "bm.dtransport uchun brauzerda ochish"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="mt-5 space-y-4">
           {error && (
@@ -1101,7 +1273,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
                 onChange={(e) => setIp(e.target.value)}
               />
             </div>
-            <div>
+            <div className="flex gap-2">
               <button
                 type="submit"
                 className="btn-primary w-full py-2.5 text-xs font-bold shadow-sm"
@@ -1111,6 +1283,32 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
               </button>
             </div>
           </form>
+
+          {username.trim().length >= 3 && password.length >= 4 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <span className="text-slate-600">
+                Agar OneID to&apos;g&apos;ridan-to&apos;g&apos;ri API kirishni bloklasa, Playwright brauzeri orqali urinib ko&apos;ring:
+              </span>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  className="btn-secondary px-3 py-1.5 text-xs font-semibold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  onClick={() => void handlePlaywrightLogin("ETENDER")}
+                  disabled={busy}
+                >
+                  ⚡ e-tender (Playwright)
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary px-3 py-1.5 text-xs font-semibold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  onClick={() => void handlePlaywrightLogin("AUTOPARK")}
+                  disabled={busy}
+                >
+                  ⚡ bm.dtransport (Playwright)
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

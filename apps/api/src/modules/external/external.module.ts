@@ -7,6 +7,7 @@ import { ExternalInternalController } from "./external-internal.controller";
 import { ExternalSyncQueueService } from "./external.queue";
 import { ExternalService } from "./external.service";
 import { OneIdAuthService } from "./connectors/oneid.service";
+import { OneIdBrowserService } from "./connectors/oneid-browser.service";
 import { EImzoService } from "./connectors/eimzo.service";
 import { ExternalCrossLinkService } from "./cross-link.service";
 
@@ -20,12 +21,14 @@ import { ExternalCrossLinkService } from "./cross-link.service";
     ExternalService,
     ExternalSyncQueueService,
     OneIdAuthService,
+    OneIdBrowserService,
     EImzoService,
     ExternalCrossLinkService,
   ],
   exports: [
     ExternalService,
     OneIdAuthService,
+    OneIdBrowserService,
     EImzoService,
     ExternalCrossLinkService,
   ],

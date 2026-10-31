@@ -114,8 +114,12 @@ export class ExternalCrossLinkService {
       for (const rec of extRecords) {
         if (rec.kind === "RENT_CONTRACT" && isRecord(rec.raw)) {
           const recPlate =
+            (rec.raw.vehicleNumber as string) ??
+            (rec.raw.vehicle_number as string) ??
             (rec.raw.car_number as string) ??
+            (rec.raw.carNumber as string) ??
             (rec.raw.plateNumber as string) ??
+            (rec.raw.plate_number as string) ??
             (rec.raw.car as AnyRecord)?.number ??
             "";
           const entry = getOrCreate(recPlate);
@@ -352,12 +356,43 @@ export class ExternalCrossLinkService {
       for (const rec of extRecords) {
         if (!isRecord(rec.raw)) continue;
         const plate =
+          (rec.raw.vehicleNumber as string) ??
+          (rec.raw.vehicle_number as string) ??
           (rec.raw.car_number as string) ??
+          (rec.raw.carNumber as string) ??
           (rec.raw.plateNumber as string) ??
+          (rec.raw.plate_number as string) ??
+          (rec.raw.car as AnyRecord)?.number ??
           "";
         const norm = normalizePlate(plate);
         const vehicleId = norm ? nativeByPlate.get(norm) : null;
         if (!vehicleId) continue;
+
+        // Soliq ijara to'lovi bo'yicha avtomobil oylik to'lovini (monthlyFee) yangilash
+        const rawMonthly =
+          rec.raw.monthlyFee ??
+          rec.raw.rentMonthlyRate ??
+          rec.raw.rent_monthly_rate ??
+          rec.raw.rent_amount ??
+          rec.raw.rentAmount ??
+          rec.raw.amount;
+        const monthlyRate =
+          typeof rawMonthly === "string"
+            ? parseFloat(rawMonthly.replace(/[^\d.]/g, ""))
+            : Number(rawMonthly || 0);
+
+        if (Number.isFinite(monthlyRate) && monthlyRate > 0) {
+          const v = await tx.vehicle.findUnique({
+            where: { id: vehicleId },
+            select: { monthlyFee: true },
+          });
+          if (v && Number(v.monthlyFee) === 0) {
+            await tx.vehicle.update({
+              where: { id: vehicleId },
+              data: { monthlyFee: monthlyRate },
+            });
+          }
+        }
 
         const lesseeName = (rec.raw.lessee_name as string) ?? "";
         const lesseePhone = (rec.raw.lessee_phone as string) ?? "";

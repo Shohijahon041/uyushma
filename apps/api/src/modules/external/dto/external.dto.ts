@@ -132,6 +132,18 @@ export class OneIdExchangeCodeDto {
   code!: string;
 }
 
+export class OneIdBrowserLoginDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(100)
+  username!: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(200)
+  password!: string;
+}
+
 export class EImzoLoginRequestDto {
   @IsString()
   @MinLength(10)

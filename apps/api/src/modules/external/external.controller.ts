@@ -18,6 +18,7 @@ import { CurrentUser, Roles } from "../../common/auth/decorators";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import {
   EImzoLoginRequestDto,
+  OneIdBrowserLoginDto,
   OneIdConnectAllRequestDto,
   OneIdExchangeCodeDto,
   RecordsQueryDto,
@@ -27,6 +28,7 @@ import {
 } from "./dto/external.dto";
 import { ExternalService } from "./external.service";
 import { OneIdAuthService } from "./connectors/oneid.service";
+import { OneIdBrowserService } from "./connectors/oneid-browser.service";
 import { EImzoService } from "./connectors/eimzo.service";
 import { ExternalCrossLinkService } from "./cross-link.service";
 
@@ -47,12 +49,24 @@ export class ExternalSettingsController {
   constructor(
     private readonly external: ExternalService,
     private readonly oneIdAuth: OneIdAuthService,
+    private readonly browserAuth: OneIdBrowserService,
     private readonly eimzo: EImzoService,
   ) {}
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.external.listConnections(user.tenantId);
+  }
+
+  /**
+   * Serverda Playwright brauzeri (Chrome/Edge) mavjudligini qaytaradi
+   */
+  @Get("oneid/browser-status")
+  getBrowserStatus() {
+    return {
+      available: this.browserAuth.isAvailable(),
+      path: this.browserAuth.getExecutablePath(),
+    };
   }
 
   /**
@@ -74,6 +88,51 @@ export class ExternalSettingsController {
     @Req() request: Request,
   ) {
     return this.oneIdAuth.connectAll(user, dto, ip(request));
+  }
+
+  /**
+   * Playwright orqali avtomatik OneID SSO kirish (Headless)
+   */
+  @Post(":provider/oneid-browser-login")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async loginWithBrowser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+    @Body() dto: OneIdBrowserLoginDto,
+    @Req() request: Request,
+  ) {
+    const prov = providerOf(provider);
+    const browserResult = await this.browserAuth.loginAutomated(
+      prov,
+      dto.username,
+      dto.password,
+    );
+
+    if (!browserResult.success || !browserResult.code) {
+      throw new BadRequestException(
+        browserResult.error ?? "OneID orqali kirish amalga oshmadi",
+      );
+    }
+
+    return this.oneIdAuth.exchangeCode(user, prov, browserResult.code, ip(request));
+  }
+
+  /**
+   * Playwright orqali ko'rinadigan brauzer oynasini ochish (Interactive)
+   */
+  @Post(":provider/oneid-browser-interactive")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async launchInteractiveBrowser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+    @Req() request: Request,
+  ) {
+    const prov = providerOf(provider);
+    const reqIp = ip(request);
+
+    return this.browserAuth.launchInteractiveWindow(prov, async (code: string) => {
+      await this.oneIdAuth.exchangeCode(user, prov, code, reqIp);
+    });
   }
 
   /**

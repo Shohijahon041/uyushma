@@ -727,5 +727,8 @@ describe("IjaraConnector", () => {
     expect((result.records[0]?.raw as any)?.contractViewUrl).toBe(
       "https://ijara.soliq.uz/car/contract-view/4586059/31.10.2026/10.01.2027",
     );
+    expect(result.drivers).toHaveLength(1);
+    expect(result.drivers?.[0]?.fullName).toBe("Aliyev Vali");
+    expect(result.drivers?.[0]?.pinfl).toBe("31234567890123");
   });
 });
