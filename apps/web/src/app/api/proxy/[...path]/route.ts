@@ -122,7 +122,7 @@ async function handle(
     }
   }
 
-  const responseBody = upstream.status === 204 ? null : upstream.body;
+  const responseBody = upstream.status === 204 ? null : await upstream.arrayBuffer();
   const response = new NextResponse(responseBody, {
     status: upstream.status,
     headers: copyResponseHeaders(upstream),

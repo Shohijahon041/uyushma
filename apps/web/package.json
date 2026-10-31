@@ -4,7 +4,7 @@
   "private": true,
   "description": "Uyushmachilar web interfeysi (uz lotin, i18n tayyor)",
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
