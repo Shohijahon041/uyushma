@@ -89,6 +89,17 @@ export async function externalRequestJson(
     );
   }
   if (!raw.trim()) return null;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (
+    contentType.includes("text/html") ||
+    raw.trim().startsWith("<!doctype") ||
+    raw.trim().startsWith("<html")
+  ) {
+    throw new ExternalHttpError(
+      response.status,
+      "Tashqi tizim web sahifa (HTML) qaytardi. API endpoint manzili yoki sessiya tokeni eskirgan bo'lishi mumkin",
+    );
+  }
   try {
     return JSON.parse(raw) as unknown;
   } catch {

@@ -21,8 +21,8 @@ import {
 
 const DEFAULT_ENDPOINTS = {
   profile: "/api/user/profile",
-  carRentingList: "/car/renting/list?myRentType=1&statusGroup=1",
-  carRentingApi: "/api/car/renting/list",
+  account: "https://my.soliq.uz/api/auth/oauth/account",
+  carRentingApi: "/api/transport-rent/client/transport-rent/contract/get-list/by-params",
   contractView: "/car/contract-view",
 } as const;
 
@@ -33,6 +33,25 @@ function joinUrl(baseUrl: string, path: string): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function extractPersonIdFromToken(token: string): { tin?: string; pinfl?: string; name?: string } | null {
+  try {
+    const parts = token.split(".");
+    const part = parts[1];
+    if (parts.length >= 2 && part) {
+      const payloadStr = Buffer.from(part, "base64url").toString("utf8");
+      const payload = JSON.parse(payloadStr);
+      return {
+        tin: payload.tin ?? payload.inn ?? payload.taxId ?? payload.uid,
+        pinfl: payload.pinfl ?? payload.sub,
+        name: payload.name ?? payload.company_name ?? payload.companyName ?? payload.fullName,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 /**
@@ -104,43 +123,57 @@ export class IjaraConnector implements ExternalConnector {
   /**
    * Mavjud tokenni tekshirish
    */
-  async test(baseUrl: string, token: string): Promise<{ account: string | null }> {
-    try {
-      const payload = await externalRequestJson(joinUrl(baseUrl, "/api/user/profile"), {
-        token,
-      });
-      const account = text(
-        pick(payload, [
-          "name",
-          "full_name",
-          "company_name",
-          "organization_name",
-          "data.name",
-          "data.company_name",
-          "tin",
-          "pinfl",
-        ]),
-      );
-      return { account };
-    } catch (error) {
-      // Fallback: car renting list orqali tekshirish
-      if (isExternalAuthError(error)) throw error;
+  async test(baseUrl: string, token: string): Promise<{ account: string | null; personId?: string | null }> {
+    // 1. my.soliq.uz/api/auth/oauth/account or /api/user/profile
+    for (const testPath of [DEFAULT_ENDPOINTS.account, joinUrl(baseUrl, DEFAULT_ENDPOINTS.profile)]) {
       try {
-        await externalRequestJson(
-          joinUrl(baseUrl, "/car/renting/list?myRentType=1&statusGroup=1&page=1&limit=1"),
-          { token },
+        const payload = await externalRequestJson(testPath, { token });
+        const account = text(
+          pick(payload, [
+            "data.name",
+            "data.company_name",
+            "data.short_name",
+            "name",
+            "full_name",
+            "company_name",
+            "organization_name",
+          ]),
         );
-        return { account: "Soliq Ijara Foydalanuvchisi" };
-      } catch (inner) {
-        if (isExternalAuthError(inner)) throw inner;
-        return { account: null };
+        const personId = text(pick(payload, ["data.tin", "data.pinfl", "tin", "pinfl"]));
+        if (account || personId) {
+          return { account: account ?? (personId ? `STIR: ${personId}` : null), personId };
+        }
+      } catch (error) {
+        if (isExternalAuthError(error)) throw error;
       }
+    }
+
+    // 2. JWT tokenidan personId va tashkilot nomini ajratib olish
+    const decoded = extractPersonIdFromToken(token);
+    if (decoded?.name || decoded?.tin || decoded?.pinfl) {
+      const personId = decoded.tin ?? decoded.pinfl ?? null;
+      return {
+        account: decoded.name ?? (personId ? `STIR/JSHSHIR: ${personId}` : null),
+        personId,
+      };
+    }
+
+    // 3. Fallback: car renting list orqali tekshirish
+    try {
+      await externalRequestJson(
+        joinUrl(baseUrl, `${DEFAULT_ENDPOINTS.carRentingApi}?page=0&size=1&myRentType=1&statusGroup=1`),
+        { token },
+      );
+      return { account: "Soliq Ijara Foydalanuvchisi" };
+    } catch (inner) {
+      if (isExternalAuthError(inner)) throw inner;
+      return { account: null };
     }
   }
 
   /**
    * Barcha avtomobil ijara shartnomalarini yuklab olish
-   * https://ijara.soliq.uz/car/renting/list?myRentType=1&statusGroup=1
+   * https://ijara.soliq.uz/api/transport-rent/client/transport-rent/contract/get-list/by-params
    */
   async fetchAll(
     baseUrl: string,
@@ -149,71 +182,93 @@ export class IjaraConnector implements ExternalConnector {
   ): Promise<ExternalFetchResult> {
     const warnings: string[] = [];
     const vehicles = new Map<string, NormalizedVehicle>();
-    const records: NormalizedRecord[] = [];
+    const records = new Map<string, NormalizedRecord>();
 
-    // Profil nomini olish
+    // Profil va personId (STIR yoki JSHSHIR) ni aniqlash
     let organizationName: string | null = null;
+    let personId: string | null = text(pick(config, ["personId", "tin", "pinfl", "stir"])) ?? null;
+
     try {
       const profile = await this.test(baseUrl, token);
       organizationName = profile.account;
+      if (!personId && profile.personId) {
+        personId = profile.personId;
+      }
     } catch (err) {
       if (isExternalAuthError(err)) throw err;
       warnings.push(`Profil: ${errorText(err)}`);
     }
 
     const endpoints = this.endpoints(config);
-    const targetPath =
-      endpoints.carRentingApi ?? endpoints.carRentingList ?? DEFAULT_ENDPOINTS.carRentingList;
+    const targetPath = endpoints.carRentingApi ?? DEFAULT_ENDPOINTS.carRentingApi;
 
-    let page = 1;
-    let maxPages = 50;
+    // myRentType: 1 - ijaraga oluvchi, 2 - ijaraga beruvchi
+    const customRentType = (config as Record<string, unknown>).myRentType;
+    const rentTypes = customRentType ? [Number(customRentType)] : [1, 2];
 
-    while (page <= maxPages) {
-      const urlWithPage = `${joinUrl(baseUrl, targetPath)}${targetPath.includes("?") ? "&" : "?"}page=${page}&limit=50&size=50`;
-      try {
-        const payload = await externalRequestJson(urlWithPage, {
-          token,
+    for (const rentType of rentTypes) {
+      let page = 0;
+      let maxPages = 50;
+
+      while (page <= maxPages) {
+        const queryParams = new URLSearchParams({
+          page: String(page),
+          size: "50",
+          limit: "50",
+          myRentType: String(rentType),
+          statusGroup: "1",
         });
 
-        const items = extractArray(payload);
-        if (!items || items.length === 0) break;
+        if (personId) {
+          queryParams.set("personId", personId);
+        }
 
-        for (const raw of items) {
-          const veh = mapIjaraVehicle(raw);
-          if (veh && veh.plateNumber) {
-            const plateKey = normalizePlate(veh.plateNumber);
-            if (!vehicles.has(plateKey)) {
-              vehicles.set(plateKey, {
-                ...veh,
-                organizationName: veh.organizationName ?? organizationName,
-              });
+        const url = `${joinUrl(baseUrl, targetPath)}${targetPath.includes("?") ? "&" : "?"}${queryParams.toString()}`;
+
+        try {
+          const payload = await externalRequestJson(url, { token });
+          const items = extractArray(payload);
+
+          if (!items || items.length === 0) break;
+
+          for (const raw of items) {
+            const veh = mapIjaraVehicle(raw);
+            if (veh && veh.plateNumber) {
+              const plateKey = normalizePlate(veh.plateNumber);
+              if (!vehicles.has(plateKey)) {
+                vehicles.set(plateKey, {
+                  ...veh,
+                  organizationName: veh.organizationName ?? organizationName,
+                });
+              }
+            }
+
+            const rec = mapIjaraRecord(raw);
+            if (rec) {
+              records.set(rec.externalId, rec);
             }
           }
 
-          const rec = mapIjaraRecord(raw);
-          if (rec) {
-            records.push(rec);
+          const pagination = extractPagination(payload);
+          if (pagination.lastPage && pagination.lastPage > 0) {
+            maxPages = Math.min(pagination.lastPage, 100);
+          } else if (items.length < 20) {
+            break;
           }
-        }
 
-        const pagination = extractPagination(payload);
-        if (pagination.lastPage && pagination.lastPage > 0) {
-          maxPages = Math.min(pagination.lastPage, 100);
-        } else if (items.length < 20) {
+          page += 1;
+        } catch (err) {
+          if (isExternalAuthError(err)) throw err;
+          // Agar 1-turda xatolik bo'lsa yoki bo'sh bo'lsa, ogohlantirishga yoziladi
+          warnings.push(`Ijara shartnomalari (tur=${rentType}, sahifa=${page + 1}): ${errorText(err)}`);
           break;
         }
-
-        page += 1;
-      } catch (err) {
-        if (isExternalAuthError(err)) throw err;
-        warnings.push(`Ijara shartnomalari sahifa ${page}: ${errorText(err)}`);
-        break;
       }
     }
 
     return {
       vehicles: Array.from(vehicles.values()),
-      records,
+      records: Array.from(records.values()),
       warnings,
     };
   }

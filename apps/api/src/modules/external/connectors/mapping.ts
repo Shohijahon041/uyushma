@@ -584,6 +584,8 @@ export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
   if (!isRecord(row)) return null;
   const plate = text(
     pick(row, [
+      "vehicleNumber",
+      "vehicle_number",
       "car_number",
       "carNumber",
       "plateNumber",
@@ -603,7 +605,7 @@ export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
     pick(row, ["car_vin", "vin", "car.vin", "body_number", "chassis_number"]),
   );
   const model = text(
-    pick(row, ["car_model", "carModel", "model", "car.model", "marka", "car_marka"]),
+    pick(row, ["vehicleModel", "vehicle_model", "car_model", "carModel", "model", "car.model", "marka", "car_marka"]),
   );
   const lessor = text(
     pick(row, [
@@ -676,6 +678,8 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
     id;
   const plate = text(
     pick(row, [
+      "vehicleNumber",
+      "vehicle_number",
       "car_number",
       "carNumber",
       "plateNumber",
@@ -689,14 +693,30 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
     : `Ijara shartnomasi #${number}`;
 
   const startsAt = toDate(
-    pick(row, ["start_date", "startDate", "starts_at", "from_date", "contract_date"]),
+    pick(row, [
+      "rentStartDate",
+      "start_date",
+      "startDate",
+      "starts_at",
+      "from_date",
+      "contract_date",
+    ]),
   );
   const endsAt = toDate(
-    pick(row, ["end_date", "endDate", "ends_at", "to_date", "exp_date"]),
+    pick(row, [
+      "rentEndDate",
+      "end_date",
+      "endDate",
+      "ends_at",
+      "to_date",
+      "exp_date",
+    ]),
   );
+  const rawStatus = pick(row, ["rentState", "status_name", "statusName", "status_text", "status"]);
   const status =
-    text(pick(row, ["status_name", "statusName", "status_text", "status"])) ??
-    "ACTIVE";
+    rawStatus === 1 || rawStatus === "1" || rawStatus === "ACTIVE"
+      ? "ACTIVE"
+      : text(rawStatus) ?? "ACTIVE";
 
   const startDmY = startsAt ? formatDmY(startsAt) : "";
   const endDmY = endsAt ? formatDmY(endsAt) : "";
@@ -708,7 +728,15 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
       : `https://ijara.soliq.uz/car/renting/list?myRentType=1&statusGroup=1`;
 
   const monthlyFee = text(
-    pick(row, ["rent_amount", "rentAmount", "amount", "monthly_amount", "summa"]),
+    pick(row, [
+      "rentMonthlyRate",
+      "rent_monthly_rate",
+      "rent_amount",
+      "rentAmount",
+      "amount",
+      "monthly_amount",
+      "summa",
+    ]),
   );
 
   const rawWithUrl = {

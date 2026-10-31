@@ -689,7 +689,11 @@ describe("IjaraConnector", () => {
       if (url.pathname === "/api/user/profile") {
         return { name: "OOO Samarqand Yo'lovchi Trans" };
       }
-      if (url.pathname === "/api/car/renting/list" || url.pathname === "/car/renting/list") {
+      if (
+        url.pathname === "/api/transport-rent/client/transport-rent/contract/get-list/by-params" ||
+        url.pathname === "/api/car/renting/list" ||
+        url.pathname === "/car/renting/list"
+      ) {
         return {
           data: [
             {
