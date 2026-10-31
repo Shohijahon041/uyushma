@@ -111,7 +111,14 @@ export async function apiRequest<T>(
       await parseError(response);
     }
     if (response.status === 204) return undefined as T;
-    const data = (await response.json()) as T;
+    const rawText = await response.text();
+    if (!rawText.trim()) return undefined as T;
+    let data: T;
+    try {
+      data = JSON.parse(rawText) as T;
+    } catch {
+      return undefined as T;
+    }
 
     if (method === "GET") {
       getCache.set(cleanPath, { data, expiresAt: Date.now() + CACHE_TTL_MS });

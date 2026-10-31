@@ -98,7 +98,7 @@ export class IjaraConnector implements ExternalConnector {
       if (!token) {
         throw new Error(
           text(pick(payload, ["message", "error", "data.message"])) ??
-            "ijara.soliq.uz dan token olinmadi",
+          "ijara.soliq.uz dan token olinmadi",
         );
       }
 
@@ -191,7 +191,7 @@ export class IjaraConnector implements ExternalConnector {
     const cleanToken = cleanBearerToken(token);
     const warnings: string[] = [];
     const vehicles = new Map<string, NormalizedVehicle>();
-    const records = new Map<string, NormalizedRecord>();
+    const records: NormalizedRecord[] = [];
 
     // Profil va personId (STIR yoki JSHSHIR) ni aniqlash
     let organizationName: string | null = null;
@@ -254,7 +254,7 @@ export class IjaraConnector implements ExternalConnector {
 
             const rec = mapIjaraRecord(raw);
             if (rec) {
-              records.set(rec.externalId, rec);
+              records.push(rec);
             }
           }
 
@@ -277,7 +277,7 @@ export class IjaraConnector implements ExternalConnector {
 
     return {
       vehicles: Array.from(vehicles.values()),
-      records: Array.from(records.values()),
+      records,
       warnings,
     };
   }

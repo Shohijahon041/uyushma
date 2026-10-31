@@ -153,6 +153,7 @@ export default function AdminPage() {
     void run(`delete-company-${company.id}`, async () => {
       await apiRequest(`/platform/companies/${company.id}`, { method: "DELETE" });
       setMessage({ tone: "success", text: `${company.name} muvaffaqiyatli o'chirildi` });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 
@@ -163,6 +164,7 @@ export default function AdminPage() {
         method: "DELETE",
       });
       setMessage({ tone: "success", text: `${user.fullName} muvaffaqiyatli o'chirildi` });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 
@@ -173,6 +175,7 @@ export default function AdminPage() {
         method: "DELETE",
       });
       setMessage({ tone: "success", text: `${license.number} litsenziyasi bekor qilindi` });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 
@@ -872,7 +875,7 @@ export default function AdminPage() {
                             disabled={busy === `delete-company-${company.id}`}
                             onClick={() => deleteCompany(company)}
                           >
-                            {t("delete")}
+                            {busy === `delete-company-${company.id}` ? tc("loading") : t("delete")}
                           </button>
                         </div>
                       </td>
@@ -1026,7 +1029,7 @@ export default function AdminPage() {
                             disabled={busy === `delete-user-${user.id}`}
                             onClick={() => deleteUser(user)}
                           >
-                            {t("delete")}
+                            {busy === `delete-user-${user.id}` ? tc("loading") : t("delete")}
                           </button>
                         </div>
                       </td>
@@ -1081,7 +1084,7 @@ export default function AdminPage() {
                           disabled={busy === `delete-license-${license.id}`}
                           onClick={() => deleteLicense(license)}
                         >
-                          {t("deleteLicense")}
+                          {busy === `delete-license-${license.id}` ? tc("loading") : t("deleteLicense")}
                         </button>
                       </td>
                     </tr>

@@ -228,31 +228,25 @@ export class ExternalService {
     provider: ExternalProvider,
     ip: string | null,
   ) {
-    const connection = await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
+    await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
       const existing = await tx.externalConnection.findUnique({
         where: { tenantId_provider: { tenantId: actor.tenantId, provider } },
       });
       if (!existing) throw new NotFoundException("Ulanish topilmadi");
-      const updated = await tx.externalConnection.update({
+      await tx.externalConnection.delete({
         where: { id: existing.id },
-        data: {
-          status: "DISABLED",
-          credentialsEncrypted: null,
-          lastLoginAt: null,
-        },
       });
       await this.audit.record(tx, {
         tenantId: actor.tenantId,
         actorUserId: actor.userId,
-        action: "external.connection.disabled",
+        action: "external.connection.deleted",
         entityType: "ExternalConnection",
-        entityId: updated.id,
+        entityId: existing.id,
         metadata: { provider },
         ip,
       });
-      return updated;
     });
-    return { connection: publicConnection(connection) };
+    return { success: true };
   }
 
   async enqueueSync(

@@ -69,10 +69,11 @@ async function handle(
   const safePath = path.map((segment) => encodeURIComponent(segment)).join("/");
   const target = apiUrl(`${safePath}${request.nextUrl.search}`);
 
-  const body =
+  const rawBody =
     request.method === "GET" || request.method === "HEAD"
       ? undefined
       : await request.arrayBuffer();
+  const body = rawBody && rawBody.byteLength > 0 ? rawBody : undefined;
 
   const baseHeaders = new Headers();
   const contentType = request.headers.get("content-type");

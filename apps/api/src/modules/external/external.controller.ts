@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -116,6 +117,19 @@ export class ExternalSettingsController {
     @Param("provider") provider: string,
   ) {
     return this.external.enqueueSync(user.tenantId, providerOf(provider));
+  }
+
+  @Delete(":provider")
+  delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+    @Req() request: Request,
+  ) {
+    return this.external.disableConnection(
+      user,
+      providerOf(provider),
+      ip(request),
+    );
   }
 
   @Post(":provider/disable")

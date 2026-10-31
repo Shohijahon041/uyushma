@@ -159,6 +159,10 @@ export class PlatformService {
 
   /** Platforma boshqaruv tenantini mijoz korxona sifatida o'zgartirib bo'lmaydi. */
   private async clientCompany(tx: Prisma.TransactionClient, companyId: string) {
+    await tx.$executeRawUnsafe(
+      "SELECT set_config('app.tenant_id', $1::text, true)",
+      companyId,
+    );
     const company = await tx.company.findUnique({ where: { id: companyId } });
     if (!company || company.isPlatform) throw new NotFoundException("Kompaniya topilmadi");
     return company;
@@ -783,6 +787,10 @@ export class PlatformService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.tenant_id', $1::text, true)",
+        companyId,
+      );
       const company = await tx.company.findUnique({
         where: { id: companyId },
       });
@@ -836,6 +844,11 @@ export class PlatformService {
 
       // 7. Kompaniyani o'chirish
       await tx.company.delete({ where: { id: companyId } });
+
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.tenant_id', $1::text, true)",
+        actor.tenantId,
+      );
 
       await this.recordAudit(tx, actor, {
         tenantId: actor.tenantId,
@@ -912,6 +925,10 @@ export class PlatformService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.tenant_id', $1::text, true)",
+        companyId,
+      );
       const target = await tx.user.findFirst({
         where: { id: userId, tenantId: companyId },
         include: { company: true },
@@ -979,6 +996,10 @@ export class PlatformService {
   ) {
     this.assertSuperAdmin(actor);
     return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.tenant_id', $1::text, true)",
+        companyId,
+      );
       const license = await tx.licenseContract.findFirst({
         where: { id: licenseId, tenantId: companyId },
       });

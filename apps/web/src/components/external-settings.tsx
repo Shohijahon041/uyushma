@@ -237,16 +237,17 @@ function ProviderCard({
   }
 
   async function disable() {
-    if (!window.confirm("Rostdan ham ushbu ulanishni to'xtatmoqchimisiz?")) return;
+    if (!window.confirm("Rostdan ham ushbu ulanishni butunlay o'chirmoqchimisiz?")) return;
     setError(null);
     setMessage(null);
     setBusy("disable");
     try {
-      await apiRequest(`/settings/integrations/${meta.key}/disable`, {
-        method: "POST",
-        body: {},
+      await apiRequest(`/settings/integrations/${meta.key}`, {
+        method: "DELETE",
       });
+      setMessage("Ulanish muvaffaqiyatli o'chirildi");
       await onChanged();
+      setTimeout(() => setMessage(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : tc("error"));
     } finally {
