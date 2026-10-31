@@ -220,6 +220,7 @@ export class UsersService {
       throw new BadRequestException("O'z hisobingizni o'chira olmaysiz");
     }
     return this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
+      await tx.$executeRawUnsafe("SELECT set_config('app.allow_audit_delete', 'on', true)");
       const target = await tx.user.findFirst({
         where: { id: userId, tenantId: actor.tenantId },
       });

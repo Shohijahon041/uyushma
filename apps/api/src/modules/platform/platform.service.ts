@@ -791,6 +791,9 @@ export class PlatformService {
         "SELECT set_config('app.tenant_id', $1::text, true)",
         companyId,
       );
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.allow_audit_delete', 'on', true)",
+      );
       const company = await tx.company.findUnique({
         where: { id: companyId },
       });
@@ -928,6 +931,9 @@ export class PlatformService {
       await tx.$executeRawUnsafe(
         "SELECT set_config('app.tenant_id', $1::text, true)",
         companyId,
+      );
+      await tx.$executeRawUnsafe(
+        "SELECT set_config('app.allow_audit_delete', 'on', true)",
       );
       const target = await tx.user.findFirst({
         where: { id: userId, tenantId: companyId },
