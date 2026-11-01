@@ -255,6 +255,8 @@ export class ExternalService {
   async enqueueSync(
     tenantId: string,
     provider: ExternalProvider | undefined,
+    actorUserId?: string | null,
+    ip?: string | null,
   ): Promise<{ queued: ExternalProvider[] }> {
     const connections = await this.tenantPrisma.withTenant(tenantId, (tx) =>
       tx.externalConnection.findMany({
@@ -269,7 +271,14 @@ export class ExternalService {
       throw new NotFoundException("Faol ulanish topilmadi");
     }
     for (const connection of connections) {
-      await this.queue.enqueueSync(tenantId, connection.provider);
+      try {
+        await this.queue.enqueueSync(tenantId, connection.provider);
+      } catch {
+        // queue fallback
+      }
+      void this.syncConnection(tenantId, connection.provider, actorUserId, ip).catch((err) => {
+        this.logger.error(`Sinxronlash xatosi (${connection.provider}): ${String(err)}`);
+      });
     }
     return { queued: connections.map((connection) => connection.provider) };
   }
@@ -277,6 +286,8 @@ export class ExternalService {
   async syncConnection(
     tenantId: string,
     provider: ExternalProvider,
+    actorUserId?: string | null,
+    ip?: string | null,
   ): Promise<{ counts: Record<string, number>; warnings: string[] }> {
     const connection = await this.tenantPrisma.withTenant(tenantId, (tx) =>
       tx.externalConnection.findUnique({

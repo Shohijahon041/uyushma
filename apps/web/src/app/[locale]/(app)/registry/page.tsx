@@ -187,12 +187,17 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                       {row.vin && <div className="font-mono text-[10px] text-slate-400">VIN: {row.vin}</div>}
                     </td>
 
-                    {/* 1. Soliq ijara shartnomasi */}
+                    {/* 1. Soliq yoki ichki ijara shartnomasi */}
                     <td className="text-xs">
                       {ijara ? (
                         <div className="space-y-1">
-                          <div className="font-semibold text-slate-800">
-                            #{ijara.contractNumber}
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                            <span>#{ijara.contractNumber}</span>
+                            {!ijara.contractViewUrl.includes("soliq.uz") && (
+                              <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                Ichki ijara
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-500">
                             {ijara.startsAt ? formatDate(ijara.startsAt) : "—"} —{" "}
@@ -205,15 +210,25 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                               {formatMoney(ijara.monthlyFee)} so&apos;m/oy
                             </div>
                           )}
-                          <a
-                            href={ijara.contractViewUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
-                          >
-                            <span>Soliqda ko&apos;rish</span>
-                            <span>↗</span>
-                          </a>
+                          {ijara.contractViewUrl.includes("soliq.uz") ? (
+                            <a
+                              href={ijara.contractViewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                            >
+                              <span>Soliqda ko&apos;rish</span>
+                              <span>↗</span>
+                            </a>
+                          ) : (
+                            <a
+                              href="/contracts"
+                              className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <span>Shartnomalarda ko&apos;rish</span>
+                              <span>↗</span>
+                            </a>
+                          )}
                         </div>
                       ) : (
                         <span className="rounded bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700">
@@ -276,9 +291,12 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                     {/* 4. Ijarachi haydovchi */}
                     <td className="text-xs">
                       {ijara?.lessee?.fullName ? (
-                        <div>
-                          <div className="font-semibold text-slate-900">
-                            {ijara.lessee.fullName}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                            <span>{ijara.lessee.fullName}</span>
+                            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                              {ijara.contractViewUrl.includes("soliq.uz") ? "Soliq ijarachi" : "Ijarachi"}
+                            </span>
                           </div>
                           {ijara.lessee.phone && (
                             <div className="text-[11px] text-slate-500">
@@ -291,10 +309,27 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                             </div>
                           )}
                         </div>
+                      ) : row.nativeDriver?.fullName ? (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                            <span>{row.nativeDriver.fullName}</span>
+                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              Tizim haydovchisi
+                            </span>
+                          </div>
+                          {row.nativeDriver.phone && (
+                            <div className="text-[11px] text-slate-500">
+                              {row.nativeDriver.phone}
+                            </div>
+                          )}
+                        </div>
                       ) : bm?.drivers && bm.drivers.length > 0 ? (
-                        <div>
-                          <div className="font-medium text-slate-800">
-                            {bm.drivers[0]?.fullName}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                            <span>{bm.drivers[0]?.fullName}</span>
+                            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                              BM
+                            </span>
                           </div>
                           {bm.drivers[0]?.phone && (
                             <div className="text-[11px] text-slate-500">

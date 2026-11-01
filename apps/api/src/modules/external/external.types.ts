@@ -195,6 +195,20 @@ export interface CrossLinkedVehicleView {
   vin: string | null;
   nativeVehicleId: string | null;
   nativeVehicleStatus: string | null;
+  // Tizimda biriktirilgan haydovchi ma'lumotlari
+  nativeDriver?: {
+    fullName: string;
+    phone: string | null;
+  } | null;
+  // Ichki platforma ijara shartnomasi ma'lumotlari
+  nativeContract?: {
+    id: string;
+    type: string;
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    monthlyRate: string | null;
+  } | null;
   // Soliq ijara shartnomasi ma'lumotlari
   ijara: {
     contractId: string;

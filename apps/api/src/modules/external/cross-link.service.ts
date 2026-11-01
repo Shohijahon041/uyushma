@@ -55,6 +55,19 @@ export class ExternalCrossLinkService {
               where: { endDate: null },
               select: { driver: { select: { fullName: true, phone: true } } },
             },
+            contracts: {
+              where: { status: "ACTIVE" },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                type: true,
+                status: true,
+                startDate: true,
+                endDate: true,
+                monthlyRate: true,
+              },
+            },
           },
         }),
       ]);
@@ -196,6 +209,61 @@ export class ExternalCrossLinkService {
           };
         }
 
+        const nativeDriver = data.nativeVeh?.assignments?.[0]?.driver
+          ? {
+              fullName: data.nativeVeh.assignments[0].driver.fullName,
+              phone: data.nativeVeh.assignments[0].driver.phone ?? null,
+            }
+          : null;
+
+        const nativeContract = data.nativeVeh?.contracts?.[0]
+          ? {
+              id: data.nativeVeh.contracts[0].id,
+              type: data.nativeVeh.contracts[0].type,
+              status: data.nativeVeh.contracts[0].status,
+              startDate: data.nativeVeh.contracts[0].startDate
+                ? data.nativeVeh.contracts[0].startDate.toISOString().slice(0, 10)
+                : null,
+              endDate: data.nativeVeh.contracts[0].endDate
+                ? data.nativeVeh.contracts[0].endDate.toISOString().slice(0, 10)
+                : null,
+              monthlyRate: data.nativeVeh.contracts[0].monthlyRate
+                ? String(data.nativeVeh.contracts[0].monthlyRate)
+                : null,
+            }
+          : null;
+
+        // Agar Soliq ijara shartnomasi bo'lmasa, lekin tizimda ichki ijara shartnomasi bo'lsa
+        if (!ijaraInfo && nativeContract) {
+          ijaraInfo = {
+            contractId: nativeContract.id,
+            contractNumber: `IJ-${nativeContract.id.slice(0, 6).toUpperCase()} (Ichki)`,
+            startsAt: nativeContract.startDate,
+            endsAt: nativeContract.endDate,
+            isExpired: false,
+            status: nativeContract.status,
+            contractViewUrl: "/contracts",
+            monthlyFee: nativeContract.monthlyRate,
+            lessor: "Korxona",
+            lessee: nativeDriver
+              ? {
+                  fullName: nativeDriver.fullName,
+                  pinfl: null,
+                  phone: nativeDriver.phone,
+                }
+              : null,
+          };
+        }
+
+        // Agar ijara shartnomasida haydovchi ismi ko'rsatilmagan bo'lsa, lekin tizimda biriktirilgan haydovchi bo'lsa
+        if (ijaraInfo && !ijaraInfo.lessee && nativeDriver) {
+          ijaraInfo.lessee = {
+            fullName: nativeDriver.fullName,
+            pinfl: null,
+            phone: nativeDriver.phone,
+          };
+        }
+
         // E-tender ma'lumotlari
         let etenderInfo: CrossLinkedVehicleView["etender"] = null;
         if (data.etenderVeh) {
@@ -236,12 +304,13 @@ export class ExternalCrossLinkService {
 
         if (!ijaraInfo) {
           complianceStatus = "NO_RENT_CONTRACT";
-          notes.push("ijara.soliq.uz da ro'yxatdan o'tgan ijara shartnomasi topilmadi.");
+          notes.push("ijara.soliq.uz yoki tizimda ro'yxatdan o'tgan ijara shartnomasi topilmadi.");
         } else if (ijaraInfo.isExpired) {
           complianceStatus = "EXPIRED";
-          notes.push(`Soliq ijara shartnomasi muddati o'tgan (${ijaraInfo.endsAt}).`);
+          notes.push(`Ijara shartnomasi muddati o'tgan (${ijaraInfo.endsAt}).`);
         } else {
-          notes.push(`Soliq ijara shartnomasi faol (#${ijaraInfo.contractNumber}).`);
+          const isSoliq = ijaraInfo.contractViewUrl.includes("soliq.uz");
+          notes.push(`${isSoliq ? "Soliq" : "Ichki"} ijara shartnomasi faol (#${ijaraInfo.contractNumber}).`);
         }
 
         if (etenderInfo) {
@@ -275,6 +344,8 @@ export class ExternalCrossLinkService {
           vin: data.vin,
           nativeVehicleId: data.nativeVeh?.id ?? null,
           nativeVehicleStatus: data.nativeVeh?.status ?? null,
+          nativeDriver,
+          nativeContract,
           ijara: ijaraInfo,
           etender: etenderInfo,
           autopark: autoparkInfo,

@@ -591,6 +591,18 @@ export interface CrossLinkedVehicleView {
   vin: string | null;
   nativeVehicleId: string | null;
   nativeVehicleStatus: string | null;
+  nativeDriver?: {
+    fullName: string;
+    phone: string | null;
+  } | null;
+  nativeContract?: {
+    id: string;
+    type: string;
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    monthlyRate: string | null;
+  } | null;
   ijara: {
     contractId: string;
     contractNumber: string;

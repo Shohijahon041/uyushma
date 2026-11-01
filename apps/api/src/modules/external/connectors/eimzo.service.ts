@@ -102,7 +102,7 @@ export class EImzoService {
     );
 
     // Sinxronizatsiyani ishga tushirish
-    void this.externalService.syncConnection(actor.tenantId, "IJARA").catch(() => undefined);
+    void this.externalService.syncConnection(actor.tenantId, "IJARA", actor.userId, ip).catch(() => undefined);
 
     return {
       success: true,

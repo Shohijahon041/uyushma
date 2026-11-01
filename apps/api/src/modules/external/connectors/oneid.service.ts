@@ -57,7 +57,7 @@ export class OneIdAuthService {
       ip,
     );
 
-    void this.externalService.syncConnection(actor.tenantId, provider).catch((err) => {
+    void this.externalService.syncConnection(actor.tenantId, provider, actor.userId, ip).catch((err) => {
       this.logger.warn(`${provider} sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
     });
 
@@ -128,7 +128,7 @@ export class OneIdAuthService {
         };
         anySuccess = true;
 
-        void this.externalService.syncConnection(actor.tenantId, "ETENDER").catch((err) => {
+        void this.externalService.syncConnection(actor.tenantId, "ETENDER", actor.userId, ip).catch((err) => {
           this.logger.warn(`ETENDER sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
         });
       } catch (err) {
@@ -159,7 +159,7 @@ export class OneIdAuthService {
         };
         anySuccess = true;
 
-        void this.externalService.syncConnection(actor.tenantId, "AUTOPARK").catch((err) => {
+        void this.externalService.syncConnection(actor.tenantId, "AUTOPARK", actor.userId, ip).catch((err) => {
           this.logger.warn(`AUTOPARK sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
         });
       } catch (err) {
@@ -184,7 +184,7 @@ export class OneIdAuthService {
         };
         anySuccess = true;
 
-        void this.externalService.syncConnection(actor.tenantId, "IJARA").catch((err) => {
+        void this.externalService.syncConnection(actor.tenantId, "IJARA", actor.userId, ip).catch((err) => {
           this.logger.warn(`IJARA sinxronizatsiya navbatiga qo'shilmadi: ${String(err)}`);
         });
       } else {

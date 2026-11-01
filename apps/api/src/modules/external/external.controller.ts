@@ -193,8 +193,11 @@ export class ExternalSettingsController {
 
   @Post("sync-all")
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
-  syncAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.external.enqueueSync(user.tenantId, undefined);
+  syncAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.external.enqueueSync(user.tenantId, undefined, user.userId, ip(request));
   }
 
   @Post(":provider/sync")
@@ -202,8 +205,9 @@ export class ExternalSettingsController {
   sync(
     @CurrentUser() user: AuthenticatedUser,
     @Param("provider") provider: string,
+    @Req() request: Request,
   ) {
-    return this.external.enqueueSync(user.tenantId, providerOf(provider));
+    return this.external.enqueueSync(user.tenantId, providerOf(provider), user.userId, ip(request));
   }
 
   @Delete(":provider")
