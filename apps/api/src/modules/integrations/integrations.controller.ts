@@ -17,8 +17,11 @@ import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import { IntegrationsService } from "./integrations.service";
 import {
   DriverDocumentDto,
+  EndShiftBotDto,
   LinkPhoneDto,
   LinkTelegramDto,
+  ReportIncidentBotDto,
+  StartShiftBotDto,
   SubmitReceiptBotDto,
   TelegramProfileDto,
 } from "./dto/telegram.dto";
@@ -118,6 +121,14 @@ export class TelegramBotController {
     return this.integrations.botDriverDocuments(chatId);
   }
 
+  @Get("driver/photo")
+  driverPhoto(
+    @Query("chatId") chatId: string,
+    @Query("kind") kind: string,
+  ) {
+    return this.integrations.botDriverPhoto(chatId, kind);
+  }
+
   @Post("driver/documents")
   @HttpCode(200)
   updateDriverDocument(@Body() dto: DriverDocumentDto, @Req() request: Request) {
@@ -133,5 +144,28 @@ export class TelegramBotController {
   @HttpCode(200)
   submitReceipt(@Body() dto: SubmitReceiptBotDto) {
     return this.integrations.submitReceipt(dto);
+  }
+
+  @Post("driver/shift/start")
+  @HttpCode(200)
+  startShift(@Body() dto: StartShiftBotDto) {
+    return this.integrations.botStartShift(dto);
+  }
+
+  @Post("driver/shift/end")
+  @HttpCode(200)
+  endShift(@Body() dto: EndShiftBotDto) {
+    return this.integrations.botEndShift(dto);
+  }
+
+  @Get("driver/shift/current")
+  currentShift(@Query("chatId") chatId: string) {
+    return this.integrations.botCurrentShift(chatId);
+  }
+
+  @Post("driver/incident")
+  @HttpCode(200)
+  reportIncident(@Body() dto: ReportIncidentBotDto) {
+    return this.integrations.botReportIncident(dto);
   }
 }

@@ -397,6 +397,13 @@ export class PlatformService {
     }
   }
 
+  private async countActiveSuperAdmins(tx: Prisma.TransactionClient): Promise<number> {
+    const rows = await tx.$queryRaw<Array<{ count: bigint }>>`
+      SELECT app_active_super_admin_count() AS count
+    `;
+    return Number(rows[0]?.count ?? 0);
+  }
+
   async updateUser(
     actor: AuthenticatedUser,
     companyId: string,
@@ -421,7 +428,7 @@ export class PlatformService {
         if (!target) throw new NotFoundException("Foydalanuvchi topilmadi");
 
         if (dto.isSuperAdmin === false && target.isSuperAdmin) {
-          const count = await tx.user.count({ where: { isSuperAdmin: true, isActive: true } });
+          const count = await this.countActiveSuperAdmins(tx);
           if (count <= 1) {
             throw new BadRequestException("Tizimda kamida bitta faol super admin qolishi shart");
           }
@@ -936,7 +943,7 @@ export class PlatformService {
       if (!target) throw new NotFoundException("Foydalanuvchi topilmadi");
 
       if (target.isSuperAdmin) {
-        const superAdminCount = await tx.user.count({ where: { isSuperAdmin: true, isActive: true } });
+        const superAdminCount = await this.countActiveSuperAdmins(tx);
         if (superAdminCount <= 1) {
           throw new BadRequestException("Tizimdagi yagona faol super adminni o'chirib bo'lmaydi");
         }

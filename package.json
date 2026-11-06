@@ -10,7 +10,9 @@
     "node": ">=22.11"
   },
   "scripts": {
-    "dev": "concurrently -n api,web,worker,bot -c blue,green,yellow,magenta \"npm run dev -w @uyushma/api\" \"npm run dev -w @uyushma/web\" \"npm run dev -w @uyushma/worker\" \"npm run dev -w @uyushma/bot\"",
+    "dev": "concurrently -n api,web,worker,bot,collector -c blue,green,yellow,magenta,cyan \"npm run dev -w @uyushma/api\" \"npm run dev -w @uyushma/web\" \"npm run dev -w @uyushma/worker\" \"npm run dev -w @uyushma/bot\" \"npm run dev:collector\"",
+    "dev:all": "concurrently -n api,web,worker,bot,collector -c blue,green,yellow,magenta,cyan \"npm run dev -w @uyushma/api\" \"npm run dev -w @uyushma/web\" \"npm run dev -w @uyushma/worker\" \"npm run dev -w @uyushma/bot\" \"npm run dev:collector\"",
+    "dev:collector": "node -e \"const cp=require('child_process'); cp.spawn('collector_service/.venv/Scripts/python.exe', ['-m', 'api.main'], {cwd: 'collector_service', env: {...process.env, PYTHONPATH: '.'}, stdio: 'inherit'});\"",
     "dev:api": "npm run dev -w @uyushma/api",
     "dev:web": "npm run dev -w @uyushma/web",
     "dev:worker": "npm run dev -w @uyushma/worker",

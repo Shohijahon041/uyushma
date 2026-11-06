@@ -37,7 +37,14 @@ export interface BotDriverPayment {
   amount: string;
   method: "CASH" | "CARD";
   paidAt: string;
+  days: number;
   plateNumber: string;
+}
+
+export interface BotPaymentCoverage {
+  days: number;
+  coveredFrom: string;
+  coveredUntil: string;
 }
 
 export interface BotDriver {
@@ -52,6 +59,8 @@ export interface BotDriver {
   } | null;
   month: BotDriverMonth;
   totalDebt: string;
+  coverage: (BotPaymentCoverage & { workedToday: boolean }) | null;
+  nextCoverage: BotPaymentCoverage | null;
   payments: BotDriverPayment[];
 }
 
@@ -78,6 +87,40 @@ export interface BotDocuments {
     expiresAt: string | null;
     hasPhoto: boolean;
   };
+}
+
+export interface BotPublicPassport {
+  plateNumber: string;
+  plateDisplay?: string;
+  model: string;
+  vin: string | null;
+  companyName: string;
+  routeName: string | null;
+  routeNumber: string | null;
+  driverName: string | null;
+  driverPhone?: string | null;
+  driverSource?: "SOLIQ" | "PLATFORM" | null;
+  license: {
+    number: string | null;
+    expiresAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+  };
+  soliqLease: {
+    contractNumber: string | null;
+    startsAt?: string | null;
+    endsAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+    lesseeName?: string | null;
+    lesseePinfl?: string | null;
+    lesseePhone?: string | null;
+  };
+  shiftStatus: { isOnShift: boolean; startedAt: string | null };
+  complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
+  isVerified: boolean;
+  verificationNotes?: string[];
+  verifiedAt: string;
 }
 
 export type DocumentField =
@@ -178,6 +221,12 @@ export class BotApiClient {
     );
   }
 
+  driverPhoto(chatId: string, kind: "passport" | "license") {
+    return this.request<{ fileId: string }>(
+      `/driver/photo?chatId=${encodeURIComponent(chatId)}&kind=${kind}`,
+    );
+  }
+
   updateDocument(chatId: string, field: DocumentField, value: string) {
     return this.request<BotDocuments>("/driver/documents", {
       method: "POST",
@@ -256,5 +305,74 @@ export class BotApiClient {
       method: "POST",
       body: JSON.stringify({ chatId, amount, base64Data, filename, note }),
     });
+  }
+
+  startShift(chatId: string, startOdometer?: number, note?: string) {
+    return this.request<{
+      alreadyActive: boolean;
+      shift: any;
+      message: string;
+    }>("/driver/shift/start", {
+      method: "POST",
+      body: JSON.stringify({ chatId, startOdometer, note }),
+    });
+  }
+
+  endShift(chatId: string, endOdometer?: number, note?: string) {
+    return this.request<{
+      shift: any;
+      durationMinutes: number;
+      distanceKm: number | null;
+      message: string;
+    }>("/driver/shift/end", {
+      method: "POST",
+      body: JSON.stringify({ chatId, endOdometer, note }),
+    });
+  }
+
+  currentShift(chatId: string) {
+    return this.request<any | null>(
+      `/driver/shift/current?chatId=${encodeURIComponent(chatId)}`,
+    );
+  }
+
+  reportIncident(chatId: string, kind: string, description?: string) {
+    return this.request<any>("/driver/incident", {
+      method: "POST",
+      body: JSON.stringify({ chatId, kind, description }),
+    });
+  }
+
+  /** Davlat raqami bo'yicha ommaviy (public) yo'l pasporti. */
+  async publicPassport(plate: string): Promise<BotPublicPassport | null> {
+    const url = `${this.baseUrl}/api/v1/registry/public-verify/${encodeURIComponent(plate)}`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new ApiError(response.status, `Reyestr xatosi (${response.status})`);
+    }
+    return (await response.json()) as BotPublicPassport;
+  }
+
+  /** Pasport QR kodini PNG sifatida oladi. */
+  async publicPassportQr(plate: string): Promise<Buffer | null> {
+    const url = `${this.baseUrl}/api/v1/registry/public-verify/${encodeURIComponent(plate)}/qr`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /** Ijara shartnomasi va litsenziya ma'lumotnomasini PDF sifatida oladi. */
+  async publicPassportPdf(plate: string): Promise<Buffer | null> {
+    const url = `${this.baseUrl}/api/v1/registry/public-verify/${encodeURIComponent(plate)}/pdf`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return null;
+    return Buffer.from(await response.arrayBuffer());
   }
 }

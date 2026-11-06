@@ -7,6 +7,8 @@ import { apiRequest } from "@/lib/client-api";
 import { formatDateTime, formatMoney, useApi } from "@/lib/use-api";
 import type { PaymentSubmission, FraudRiskLevel, SubmissionStatus } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatCard, StatusBadge } from "@/components/ui";
+import { formatUzPlate } from "@/lib/plate";
+import { formatUzPhone } from "@/lib/phone";
 
 interface SubmissionsResponse {
   items: PaymentSubmission[];
@@ -282,14 +284,14 @@ export default function SubmissionsPage() {
                       <td className="font-medium text-slate-900">
                         <div>{sub.driver.fullName}</div>
                         <div className="font-mono text-xs text-slate-400">
-                          {sub.driver.phone}
+                          {formatUzPhone(sub.driver.phone)}
                         </div>
                       </td>
                       <td className="text-sm">
                         {sub.vehicle ? (
                           <>
                             <div className="font-semibold text-slate-800">
-                              {sub.vehicle.plateNumber}
+                              {formatUzPlate(sub.vehicle.plateNumber)}
                             </div>
                             <div className="text-xs text-slate-400">
                               {sub.vehicle.model}
@@ -484,14 +486,14 @@ export default function SubmissionsPage() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Haydovchi:</span>
                     <span className="font-medium text-slate-900">
-                      {inspectItem.driver.fullName} ({inspectItem.driver.phone})
+                      {inspectItem.driver.fullName} ({formatUzPhone(inspectItem.driver.phone)})
                     </span>
                   </div>
                   {inspectItem.vehicle && (
                     <div className="flex justify-between">
                       <span className="text-slate-500">Avtomobil:</span>
                       <span className="font-medium text-slate-900">
-                        {inspectItem.vehicle.plateNumber} · {inspectItem.vehicle.model}
+                        {formatUzPlate(inspectItem.vehicle.plateNumber)} · {inspectItem.vehicle.model}
                       </span>
                     </div>
                   )}
@@ -604,7 +606,7 @@ export default function SubmissionsPage() {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Avtomobil:</span>
                   <span className="font-medium text-slate-900">
-                    {approveItem.vehicle.plateNumber} · {approveItem.vehicle.model}
+                    {formatUzPlate(approveItem.vehicle.plateNumber)} · {approveItem.vehicle.model}
                   </span>
                 </div>
               )}

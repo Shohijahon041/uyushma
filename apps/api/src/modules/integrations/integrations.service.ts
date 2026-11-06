@@ -9,9 +9,20 @@ import { createHash, randomBytes } from "node:crypto";
 import { TenantPrismaService } from "../../common/prisma/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { DriversService } from "../drivers/drivers.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { TelegramNotifier } from "../notifications/telegram.notifier";
 import { SubmissionsService } from "../submissions/submissions.service";
-import { SubmitReceiptBotDto } from "./dto/telegram.dto";
-import type { DriverDocumentField } from "../drivers/documents";
+import {
+  EndShiftBotDto,
+  ReportIncidentBotDto,
+  StartShiftBotDto,
+  SubmitReceiptBotDto,
+} from "./dto/telegram.dto";
+import {
+  DRIVER_PHOTO_KINDS,
+  type DriverDocumentField,
+  type DriverPhotoKind,
+} from "../drivers/documents";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 
 function hashToken(token: string): string {
@@ -32,6 +43,7 @@ export class IntegrationsService {
     private readonly audit: AuditService,
     private readonly drivers: DriversService,
     private readonly submissions: SubmissionsService,
+    private readonly notifier: TelegramNotifier,
   ) {}
 
   async linkStatus(tenantId: string, userId: string) {
@@ -281,6 +293,20 @@ export class IntegrationsService {
     return this.drivers.documents(tenantId, driverId);
   }
 
+  /** Bot haydovchining yuklangan hujjat rasmini file_id orqali yuboradi. */
+  async botDriverPhoto(chatIdRaw: string, kind: string) {
+    const { tenantId, driverId } = await this.resolveDriverChat(chatIdRaw);
+    if (!(DRIVER_PHOTO_KINDS as readonly string[]).includes(kind)) {
+      throw new BadRequestException("Rasm turi noto'g'ri");
+    }
+    const fileId = await this.drivers.photoFileId(
+      tenantId,
+      driverId,
+      kind as DriverPhotoKind,
+    );
+    return { fileId };
+  }
+
   async botPaymentCard(chatIdRaw: string) {
     const { tenantId } = await this.resolveDriverChat(chatIdRaw);
     return this.submissions.getPaymentInfo(tenantId);
@@ -436,5 +462,63 @@ export class IntegrationsService {
     );
     if (!contract) throw new NotFoundException("Shartnoma topilmadi");
     return contract;
+  }
+
+  // -------------------------------------------------------------------------
+  // Bot smena (Shift) boshqaruvi
+  // -------------------------------------------------------------------------
+
+  async botStartShift(dto: StartShiftBotDto) {
+    const { tenantId, driverId } = await this.resolveDriverChat(dto.chatId);
+    return this.drivers.startShift(tenantId, driverId, dto.startOdometer, dto.note);
+  }
+
+  async botEndShift(dto: EndShiftBotDto) {
+    const { tenantId, driverId } = await this.resolveDriverChat(dto.chatId);
+    return this.drivers.endShift(tenantId, driverId, dto.endOdometer, dto.note);
+  }
+
+  async botCurrentShift(chatIdRaw: string) {
+    const { tenantId, driverId } = await this.resolveDriverChat(chatIdRaw);
+    return this.drivers.getCurrentShift(tenantId, driverId);
+  }
+
+  // -------------------------------------------------------------------------
+  // Bot SOS va nosozlik xabari
+  // -------------------------------------------------------------------------
+
+  async botReportIncident(dto: ReportIncidentBotDto) {
+    const { tenantId, driverId } = await this.resolveDriverChat(dto.chatId);
+    const incident = await this.drivers.reportIncident(tenantId, driverId, dto.kind, dto.description);
+
+    // Kompaniya dispetcherlari va xodimlariga zudlik bilan Telegram xabar yuborish
+    try {
+      const staffAccounts = await this.tenantPrisma.withTenant(tenantId, (tx) =>
+        tx.telegramAccount.findMany({
+          where: { user: { isActive: true } },
+          select: { chatId: true },
+          take: 20,
+        }),
+      );
+
+      const alertText = [
+        "🚨 <b>FAVQULODDA XABAR / SOS!</b>",
+        "",
+        `👤 Haydovchi: <b>${incident.driver.fullName}</b> (${incident.driver.phone})`,
+        `🚌 Avtomobil: <b>${incident.vehicle.plateNumber}</b> · ${incident.vehicle.model}`,
+        incident.vehicle.route?.name ? `🛣 Yo'nalish: <b>${incident.vehicle.route.name}</b>` : "",
+        `⚠️ Nosozlik turi: <b>${incident.kind}</b>`,
+        incident.description ? `📝 Izoh: <i>${incident.description}</i>` : "",
+        `⏰ Vaqt: ${new Date().toLocaleTimeString("uz-UZ")}`,
+      ].filter(Boolean).join("\n");
+
+      for (const staff of staffAccounts) {
+        await this.notifier.send(staff.chatId.toString(), alertText).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+
+    return incident;
   }
 }

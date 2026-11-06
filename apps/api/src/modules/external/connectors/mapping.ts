@@ -10,6 +10,22 @@ export function normalizePlate(plate: string | null | undefined): string {
   return (plate ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
+/**
+ * O'zbekiston davlat raqamlarini rasmiy ko'rinishga keltiradi:
+ * 60A125UA -> "60 A 125 UA", A125BC -> "A 125 BC".
+ */
+export function formatPlateDisplay(plate: string | null | undefined): string {
+  const normalized = normalizePlate(plate);
+  if (!normalized) return "";
+  const standard = /^(\d{2})([A-Z])(\d{3})([A-Z]{2})$/.exec(normalized);
+  if (standard) {
+    return `${standard[1]} ${standard[2]} ${standard[3]} ${standard[4]}`;
+  }
+  const short = /^([A-Z])(\d{3})([A-Z]{2})$/.exec(normalized);
+  if (short) return `${short[1]} ${short[2]} ${short[3]}`;
+  return normalized;
+}
+
 /** Axios payloads arrive as { data: { data: [...] } }, Laravel as { data: [...] }. */
 export function extractArray(payload: unknown, depth = 0): unknown[] {
   if (Array.isArray(payload)) return payload;
@@ -169,10 +185,15 @@ export function toDate(value: unknown): Date | null {
   }
   const raw = String(value).trim();
   if (!raw) return null;
-  const dmy = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(raw);
-  const date = dmy
-    ? new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]))
-    : new Date(raw);
+  const dmy = /^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(raw);
+  if (dmy) {
+    const hours = dmy[4] ? Number(dmy[4]) : 0;
+    const minutes = dmy[5] ? Number(dmy[5]) : 0;
+    const seconds = dmy[6] ? Number(dmy[6]) : 0;
+    const date = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), hours, minutes, seconds);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -570,10 +591,22 @@ export function etenderRecordRaw(
   }
 }
 
+const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+/**
+ * Providers report calendar dates for Tashkent (UTC+5) as local midnight,
+ * which lands on the previous UTC day. Shift before slicing so the registry
+ * never shows a date one day earlier than the official document.
+ */
+export function dateOnlyTashkent(value: Date | null | undefined): string | null {
+  if (!value || Number.isNaN(value.getTime())) return null;
+  return new Date(value.getTime() + TASHKENT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 export function formatDmY(date: Date): string {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
+  const iso = dateOnlyTashkent(date);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-");
   return `${day}.${month}.${year}`;
 }
 
@@ -609,15 +642,19 @@ export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
   );
   const lessor = text(
     pick(row, [
+      "toName",
+      "company_name",
+      "organization_name",
+      "organizationName",
       "lessor_name",
       "lessorName",
       "lessor.name",
-      "company_name",
-      "organization_name",
     ]),
   );
-  const lesseeName = text(
+  const citizenName = text(
     pick(row, [
+      "fromName",
+      "fromDirectorName",
       "lessee_name",
       "lesseeName",
       "lessee.name",
@@ -626,23 +663,26 @@ export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
       "client_name",
     ]),
   );
-  const lesseePinfl = text(
-    pick(row, ["lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
+  const citizenPinfl = text(
+    pick(row, ["fromPersonId", "fromPinfl", "lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
   );
-  const lesseePhone = text(
-    pick(row, ["lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
+  const rawPhone = text(
+    pick(row, ["fromPhone", "lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
   );
-  const lesseeLicense = text(
+  const citizenPhone = rawPhone
+    ? (rawPhone.startsWith("+") ? rawPhone : `+${rawPhone.replace(/\D/g, "")}`)
+    : null;
+  const citizenLicense = text(
     pick(row, ["lessee_license", "lesseeLicense", "license_number"]),
   );
 
-  const drivers = lesseeName
+  const drivers = citizenName
     ? [
         {
-          fullName: lesseeName,
-          pinfl: lesseePinfl ?? null,
-          phone: lesseePhone ?? null,
-          licenseNumber: lesseeLicense ?? null,
+          fullName: citizenName,
+          pinfl: citizenPinfl ?? null,
+          phone: citizenPhone ?? null,
+          licenseNumber: citizenLicense ?? null,
         },
       ]
     : undefined;
@@ -659,7 +699,7 @@ export function mapIjaraVehicle(row: unknown): NormalizedVehicle | null {
     vehicleClass: null,
     vehicleModel: model,
     drivers,
-    licenseNumber: lesseeLicense,
+    licenseNumber: citizenLicense,
     licenseExpiresAt: null,
     raw: row,
   };
@@ -674,7 +714,7 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
   if (!id) return null;
 
   const number =
-    text(pick(row, ["contract_number", "contractNumber", "number", "doc_number"])) ??
+    text(pick(row, ["contract_number", "contractNumber", "number", "doc_number", "rentNumber"])) ??
     id;
   const plate = text(
     pick(row, [
@@ -688,8 +728,9 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
       "transport_number",
     ]),
   );
+  const citizenName = text(pick(row, ["fromName", "fromDirectorName", "lessee_name", "driver_name"]));
   const title = plate
-    ? `Ijara shartnomasi: ${plate}`
+    ? `Ijara shartnomasi: ${plate}${citizenName ? ` (${citizenName})` : ""}`
     : `Ijara shartnomasi #${number}`;
 
   const startsAt = toDate(
@@ -714,7 +755,12 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
   );
   const rawStatus = pick(row, ["rentState", "status_name", "statusName", "status_text", "status"]);
   const status =
-    rawStatus === 1 || rawStatus === "1" || rawStatus === "ACTIVE"
+    rawStatus === 1 ||
+    rawStatus === "1" ||
+    rawStatus === 10 ||
+    rawStatus === "10" ||
+    rawStatus === "ACTIVE" ||
+    rawStatus === "Yuborilgan"
       ? "ACTIVE"
       : text(rawStatus) ?? "ACTIVE";
 
@@ -731,6 +777,7 @@ export function mapIjaraRecord(row: unknown): NormalizedRecord | null {
     pick(row, [
       "rentMonthlyRate",
       "rent_monthly_rate",
+      "rentSum",
       "rent_amount",
       "rentAmount",
       "amount",

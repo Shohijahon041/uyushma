@@ -7,6 +7,8 @@ import { formatDate, formatMoney, useApi } from "@/lib/use-api";
 import type { RouteItem, Vehicle } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
 import { RoutePlanInput, normalizeMoneyInput } from "@/components/route-plan-input";
+import { formatUzPlate } from "@/lib/plate";
+import { formatUzPhone } from "@/lib/phone";
 
 interface Owner {
   id: string;
@@ -282,7 +284,7 @@ export default function VehiclesPage() {
     return (
       <tr key={vehicle.id}>
         <td className="font-mono font-semibold text-slate-900">
-          {vehicle.plateNumber}
+          {formatUzPlate(vehicle.plateNumber)}
           {external && (
             <p className="text-[10px] font-normal uppercase tracking-wide text-slate-400">
               {external.provider === "ETENDER" ? "e-tender" : "autopark"}
@@ -306,7 +308,7 @@ export default function VehiclesPage() {
             <>
               <p className="font-medium text-slate-800">{vehicle.assignments[0].driver.fullName}</p>
               <p className="font-mono text-[11px] text-slate-400">
-                {vehicle.assignments[0].driver.phone}
+                {formatUzPhone(vehicle.assignments[0].driver.phone)}
               </p>
             </>
           ) : (

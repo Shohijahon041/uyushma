@@ -11,6 +11,9 @@ import type {
   ExternalVehicleRow,
 } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatCard, StatusBadge } from "@/components/ui";
+import { exportToExcelTable } from "@/lib/export-excel";
+import { formatUzPlate } from "@/lib/plate";
+import { formatUzPhone } from "@/lib/phone";
 
 type TabKey = "unified" | "vehicles" | ExternalRecordKind;
 
@@ -39,20 +42,39 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
       partial: number;
       expired: number;
       noRentContract: number;
+      expiringSoon15?: number;
+      expiringSoon30?: number;
     };
   }>("/registry/cross-link");
 
   const [linking, setLinking] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [radarFilter, setRadarFilter] = useState<
+    "ALL" | "EXPIRED" | "URGENT_15" | "WARNING_30" | "NO_RENT" | "FULLY_COMPLIANT"
+  >("ALL");
+  const [selectedPassportPlate, setSelectedPassportPlate] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   const pageSize = 50;
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, radarFilter]);
 
   const items = useMemo(() => {
-    const rows = data?.items ?? [];
+    let rows = data?.items ?? [];
+    if (radarFilter === "EXPIRED") {
+      rows = rows.filter((r) => r.complianceStatus === "EXPIRED" || r.urgencyLevel === "EXPIRED");
+    } else if (radarFilter === "URGENT_15") {
+      rows = rows.filter((r) => r.urgencyLevel === "URGENT_15");
+    } else if (radarFilter === "WARNING_30") {
+      rows = rows.filter((r) => r.urgencyLevel === "WARNING_30");
+    } else if (radarFilter === "NO_RENT") {
+      rows = rows.filter((r) => r.complianceStatus === "NO_RENT_CONTRACT");
+    } else if (radarFilter === "FULLY_COMPLIANT") {
+      rows = rows.filter((r) => r.complianceStatus === "FULLY_COMPLIANT");
+    }
+
     const needle = search.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((row) =>
@@ -69,7 +91,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
         .filter(Boolean)
         .some((val) => val!.toLowerCase().includes(needle)),
     );
-  }, [data, search]);
+  }, [data, search, radarFilter]);
 
   const totalPages = Math.ceil(items.length / pageSize) || 1;
   const pagedItems = useMemo(() => {
@@ -85,10 +107,9 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
         linkedVehicles: number;
         createdVehicles: number;
         createdDrivers: number;
-        seededContracts?: number;
       }>("/registry/cross-link/auto", { method: "POST" });
       setActionMsg(
-        `Bog'lash yakunlandi: ${res.linkedVehicles} ta mashina ulandi, ${res.createdVehicles} ta yangi avtomobil, ${res.createdDrivers} ta haydovchi biriktirildi${res.seededContracts ? `, ${res.seededContracts} ta Soliq ijara shartnomasi bog'landi` : ""}.`,
+        `Bog'lash yakunlandi: ${res.linkedVehicles} ta mashina ulandi, ${res.createdVehicles} ta yangi avtomobil, ${res.createdDrivers} ta haydovchi biriktirildi.`,
       );
       await reload();
     } catch (err) {
@@ -96,6 +117,48 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
     } finally {
       setLinking(false);
     }
+  }
+
+  function handleExportExcel() {
+    const headers = [
+      "Davlat raqami",
+      "Model",
+      "VIN",
+      "Qonuniylik holati",
+      "Soliq Ijara shartnoma raqami",
+      "Soliq Ijara muddati",
+      "Ijara oluvchi (Haydovchi)",
+      "E-Tender litsenziya",
+      "Litsenziya amal qilish muddati",
+      "Yo'nalish nomi",
+      "Autopark garaj raqami",
+      "GPS IMEI",
+    ];
+    const rows = items.map((r) => {
+      const statusText =
+        r.ijara && !r.ijara.isExpired && r.etender && !r.etender.isExpired
+          ? "To'liq qonuniy (360°)"
+          : !r.ijara
+            ? "Ijara shartnomasi yo'q"
+            : r.ijara.isExpired || r.etender?.isExpired
+              ? "Muddati o'tgan"
+              : "Qisman";
+      return [
+        r.plateNumber,
+        r.model ?? "—",
+        r.vin ?? "—",
+        statusText,
+        r.ijara?.contractNumber ?? "Yo'q",
+        r.ijara?.endsAt ?? "—",
+        r.ijara?.lessee?.fullName ?? "—",
+        r.etender?.licenseNumber ?? "Yo'q",
+        r.etender?.licenseExpiresAt ?? "—",
+        r.etender?.routeName ?? "—",
+        r.autopark?.garageNumber ?? "—",
+        r.autopark?.gpsImei ?? "—",
+      ];
+    });
+    exportToExcelTable("Tashqi_Reyestr_360", "Reyestr 360", headers, rows);
   }
 
   if (loading && !data) return <Loading label={tc("loading")} />;
@@ -138,13 +201,109 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
         <div className="text-xs text-slate-500">
           Ushbu jadval <b>ijara.soliq.uz</b>, <b>e-tender.uztrans.uz</b> va <b>bm.dtransport.uz</b> tizimlarini davlat raqami bo&apos;yicha birlashtiradi.
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="btn-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+          >
+            <span>📊</span>
+            <span>Excelga yuklash</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleAutoLink()}
+            disabled={linking}
+            className="btn-primary px-3 py-1.5 text-xs font-semibold"
+          >
+            {linking ? "Bog'lanmoqda..." : "⚡ Avtomatik bog'lash (3 portal)"}
+          </button>
+        </div>
+      </div>
+
+      {/* Muddati tugash va Qonuniylik Xavf Radari (Filter pills) */}
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-1">
+        <span className="text-xs font-semibold text-slate-500 mr-1">Radar:</span>
         <button
           type="button"
-          onClick={() => void handleAutoLink()}
-          disabled={linking}
-          className="btn-primary px-3 py-1.5 text-xs font-semibold"
+          onClick={() => setRadarFilter("ALL")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+            radarFilter === "ALL"
+              ? "bg-slate-900 text-white shadow-xs"
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          }`}
         >
-          {linking ? "Bog'lanmoqda..." : "⚡ Avtomatik bog'lash (3 portal)"}
+          Barchasi ({data?.totals.totalVehicles ?? 0})
+        </button>
+        <button
+          type="button"
+          onClick={() => setRadarFilter("EXPIRED")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            radarFilter === "EXPIRED"
+              ? "bg-rose-600 text-white shadow-sm"
+              : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+          }`}
+        >
+          <span>🚨 Jarima xavfi</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+            {data?.totals.expired ?? 0}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRadarFilter("URGENT_15")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            radarFilter === "URGENT_15"
+              ? "bg-amber-600 text-white shadow-sm"
+              : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+          }`}
+        >
+          <span>⚠️ 15 kun qolgan</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+            {data?.totals.expiringSoon15 ?? 0}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRadarFilter("WARNING_30")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            radarFilter === "WARNING_30"
+              ? "bg-yellow-600 text-white shadow-sm"
+              : "bg-yellow-50 text-yellow-800 hover:bg-yellow-100"
+          }`}
+        >
+          <span>🟡 30 kun qolgan</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+            {data?.totals.expiringSoon30 ?? 0}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRadarFilter("NO_RENT")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            radarFilter === "NO_RENT"
+              ? "bg-orange-600 text-white shadow-sm"
+              : "bg-orange-50 text-orange-700 hover:bg-orange-100"
+          }`}
+        >
+          <span>❌ Ijara yo&apos;q</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+            {data?.totals.noRentContract ?? 0}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRadarFilter("FULLY_COMPLIANT")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            radarFilter === "FULLY_COMPLIANT"
+              ? "bg-emerald-600 text-white shadow-sm"
+              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          }`}
+        >
+          <span>🟢 To&apos;liq qonuniy</span>
+          <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+            {data?.totals.fullyCompliant ?? 0}
+          </span>
         </button>
       </div>
 
@@ -170,7 +329,8 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                 <th>📜 E-Tender (uztrans.uz)</th>
                 <th>🚌 BM Monitoring (dtransport.uz)</th>
                 <th>👤 Ijarachi / Haydovchi</th>
-                <th>Qonuniylik holati</th>
+                <th>Qonuniylik & Xavf</th>
+                <th>Raqamli Pasport</th>
               </tr>
             </thead>
             <tbody>
@@ -182,7 +342,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                 return (
                   <tr key={row.normalizedPlate} className="hover:bg-slate-50/70 transition-colors">
                     <td>
-                      <div className="font-mono font-bold text-slate-900">{row.plateNumber}</div>
+                      <div className="font-mono font-bold text-slate-900">{formatUzPlate(row.plateNumber)}</div>
                       <div className="text-xs text-slate-600">{row.model ?? "—"}</div>
                       {row.vin && <div className="font-mono text-[10px] text-slate-400">VIN: {row.vin}</div>}
                     </td>
@@ -277,6 +437,27 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                               IMEI: {bm.gpsImei}
                             </div>
                           )}
+                          {bm.vehicleModel && (
+                            <div
+                              className={`text-[11px] truncate max-w-[160px] ${
+                                row.model &&
+                                !bm.vehicleModel.toLowerCase().includes(row.model.toLowerCase())
+                                  ? "text-amber-700"
+                                  : "text-slate-600"
+                              }`}
+                              title={
+                                row.model &&
+                                !bm.vehicleModel.toLowerCase().includes(row.model.toLowerCase())
+                                  ? `BM'da ${bm.vehicleModel}, hujjatlarda ${row.model}`
+                                  : bm.vehicleModel
+                              }
+                            >
+                              Model: {bm.vehicleModel}
+                            </div>
+                          )}
+                          {bm.vehicleClass && (
+                            <div className="text-[10px] text-slate-400">{bm.vehicleClass}</div>
+                          )}
                           {bm.routeName && (
                             <div className="text-[11px] text-slate-600 truncate max-w-[140px]">
                               {bm.routeName}
@@ -300,7 +481,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                           </div>
                           {ijara.lessee.phone && (
                             <div className="text-[11px] text-slate-500">
-                              {ijara.lessee.phone}
+                              {formatUzPhone(ijara.lessee.phone)}
                             </div>
                           )}
                           {ijara.lessee.pinfl && (
@@ -319,7 +500,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                           </div>
                           {row.nativeDriver.phone && (
                             <div className="text-[11px] text-slate-500">
-                              {row.nativeDriver.phone}
+                              {formatUzPhone(row.nativeDriver.phone)}
                             </div>
                           )}
                         </div>
@@ -333,7 +514,7 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                           </div>
                           {bm.drivers[0]?.phone && (
                             <div className="text-[11px] text-slate-500">
-                              {bm.drivers[0].phone}
+                              {formatUzPhone(bm.drivers[0].phone)}
                             </div>
                           )}
                         </div>
@@ -342,28 +523,58 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
                       )}
                     </td>
 
-                    {/* 5. Qonuniylik holati */}
+                    {/* 5. Qonuniylik va Xavf Radari */}
                     <td>
-                      {row.complianceStatus === "FULLY_COMPLIANT" ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                          <span>✅</span>
-                          <span>To&apos;liq qonuniy</span>
-                        </span>
-                      ) : row.complianceStatus === "NO_RENT_CONTRACT" ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                          <span>⚠️</span>
-                          <span>Ijara yo&apos;q</span>
-                        </span>
-                      ) : row.complianceStatus === "EXPIRED" ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-inset ring-rose-600/20">
-                          <span>🛑</span>
-                          <span>Muddati o&apos;tgan</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                          <span>Qisman</span>
-                        </span>
-                      )}
+                      <div>
+                        {row.complianceStatus === "FULLY_COMPLIANT" ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                            <span>✅</span>
+                            <span>To&apos;liq qonuniy</span>
+                          </span>
+                        ) : row.complianceStatus === "NO_RENT_CONTRACT" ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                            <span>⚠️</span>
+                            <span>Ijara yo&apos;q</span>
+                          </span>
+                        ) : row.complianceStatus === "EXPIRED" ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 ring-1 ring-inset ring-rose-600/20">
+                            <span>🛑</span>
+                            <span>Muddati o&apos;tgan</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                            <span>Qisman</span>
+                          </span>
+                        )}
+
+                        {row.urgencyLevel === "URGENT_15" && (
+                          <div className="mt-1 text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                            <span>⚠️</span>
+                            <span>15 kundan kam!</span>
+                          </div>
+                        )}
+                        {row.urgencyLevel === "WARNING_30" && (
+                          <div className="mt-1 text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                            <span>🟡</span>
+                            <span>30 kundan kam</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 6. Raqamli Pasport & QR */}
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPassportPlate(row.plateNumber);
+                          setCopiedLink(false);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-xs hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 transition-all cursor-pointer"
+                      >
+                        <span>🪪</span>
+                        <span>QR Pasport</span>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -398,6 +609,88 @@ function UnifiedCrossLinkTable({ search }: { search: string }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Raqamli Yo'l Pasporti & QR Tekshiruv Modali */}
+      {selectedPassportPlate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden text-slate-900">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-slate-50">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🪪</span>
+                <span className="font-bold text-sm text-slate-800">
+                  Raqamli Yo&apos;l Pasporti & QR Tekshiruv
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPassportPlate(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 text-base font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 flex flex-col items-center text-center space-y-4">
+              {/* Plate View */}
+              <div className="bg-white border-2 border-slate-800 rounded-lg px-4 py-1.5 font-mono font-black text-xl tracking-wider text-slate-950 shadow-xs">
+                {formatUzPlate(selectedPassportPlate)}
+              </div>
+
+              {/* QR Code — o'z API'miz orqali, tashqi servissiz */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-md">
+                <img
+                  src={`/api/proxy/registry/public-verify/${encodeURIComponent(selectedPassportPlate)}/qr`}
+                  alt={`QR Pasport ${formatUzPlate(selectedPassportPlate)}`}
+                  className="w-44 h-44 rounded-lg"
+                />
+              </div>
+
+              <div className="text-xs text-slate-500 max-w-xs leading-relaxed">
+                YPX xodimlari va transport nazorati ushbu QR-kod orqali litsenziya, Soliq ijara shartnomasi va smena holatini real vaqtda tasdiqlay oladi.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="w-full grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/uz/verify/${selectedPassportPlate}`;
+                    void navigator.clipboard.writeText(url);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2500);
+                  }}
+                  className="btn-secondary py-2 text-xs font-semibold justify-center flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>{copiedLink ? "✓" : "📋"}</span>
+                  <span>{copiedLink ? "Nusxalandi!" : "Nusxalash"}</span>
+                </button>
+
+                <a
+                  href={`/uz/verify/${selectedPassportPlate}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary py-2 text-xs font-semibold justify-center flex items-center gap-1.5"
+                >
+                  <span>↗</span>
+                  <span>Pasportni ochish</span>
+                </a>
+
+                <a
+                  href={`/api/proxy/registry/public-verify/${encodeURIComponent(
+                    selectedPassportPlate,
+                  )}/pdf`}
+                  className="btn-secondary col-span-2 py-2 text-xs font-semibold justify-center flex items-center gap-1.5"
+                >
+                  <span>⬇️</span>
+                  <span>Ijara shartnomasi va litsenziya (PDF)</span>
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -459,7 +752,7 @@ function VehicleTable({ search }: { search: string }) {
           {pagedItems.map((row) => (
             <tr key={row.id}>
               <td className="font-mono font-semibold text-slate-900">
-                {row.plateNumber ?? "—"}
+                {row.plateNumber ? formatUzPlate(row.plateNumber) : "—"}
                 <p className="text-[10px] font-normal uppercase tracking-wide text-slate-400">
                   {row.provider === "ETENDER"
                     ? "e-tender"

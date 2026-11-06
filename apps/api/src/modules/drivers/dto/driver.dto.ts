@@ -1,11 +1,14 @@
-import { Transform } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
 import { DriverPaymentMethod, DriverStatus } from "@prisma/client";
@@ -13,8 +16,13 @@ import { DriverPaymentMethod, DriverStatus } from "@prisma/client";
 const DECIMAL_2 = /^\d{1,16}(\.\d{1,2})?$/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
-const normalizePhone = ({ value }: { value: unknown }) =>
-  typeof value === "string" ? value.replace(/[\s()-]/g, "") : value;
+const normalizePhone = ({ value }: { value: unknown }) => {
+  if (typeof value !== "string") return value;
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 9) return `+998${digits}`;
+  if (digits.length === 12 && digits.startsWith("998")) return `+${digits}`;
+  return value.replace(/[\s()-]/g, "");
+};
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === "string" ? value.trim() : value;
@@ -112,6 +120,14 @@ export class CreateDriverPaymentDto {
   @IsOptional()
   @IsString()
   paidAt?: string;
+
+  /** To'lov nechta kunni qoplaydi (1–31). Standart — 1 kun. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  days?: number;
 
   @IsOptional()
   @IsString()

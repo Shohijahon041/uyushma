@@ -4,7 +4,9 @@ import IORedis from "ioredis";
 import { join } from "node:path";
 import dotenv from "dotenv";
 
+dotenv.config({ path: join(process.cwd(), ".env") });
 dotenv.config({ path: join(process.cwd(), "../../.env") });
+dotenv.config({ path: join(__dirname, "../../../.env") });
 dotenv.config();
 
 const REDIS_URL = process.env.REDIS_URL;

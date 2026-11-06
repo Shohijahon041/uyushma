@@ -115,6 +115,14 @@ export default function SettingsPage() {
               <p className="mt-1 text-xs text-slate-400">
                 {t("linkedAt")}: {formatDateTime(status.data.linkedAt)}
               </p>
+              <a
+                href="https://t.me/uyushma_saas_bot"
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary mt-3 inline-flex items-center gap-1.5 text-xs"
+              >
+                ✈️ {t("openBot")}
+              </a>
             </div>
           ) : (
             <div className="mt-4">
@@ -141,6 +149,16 @@ export default function SettingsPage() {
                     >
                       {copied ? "✓" : "Copy"}
                     </button>
+                  </div>
+                  <div>
+                    <a
+                      href={`https://t.me/uyushma_saas_bot?start=${token}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-primary inline-flex items-center gap-2 text-xs"
+                    >
+                      ✈️ {t("openBot")}
+                    </a>
                   </div>
                   <p className="text-[11px] text-slate-400">
                     {t("tokenExpires")}

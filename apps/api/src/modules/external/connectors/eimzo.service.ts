@@ -78,11 +78,12 @@ export class EImzoService {
       this.logger.warn(`Soliq E-IMZO to'g'ridan-to'g'ri API javob bermadi: ${String(err)}`);
     }
 
-    // 2. Agar Soliq online serveri cheklov yoki token qaytarmagan bo'lsa,
-    // E-IMZO sertifikat sessiyasi yaratiladi
+    // 2. Soliq serveri token qaytarmasa, ulanish soxta token bilan saqlanmaydi.
+    // Foydalanuvchi ijara.soliq.uz ga qo'lda kirib, haqiqiy tokenni "Token" usulida qo'shadi.
     if (!token) {
-      token = `eimzo_soliq_${Buffer.from(dto.challenge).toString("base64url")}.${Date.now()}`;
-      accountName = dto.serialNumber ? `E-IMZO (${dto.serialNumber})` : "Soliq E-IMZO Korxona";
+      throw new BadRequestException(
+        "Soliq E-IMZO serveri token qaytarmadi. ijara.soliq.uz ga qo'lda kirib, tokenni \"Token\" usulida qo'shing yoki kompyuter brauzeri orqali ulang.",
+      );
     }
 
     // 3. IJARA provayderi uchun ulanishni saqlash

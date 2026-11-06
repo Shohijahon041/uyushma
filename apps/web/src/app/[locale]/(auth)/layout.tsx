@@ -16,16 +16,15 @@ export default async function AuthLayout({
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#0b1f45] via-[#103473] to-[#1b6ff0] p-12 lg:flex lg:flex-col lg:justify-between">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-30"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 20%, rgba(255,255,255,.25) 0, transparent 28%), radial-gradient(circle at 80% 70%, rgba(255,255,255,.16) 0, transparent 30%)",
-          }}
-        />
+      <section className="relative hidden overflow-hidden bg-[#0b2141] p-12 lg:flex lg:flex-col lg:justify-between">
         <div className="relative">
-          <Brand light />
+          <img
+            src="/brand/bm-brutto.webp"
+            alt="BM Brutto — Transport & Logistics"
+            width={512}
+            height={512}
+            className="h-36 w-36 rounded-2xl"
+          />
         </div>
         <div className="relative max-w-lg">
           <p className="mb-4 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-brand-100">
@@ -44,7 +43,7 @@ export default async function AuthLayout({
               "Barcha moliyaviy hisob-kitoblar serverda, Decimal aniqligida",
             ].map((item) => (
               <li key={item} className="flex gap-2.5">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-300" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
                 {item}
               </li>
             ))}

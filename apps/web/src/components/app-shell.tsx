@@ -32,6 +32,12 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
       { href: "/routes", labelKey: "routes", icon: "map" },
       { href: "/contracts", labelKey: "contracts", icon: "file" },
       { href: "/registry", labelKey: "registry", icon: "database" },
+      {
+        href: "/collector",
+        labelKey: "collector",
+        icon: "database",
+        superAdminOnly: true,
+      },
       { href: "/tariffs", labelKey: "tariffs", icon: "tag" },
     ],
   },
@@ -91,19 +97,54 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
   },
 ];
 
+const PLATFORM_SECTION: NavItem[] = [
+  { href: "/admin", labelKey: "admin", icon: "shield" },
+  { href: "/collector", labelKey: "collector", icon: "database" },
+  { href: "/settings", labelKey: "settings", icon: "settings" },
+];
+
 function NavLinks({
   role,
   isSuperAdmin,
+  platform = false,
   onNavigate,
   horizontal = false,
 }: {
   role: AuthUser["role"];
   isSuperAdmin: boolean;
+  platform?: boolean;
   onNavigate?: () => void;
   horizontal?: boolean;
 }) {
   const t = useTranslations("nav");
   const pathname = usePathname();
+
+  if (platform) {
+    return (
+      <nav className={horizontal ? "flex gap-1" : "space-y-0.5"}>
+        {PLATFORM_SECTION.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch={true}
+              onClick={onNavigate}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition ${
+                active ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              } ${horizontal ? "whitespace-nowrap" : ""}`}
+            >
+              <Icon
+                name={item.icon}
+                className={`h-[18px] w-[18px] ${active ? "text-brand-700" : "text-slate-400"}`}
+              />
+              {t(item.labelKey)}
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
 
   return (
     <>
@@ -156,14 +197,25 @@ function NavLinks({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("common");
   const router = useRouter();
+  const pathname = usePathname();
   const { data: me, loading, error, reload } = useApi<AuthUser>("/auth/me");
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const isPlatform = Boolean(me?.company.isPlatform);
 
   useEffect(() => {
     if (error && error.toLowerCase().includes("avtorizatsiya")) {
       router.replace("/login");
     }
   }, [error, router]);
+
+  useEffect(() => {
+    if (!isPlatform) return;
+    const allowed = pathname === "/admin" || pathname.startsWith("/admin/") ||
+      pathname === "/collector" || pathname.startsWith("/collector/") ||
+      pathname === "/settings" || pathname.startsWith("/settings/");
+    if (!allowed) router.replace("/admin");
+  }, [isPlatform, pathname, router]);
 
   const initials = useMemo(() => {
     if (!me) return "U";
@@ -215,11 +267,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Brand />
         </div>
         <div className="mx-4 mt-4 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
-          <p className="truncate text-xs font-semibold text-slate-800">{me.company.name}</p>
-          <p className="truncate font-mono text-[10px] text-slate-400">{me.company.slug}</p>
+          <p className="truncate text-xs font-semibold text-slate-800">
+            {isPlatform ? "Platforma boshqaruvi" : me.company.name}
+          </p>
+          <p className="truncate font-mono text-[10px] text-slate-400">
+            {isPlatform ? "super admin" : me.company.slug}
+          </p>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-5">
-          <NavLinks role={me.role} isSuperAdmin={me.isSuperAdmin} />
+          <NavLinks role={me.role} isSuperAdmin={me.isSuperAdmin} platform={isPlatform} />
         </div>
         <div className="border-t border-slate-100 p-3">
           <div className="flex items-center gap-3 rounded-xl px-2 py-2">
@@ -251,21 +307,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Brand />
             </div>
             <div className="hidden md:block">
-              <p className="text-xs font-medium text-slate-400">Kompaniya</p>
-              <p className="text-sm font-semibold text-slate-800">{me.company.name}</p>
+              <p className="text-xs font-medium text-slate-400">
+                {isPlatform ? "Platforma" : "Kompaniya"}
+              </p>
+              <p className="text-sm font-semibold text-slate-800">
+                {isPlatform ? "Barcha korxonalar nazorati" : me.company.name}
+              </p>
             </div>
             <div className="flex items-center gap-3">
-              {(["OWNER", "ADMIN", "ACCOUNTANT"] as const).some((role) => role === me.role) && (
-                <QuickPayButton />
+              {!isPlatform &&
+                (["OWNER", "ADMIN", "ACCOUNTANT"] as const).some((role) => role === me.role) && (
+                  <QuickPayButton />
+                )}
+              {!isPlatform && (
+                <Link
+                  href="/notifications"
+                  className="relative rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                  title="Bildirishnomalar"
+                >
+                  <Icon name="bell" className="h-4 w-4" />
+                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand-500" />
+                </Link>
               )}
-              <Link
-                href="/notifications"
-                className="relative rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
-                title="Bildirishnomalar"
-              >
-                <Icon name="bell" className="h-4 w-4" />
-                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand-500" />
-              </Link>
               <LanguageSwitcher />
               <ThemeToggle />
               <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 sm:flex">
@@ -275,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
-            <NavLinks role={me.role} isSuperAdmin={me.isSuperAdmin} horizontal />
+            <NavLinks role={me.role} isSuperAdmin={me.isSuperAdmin} platform={isPlatform} horizontal />
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>

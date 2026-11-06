@@ -32,6 +32,7 @@ export interface PaymeConfig {
 
 export interface DashboardSummary {
   counts: { vehicles: number; activeContracts: number; routes: number; users: number };
+  drivers: { assignedToday: number; workedToday: number; paidForTomorrow: number };
   external: {
     vehicles: number;
     records: {
@@ -317,6 +318,7 @@ export interface DriverItem {
     linked: boolean;
     username: string | null;
     linkedAt: string | null;
+    hasPhoto: boolean;
   };
   vehicle: {
     id: string;
@@ -333,6 +335,9 @@ export interface DriverItem {
     surplus: string;
   };
   totalDebt: string;
+  workedToday: boolean;
+  paidDays: number;
+  coveredUntil: string | null;
 }
 
 export interface DriverPaymentRow {
@@ -341,6 +346,9 @@ export interface DriverPaymentRow {
   method: "CASH" | "CARD";
   periodStart: string;
   paidAt: string;
+  days: number;
+  coveredFrom: string;
+  coveredUntil: string;
   source: string;
   note: string | null;
   driver: { id: string; fullName: string; phone: string };
@@ -439,6 +447,10 @@ export interface DailyBoardItem {
   };
   paidToday: string;
   totalDebt: string;
+  worked: boolean;
+  paidDays: number;
+  coveredFrom: string | null;
+  coveredUntil: string | null;
 }
 
 export interface DailyBoard {
@@ -452,6 +464,7 @@ export interface DailyBoard {
     debtMonth: string;
     collectedToday: string;
     paymentsToday: number;
+    workedToday: number;
     totalDebt: string;
   };
   items: DailyBoardItem[];
@@ -632,8 +645,42 @@ export interface CrossLinkedVehicleView {
     gpsImei: string | null;
     routeName: string | null;
     organizationName: string | null;
+    vehicleModel?: string | null;
+    vehicleClass?: string | null;
     drivers: Array<{ fullName: string; phone?: string | null }>;
   } | null;
   complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
   complianceNotes: string[];
+  daysToLicenseExpiry?: number | null;
+  daysToRentExpiry?: number | null;
+  urgencyLevel?: "EXPIRED" | "URGENT_15" | "WARNING_30" | "SAFE" | "NO_RENT";
+}
+
+export interface PublicVehiclePassport {
+  plateNumber: string;
+  model: string;
+  vin: string | null;
+  companyName: string;
+  routeName: string | null;
+  routeNumber: string | null;
+  driverName: string | null;
+  license: {
+    number: string | null;
+    expiresAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+  };
+  soliqLease: {
+    contractNumber: string | null;
+    endsAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+  };
+  shiftStatus: {
+    isOnShift: boolean;
+    startedAt: string | null;
+  };
+  complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
+  isVerified: boolean;
+  verifiedAt: string;
 }

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PaymentStatus } from "@prisma/client";
 import { TenantPrismaService } from "../../common/prisma/tenant-prisma.service";
+import { todayDateOnly } from "../drivers/billing";
 
 function startOfMonth(): Date {
   const now = new Date();
@@ -16,6 +17,8 @@ export class DashboardService {
       const monthStart = startOfMonth();
       const now = new Date();
       const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const today = todayDateOnly(now);
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
       const [
         vehicles,
         activeContracts,
@@ -30,6 +33,9 @@ export class DashboardService {
         externalRecordGroups,
         expiringCertificates,
         lastExternalSync,
+        assignedToday,
+        workedTodayRows,
+        paidForTomorrowRows,
       ] = await Promise.all([
         tx.vehicle.count({ where: { status: { not: "INACTIVE" } } }),
         tx.contract.count({ where: { status: "ACTIVE" } }),
@@ -79,6 +85,20 @@ export class DashboardService {
           orderBy: { lastSyncAt: "desc" },
           select: { lastSyncAt: true, provider: true },
         }),
+        tx.vehicleAssignment.count({
+          where: {
+            startDate: { lte: today },
+            OR: [{ endDate: null }, { endDate: { gte: today } }],
+          },
+        }),
+        tx.driverPayment.groupBy({
+          by: ["driverId"],
+          where: { coveredFrom: { lte: today }, coveredUntil: { gte: today } },
+        }),
+        tx.driverPayment.groupBy({
+          by: ["driverId"],
+          where: { coveredFrom: { lte: tomorrow }, coveredUntil: { gte: tomorrow } },
+        }),
       ]);
 
       const recordCounts: Record<string, number> = {
@@ -93,6 +113,11 @@ export class DashboardService {
 
       return {
         counts: { vehicles, activeContracts, routes, users },
+        drivers: {
+          assignedToday,
+          workedToday: workedTodayRows.length,
+          paidForTomorrow: paidForTomorrowRows.length,
+        },
         external: {
           vehicles: externalVehicles,
           records: {

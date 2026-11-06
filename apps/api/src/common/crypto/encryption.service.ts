@@ -59,6 +59,7 @@ export class EncryptionService {
   }
 
   decrypt(payload: string): string {
+    if (!payload || typeof payload !== "string") return "";
     const parts = payload.split(".");
     if (parts.length !== 4 || parts[0] !== VERSION) {
       throw new Error("Shifrlangan ma'lumot formati noto'g'ri");
@@ -67,7 +68,7 @@ export class EncryptionService {
     const tagPart = parts[2];
     const dataPart = parts[3];
     if (!ivPart || !tagPart || !dataPart) {
-      throw new Error("Shifrlangan ma'lumot formati noto'g'ri");
+      throw new Error("Shifrlangan ma'lumot to'liq emas");
     }
     const decipher = createDecipheriv(
       "aes-256-gcm",

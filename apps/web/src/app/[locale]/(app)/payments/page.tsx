@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatMoney, useApi } from "@/lib/use-api";
 import type { Contract, Payment } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
+import { formatUzPlate } from "@/lib/plate";
 
 interface PaymentCreateResponse {
   payment: Payment;
@@ -114,7 +115,7 @@ export default function PaymentsPage() {
                 {activeContracts?.length ? (
                   activeContracts.map((contract) => (
                     <option key={contract.id} value={contract.id}>
-                      {contract.vehicle.plateNumber} — {contract.owner.fullName}
+                      {formatUzPlate(contract.vehicle.plateNumber)} — {contract.owner.fullName}
                     </option>
                   ))
                 ) : (
@@ -203,7 +204,7 @@ export default function PaymentsPage() {
                       {formatDate(payment.createdAt)}
                     </td>
                     <td className="font-mono font-semibold text-slate-900">
-                      {payment.contract.vehicle.plateNumber}
+                      {formatUzPlate(payment.contract.vehicle.plateNumber)}
                     </td>
                     <td>{payment.contract.owner.fullName}</td>
                     <td className="whitespace-nowrap font-semibold">

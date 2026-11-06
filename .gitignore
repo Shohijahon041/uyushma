@@ -47,3 +47,13 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Python Collector Service runtime & secrets
+collector_service/profiles/
+collector_service/state/
+test_output_*.json
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+

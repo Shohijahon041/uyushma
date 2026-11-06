@@ -6,6 +6,13 @@ import helmet from "helmet";
 import { requestIdMiddleware } from "./common/http/request-id.middleware";
 import { GlobalExceptionFilter } from "./common/http/global-exception.filter";
 
+// Prisma BigInt (masalan, Telegram chat ID) JSON javobda string bo'lib chiqadi.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
+  this: bigint,
+) {
+  return this.toString();
+};
+
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
   const origin = config.getOrThrow<string>("APP_ORIGIN");

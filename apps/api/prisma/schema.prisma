@@ -158,6 +158,16 @@ enum FraudRiskLevel {
   HIGH
 }
 
+enum ShiftStatus {
+  ACTIVE
+  COMPLETED
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
 model Company {
   id         String        @id @default(uuid()) @db.Uuid
   slug       String        @unique @db.VarChar(64)
@@ -206,6 +216,8 @@ model Company {
   paymentCardBank         String?                  @db.VarChar(120)
   paymentInstructions     String?                  @db.VarChar(500)
   paymentSubmissions      PaymentSubmission[]
+  driverShifts            DriverShift[]
+  driverIncidents         DriverIncident[]
 
   @@index([status])
 }
@@ -356,6 +368,8 @@ model Vehicle {
   monthlyPlans     VehicleMonthlyPlan[]
   driverPayments   DriverPayment[]
   submissions      PaymentSubmission[]
+  shifts           DriverShift[]
+  incidents        DriverIncident[]
 
   @@unique([tenantId, plateNumber])
   @@unique([id, tenantId])
@@ -400,6 +414,8 @@ model Driver {
   monthlyPlans VehicleMonthlyPlan[]
   payments     DriverPayment[]
   submissions  PaymentSubmission[]
+  shifts       DriverShift[]
+  incidents    DriverIncident[]
 
   @@unique([tenantId, phone])
   @@unique([id, tenantId])
@@ -465,6 +481,10 @@ model DriverPayment {
   amount         Decimal             @db.Decimal(18, 2)
   method         DriverPaymentMethod
   periodStart    DateTime            @db.Date
+  // To'lov qaysi kunlarni qoplaydi: coveredFrom dan coveredUntil gacha (days kun).
+  coveredFrom    DateTime            @db.Date
+  coveredUntil   DateTime            @db.Date
+  days           Int                 @default(1)
   paidAt         DateTime            @default(now())
   source         String              @default("PANEL") @db.VarChar(20)
   note           String?             @db.VarChar(300)
@@ -482,6 +502,7 @@ model DriverPayment {
   @@unique([tenantId, idempotencyKey])
   @@unique([id, tenantId])
   @@index([tenantId, paidAt])
+  @@index([tenantId, coveredFrom, coveredUntil])
   @@index([tenantId, driverId, periodStart])
   @@index([tenantId, vehicleId, periodStart])
 }
@@ -1019,4 +1040,59 @@ model PaymentSubmission {
   @@index([tenantId, driverId])
   @@index([imageHash])
   @@index([transactionNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Haydovchilar smenasi (kunlik yo'nalishga chiqish va qaytish).
+// Spidometr (odometer) ko'rsatkichlari, masofa va vaqt nazorati.
+// ---------------------------------------------------------------------------
+
+model DriverShift {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      String      @db.Uuid
+  driverId      String      @db.Uuid
+  vehicleId     String      @db.Uuid
+  startedAt     DateTime    @default(now())
+  endedAt       DateTime?
+  startOdometer Int?
+  endOdometer   Int?
+  status        ShiftStatus @default(ACTIVE)
+  note          String?     @db.VarChar(300)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status, startedAt])
+  @@index([tenantId, driverId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Favqulodda hodisalar va texnik nosozliklar (SOS / Incident log).
+// G'ildirak teshilishi, dvigatel nosozligi, YTH, yo'l tirbandligi kabilar.
+// ---------------------------------------------------------------------------
+
+model DriverIncident {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @db.Uuid
+  driverId    String         @db.Uuid
+  vehicleId   String         @db.Uuid
+  kind        String         @db.VarChar(80)
+  description String?        @db.VarChar(500)
+  status      IncidentStatus @default(OPEN)
+  reportedAt  DateTime       @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status, reportedAt])
+  @@index([tenantId, driverId])
 }

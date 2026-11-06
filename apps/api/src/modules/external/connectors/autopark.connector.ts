@@ -3,6 +3,7 @@ import {
   extractOneIdCode,
   type ExternalConnector,
   type ExternalFetchResult,
+  type ExternalProfileOption,
   type LoginResult,
   type NormalizedDriver,
   type NormalizedVehicle,
@@ -62,6 +63,60 @@ function accountName(profile: unknown): string | null {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeOrgName(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLocaleLowerCase("ru")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function profileLabel(profile: ExternalProfileOption): string | null {
+  return text(profile.organizationName ?? profile.companyName ?? profile.fullName);
+}
+
+function profileOptions(value: unknown): ExternalProfileOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = text(pick(item, ["id", "profileId"]));
+    if (!id) return [];
+    return [
+      {
+        id,
+        organizationName: text(pick(item, ["organizationName", "companyName"])),
+        companyName: text(pick(item, ["companyName"])),
+        fullName: text(pick(item, ["fullName"])),
+        tin: text(pick(item, ["tin", "inn"])),
+      },
+    ];
+  });
+}
+
+/**
+ * A BM account may own several company profiles. Pick the one that matches the
+ * organisation configured for this tenant (fuzzy, because BM writes legal forms
+ * like `"CARLUX" MCHJ` while our company is just `CARLUX`).
+ */
+export function chooseProfile(
+  profiles: ExternalProfileOption[],
+  target: { organizationName?: string; profileId?: string },
+): ExternalProfileOption | null {
+  if (target.profileId) {
+    const byId = profiles.find((profile) => profile.id === target.profileId);
+    if (byId) return byId;
+  }
+  const wanted = normalizeOrgName(target.organizationName);
+  if (wanted.length < 3) return null;
+  const keyed = profiles
+    .map((profile) => ({ profile, key: normalizeOrgName(profileLabel(profile)) }))
+    .filter((entry) => entry.key.length > 0);
+  const exact = keyed.find((entry) => entry.key === wanted);
+  if (exact) return exact.profile;
+  const partial = keyed.find(
+    (entry) => entry.key.includes(wanted) || wanted.includes(entry.key),
+  );
+  return partial?.profile ?? null;
 }
 
 /** The endpoint exists in only one of the brutto / non-brutto modules. */
@@ -233,26 +288,15 @@ export class AutoparkConnector implements ExternalConnector {
           let token = cleanBearerToken(oneIdPayload?.data?.token?.access_token);
           let accountName: string | null = null;
 
-          const profiles = oneIdPayload?.data?.profiles;
-          if (profiles && profiles.length > 0) {
-            const chosen = profiles[0];
-            if (chosen?.id) {
-              try {
-                const tokenUrl = joinUrl(
-                  baseUrl,
-                  `/user-management/api/v1/user-profile/get-token-by-profile/${chosen.id}`,
-                );
-                const tokenRes = (await externalRequestJson(tokenUrl, {
-                  method: "POST",
-                })) as { data?: { access_token?: string; token?: string } };
-                const subToken = cleanBearerToken(
-                  tokenRes?.data?.access_token ?? tokenRes?.data?.token,
-                );
-                if (subToken) token = subToken;
-              } catch {
-                // Agar profil tanlash xato bersa, asosiy tokenni ishlatamiz
+          const profiles = profileOptions(oneIdPayload?.data?.profiles);
+          if (profiles.length > 0) {
+            const chosen = chooseProfile(profiles, config) ?? profiles[0]!;
+            if (chosen.id) {
+              const switched = await this.tokenForProfile(baseUrl, chosen.id, token);
+              if (switched) {
+                token = switched;
+                accountName = profileLabel(chosen);
               }
-              accountName = chosen.organizationName ?? chosen.companyName ?? null;
             }
           }
 
@@ -311,13 +355,108 @@ export class AutoparkConnector implements ExternalConnector {
           "Kirish rad etildi: BM login yoki parol xato",
       );
     }
+
+    let activeToken = token;
     let account: string | null = null;
-    try {
-      account = (await this.test(baseUrl, token)).account;
-    } catch {
-      // The token is valid even if the profile request is unavailable.
+    const profiles = profileOptions(
+      pick(payload, ["data.profiles", "profiles", "result.profiles"]),
+    );
+    const chosen = chooseProfile(profiles, config);
+    if (chosen?.id) {
+      const switched = await this.tokenForProfile(baseUrl, chosen.id, activeToken);
+      if (switched) {
+        activeToken = switched;
+        account = profileLabel(chosen);
+      }
     }
-    return { token, account };
+
+    if (!account) {
+      try {
+        account = (await this.test(baseUrl, activeToken)).account;
+      } catch {
+        // The token is valid even if the profile request is unavailable.
+      }
+    }
+    return { token: activeToken, account };
+  }
+
+  private async tokenForProfile(
+    baseUrl: string,
+    profileId: string,
+    token?: string,
+  ): Promise<string | null> {
+    try {
+      const tokenUrl = joinUrl(
+        baseUrl,
+        `/user-management/api/v1/user-profile/get-token-by-profile/${profileId}`,
+      );
+      const tokenRes = (await externalRequestJson(tokenUrl, {
+        method: "POST",
+        ...(token ? { token } : {}),
+      })) as {
+        access_token?: string;
+        token?: string;
+        data?: { access_token?: string; token?: string };
+      };
+      return (
+        cleanBearerToken(
+          tokenRes?.data?.access_token ??
+            tokenRes?.data?.token ??
+            tokenRes?.access_token ??
+            tokenRes?.token,
+        ) || null
+      );
+    } catch {
+      // Profile switch failed: keep the token the provider already issued.
+      return null;
+    }
+  }
+
+  async refresh(
+    baseUrl: string,
+    refreshToken: string,
+  ): Promise<{ token: string; refreshToken?: string }> {
+    const url = joinUrl(
+      baseUrl,
+      "/user-management/api/v1/user-profile/refresh-token",
+    );
+    const payload = (await externalRequestJson(url, {
+      method: "POST",
+      body: { refreshToken },
+    })) as {
+      access_token?: string;
+      refresh_token?: string;
+      data?: { access_token?: string; refresh_token?: string };
+    };
+    const token = cleanBearerToken(
+      payload?.data?.access_token ?? payload?.access_token,
+    );
+    if (!token) {
+      throw new Error("BM yangilangan tokenni qaytarmadi");
+    }
+    const nextRefresh = payload?.data?.refresh_token ?? payload?.refresh_token;
+    return {
+      token,
+      ...(typeof nextRefresh === "string" && nextRefresh
+        ? { refreshToken: nextRefresh }
+        : {}),
+    };
+  }
+
+  async selectAccount(
+    baseUrl: string,
+    token: string,
+    target: { organizationName?: string; profileId?: string },
+    profiles: ExternalProfileOption[],
+  ): Promise<LoginResult | null> {
+    const chosen = chooseProfile(profiles, target);
+    if (!chosen?.id) return null;
+    const switched = await this.tokenForProfile(baseUrl, chosen.id, token);
+    if (!switched) return null;
+    return {
+      token: switched,
+      account: profileLabel(chosen),
+    };
   }
 
   async test(

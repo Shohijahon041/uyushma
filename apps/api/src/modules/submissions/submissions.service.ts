@@ -352,6 +352,7 @@ export class SubmissionsService {
       }
 
       // Rasmiy DriverPayment yaratish
+      const coverageDate = todayDateOnly(now);
       const driverPayment = await tx.driverPayment.create({
         data: {
           tenantId: actor.tenantId,
@@ -361,6 +362,9 @@ export class SubmissionsService {
           amount: submission.amount,
           method: "CARD",
           periodStart: period,
+          coveredFrom: coverageDate,
+          coveredUntil: coverageDate,
+          days: 1,
           paidAt: now,
           source: "REMOTE_RECEIPT",
           note: dto.note?.trim() || `Masofaviy chek tasdiqlandi (#${submission.id.slice(0, 8)})`,

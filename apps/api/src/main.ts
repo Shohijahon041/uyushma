@@ -15,7 +15,8 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService);
   const port = config.get<number>("API_PORT", 4000);
-  await app.listen(port, "0.0.0.0");
+  const host = config.get<string>("API_HOST", "0.0.0.0");
+  await app.listen(port, host);
 
   const logger = new Logger("Bootstrap");
   logger.log(`API http://localhost:${port}/api/v1 (docs: /api/docs)`);

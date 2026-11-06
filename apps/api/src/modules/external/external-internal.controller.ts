@@ -9,8 +9,8 @@ class RunSyncDto {
   @IsUUID()
   tenantId!: string;
 
-  @IsIn(["ETENDER", "AUTOPARK"])
-  provider!: "ETENDER" | "AUTOPARK";
+  @IsIn(["ETENDER", "AUTOPARK", "IJARA"])
+  provider!: "ETENDER" | "AUTOPARK" | "IJARA";
 }
 
 /**

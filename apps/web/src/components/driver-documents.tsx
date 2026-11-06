@@ -33,42 +33,91 @@ function formFrom(driver: DriverProfile["driver"]): DocumentForm {
   };
 }
 
-function photoUrl(driverId: string, kind: "telegram" | "passport" | "license", version: string) {
-  return `/api/proxy/drivers/${driverId}/photo/${kind}?v=${encodeURIComponent(version)}`;
+function photoUrl(
+  driverId: string,
+  kind: "telegram" | "passport" | "license",
+  version: string,
+  download = false,
+) {
+  return `/api/proxy/drivers/${driverId}/photo/${kind}?v=${encodeURIComponent(version)}${
+    download ? "&download=1" : ""
+  }`;
 }
 
-function PhotoThumb({ src, alt }: { src: string; alt: string }) {
+function PhotoThumb({
+  src,
+  alt,
+  downloadHref,
+  downloadLabel,
+}: {
+  src: string;
+  alt: string;
+  downloadHref: string;
+  downloadLabel: string;
+}) {
   return (
-    <a href={src} target="_blank" rel="noopener noreferrer" className="block">
-      <img
-        src={src}
-        alt={alt}
-        loading="lazy"
-        className="h-28 w-40 rounded-lg border border-slate-200 bg-slate-50 object-cover"
-      />
-    </a>
+    <div className="space-y-1.5">
+      <a href={src} target="_blank" rel="noopener noreferrer" className="block">
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="h-28 w-40 rounded-lg border border-slate-200 bg-slate-50 object-cover"
+        />
+      </a>
+      <a
+        href={downloadHref}
+        download
+        className="inline-flex items-center text-[11px] font-medium text-blue-600 hover:underline"
+      >
+        {downloadLabel}
+      </a>
+    </div>
   );
 }
 
-export function DriverAvatar({ driver }: { driver: DriverProfile["driver"] }) {
+type AvatarDriver = {
+  id: string;
+  fullName: string;
+  telegram: { hasPhoto: boolean; linkedAt: string | null };
+};
+
+const avatarSizes = {
+  sm: "h-9 w-9 text-xs",
+  md: "h-14 w-14 text-base",
+  lg: "h-16 w-16 text-lg sm:h-20 sm:w-20",
+} as const;
+
+export function DriverAvatar({
+  driver,
+  size = "md",
+}: {
+  driver: AvatarDriver;
+  size?: keyof typeof avatarSizes;
+}) {
   const initials = driver.fullName
     .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0] ?? "")
     .join("")
     .toUpperCase();
   if (!driver.telegram.hasPhoto) {
     return (
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-base font-bold text-slate-500">
-        {initials}
+      <div
+        className={`flex shrink-0 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700 ${avatarSizes[size]}`}
+        aria-hidden="true"
+      >
+        {initials || "—"}
       </div>
     );
   }
   return (
     <img
       src={photoUrl(driver.id, "telegram", driver.telegram.linkedAt ?? "")}
-      alt={driver.fullName}
-      className="h-14 w-14 shrink-0 rounded-full border border-slate-200 object-cover"
+      alt={`${driver.fullName} — Telegram profil rasmi`}
+      loading="lazy"
+      className={`shrink-0 rounded-full border border-slate-200 bg-slate-50 object-cover dark:border-slate-700 ${avatarSizes[size]}`}
     />
   );
 }
@@ -218,7 +267,12 @@ export function DriverDocuments({
             </dl>
             <div className="mt-3">
               {driver.passport.hasPhoto ? (
-                <PhotoThumb src={photoUrl(driver.id, "passport", version)} alt={t("passport")} />
+                <PhotoThumb
+                  src={photoUrl(driver.id, "passport", version)}
+                  alt={t("passport")}
+                  downloadHref={photoUrl(driver.id, "passport", version, true)}
+                  downloadLabel={t("downloadPhoto")}
+                />
               ) : (
                 <p className="text-[11px] text-slate-400">{t("noPhoto")}</p>
               )}
@@ -243,7 +297,12 @@ export function DriverDocuments({
             </dl>
             <div className="mt-3">
               {driver.license.hasPhoto ? (
-                <PhotoThumb src={photoUrl(driver.id, "license", version)} alt={t("driverLicense")} />
+                <PhotoThumb
+                  src={photoUrl(driver.id, "license", version)}
+                  alt={t("driverLicense")}
+                  downloadHref={photoUrl(driver.id, "license", version, true)}
+                  downloadLabel={t("downloadPhoto")}
+                />
               ) : (
                 <p className="text-[11px] text-slate-400">{t("noPhoto")}</p>
               )}

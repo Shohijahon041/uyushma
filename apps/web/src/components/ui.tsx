@@ -79,6 +79,15 @@ export function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
+export function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-700/40 ${className}`}
+    />
+  );
+}
+
 const statTones = {
   blue: "from-brand-500 to-sky-400",
   emerald: "from-emerald-500 to-teal-400",
@@ -107,7 +116,9 @@ export function StatCard({
         />
       )}
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+        {value}
+      </p>
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );

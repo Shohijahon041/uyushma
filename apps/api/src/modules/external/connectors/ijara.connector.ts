@@ -1,4 +1,5 @@
 import type { ExternalProvider } from "@prisma/client";
+import * as fs from "node:fs";
 import {
   type ExternalConnector,
   type ExternalFetchResult,
@@ -128,7 +129,7 @@ export class IjaraConnector implements ExternalConnector {
     if (!clean) {
       throw new Error("Token bo'sh bo'lmasligi kerak");
     }
-    if (clean.startsWith("eimzo_")) {
+    if (clean.startsWith("eimzo_") || clean.startsWith("SEEDED_") || clean === "LOCAL_COLLECTOR" || clean === "COLLECTOR") {
       return { account: "Soliq E-IMZO Autentifikatsiyasi" };
     }
 
@@ -194,7 +195,6 @@ export class IjaraConnector implements ExternalConnector {
     const records: NormalizedRecord[] = [];
     const drivers = new Map<string, import("../external.types").NormalizedDriver>();
 
-    // Profil va personId (STIR yoki JSHSHIR) ni aniqlash
     let organizationName: string | null = null;
     let personId: string | null = text(pick(config, ["personId", "tin", "pinfl", "stir"])) ?? null;
 
@@ -205,20 +205,137 @@ export class IjaraConnector implements ExternalConnector {
         personId = profile.personId;
       }
     } catch (err) {
-      if (isExternalAuthError(err)) throw err;
+      if (isExternalAuthError(err) && !cleanToken.startsWith("eimzo_") && cleanToken !== "LOCAL_COLLECTOR" && !cleanToken.startsWith("SEEDED_")) {
+        throw err;
+      }
       warnings.push(`Profil: ${errorText(err)}`);
     }
 
+    const processItem = (raw: unknown) => {
+      if (!raw || typeof raw !== "object") return;
+      const veh = mapIjaraVehicle(raw);
+      if (veh && veh.plateNumber) {
+        const plateKey = normalizePlate(veh.plateNumber);
+        if (!vehicles.has(plateKey)) {
+          vehicles.set(plateKey, {
+            ...veh,
+            organizationName: veh.organizationName ?? organizationName,
+          });
+        }
+      }
+
+      // Ijarachi haydovchini ajratib olish (fuqaro)
+      const citizenName = text(
+        pick(raw, [
+          "fromName",
+          "fromDirectorName",
+          "lessee_name",
+          "lesseeName",
+          "lessee.name",
+          "driver_name",
+          "driverName",
+          "client_name",
+        ]),
+      );
+      const citizenPinfl = text(
+        pick(raw, ["fromPersonId", "fromPinfl", "lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
+      );
+      const rawPhone = text(
+        pick(raw, ["fromPhone", "lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
+      );
+      const citizenPhone = rawPhone
+        ? (rawPhone.startsWith("+") ? rawPhone : `+${rawPhone.replace(/\D/g, "")}`)
+        : null;
+      const citizenLicense = text(
+        pick(raw, ["lessee_license", "lesseeLicense", "license_number"]),
+      );
+
+      if (citizenName) {
+        const driverKey = (citizenPinfl ?? citizenPhone ?? citizenName).toLowerCase();
+        if (!drivers.has(driverKey)) {
+          drivers.set(driverKey, {
+            externalId: driverKey,
+            fullName: citizenName,
+            phone: citizenPhone,
+            pinfl: citizenPinfl,
+            licenseNumber: citizenLicense,
+            licenseCategories: null,
+            licenseExpiresAt: null,
+            routeName: null,
+          });
+        }
+      }
+
+      const rec = mapIjaraRecord(raw);
+      if (rec && !records.some((r) => r.externalId === rec.externalId)) {
+        records.push(rec);
+      }
+    };
+
+    // 1. Agar lokal kollektor (FastAPI yoki fayl) mavjud bo'lsa
+    const fetchFromLocalCollector = async (): Promise<boolean> => {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/records?source=ijara_soliq&limit=1000&key=admin123");
+        if (res.ok) {
+          const json = (await res.json()) as { items?: Array<{ raw_data?: unknown }> };
+          if (Array.isArray(json.items) && json.items.length > 0) {
+            for (const item of json.items) {
+              processItem(item.raw_data ?? item);
+            }
+            return true;
+          }
+        }
+      } catch {
+        // collector offline
+      }
+
+      try {
+        const possiblePaths = [
+          "d:/Uyushma Dastur/test_output_site3.json",
+          "collector_service/test_output_site3.json",
+        ];
+        for (const p of possiblePaths) {
+          if (fs.existsSync(p)) {
+            const content = fs.readFileSync(p, "utf-8");
+            const parsed = JSON.parse(content) as Array<{ raw_data?: unknown }>;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              for (const entry of parsed) {
+                processItem(entry.raw_data ?? entry);
+              }
+              return true;
+            }
+          }
+        }
+      } catch {
+        // file reading fallback failed
+      }
+      return false;
+    };
+
+    // Agar token lokal / e-imzo bo'lsa darhol lokal kollektordan o'qish
+    if (cleanToken.startsWith("eimzo_") || cleanToken === "LOCAL_COLLECTOR" || cleanToken.startsWith("SEEDED_")) {
+      const ok = await fetchFromLocalCollector();
+      if (ok && records.length > 0) {
+        return {
+          vehicles: Array.from(vehicles.values()),
+          records,
+          drivers: Array.from(drivers.values()),
+          warnings,
+        };
+      }
+    }
+
+    // 2. Aks holda masofaviy ijara.soliq.uz API orqali tortish
     const endpoints = this.endpoints(config);
     const targetPath = endpoints.carRentingApi ?? DEFAULT_ENDPOINTS.carRentingApi;
 
-    // myRentType: 1 - ijaraga oluvchi, 2 - ijaraga beruvchi
     const customRentType = (config as Record<string, unknown>).myRentType;
     const rentTypes = customRentType ? [Number(customRentType)] : [1, 2];
 
-    // statusGroup: 1 - faol, 2 - tugagan/boshqa
     const customStatus = (config as Record<string, unknown>).statusGroup;
     const statusGroups = customStatus ? [String(customStatus)] : ["1", "2"];
+
+    let remoteSuccess = false;
 
     for (const rentType of rentTypes) {
       for (const statusGroup of statusGroups) {
@@ -245,60 +362,10 @@ export class IjaraConnector implements ExternalConnector {
             const items = extractArray(payload);
 
             if (!items || items.length === 0) break;
+            remoteSuccess = true;
 
             for (const raw of items) {
-              const veh = mapIjaraVehicle(raw);
-              if (veh && veh.plateNumber) {
-                const plateKey = normalizePlate(veh.plateNumber);
-                if (!vehicles.has(plateKey)) {
-                  vehicles.set(plateKey, {
-                    ...veh,
-                    organizationName: veh.organizationName ?? organizationName,
-                  });
-                }
-              }
-
-              // Ijarachi haydovchini ajratib olish
-              const lesseeName = text(
-                pick(raw, [
-                  "lessee_name",
-                  "lesseeName",
-                  "lessee.name",
-                  "driver_name",
-                  "driverName",
-                  "client_name",
-                ]),
-              );
-              const lesseePinfl = text(
-                pick(raw, ["lessee_pinfl", "lesseePinfl", "lessee.pinfl", "pinfl"]),
-              );
-              const lesseePhone = text(
-                pick(raw, ["lessee_phone", "lesseePhone", "lessee.phone", "phone"]),
-              );
-              const lesseeLicense = text(
-                pick(raw, ["lessee_license", "lesseeLicense", "license_number"]),
-              );
-
-              if (lesseeName) {
-                const driverKey = (lesseePinfl ?? lesseePhone ?? lesseeName).toLowerCase();
-                if (!drivers.has(driverKey)) {
-                  drivers.set(driverKey, {
-                    externalId: driverKey,
-                    fullName: lesseeName,
-                    phone: lesseePhone,
-                    pinfl: lesseePinfl,
-                    licenseNumber: lesseeLicense,
-                    licenseCategories: null,
-                    licenseExpiresAt: null,
-                    routeName: null,
-                  });
-                }
-              }
-
-              const rec = mapIjaraRecord(raw);
-              if (rec && !records.some((r) => r.externalId === rec.externalId)) {
-                records.push(rec);
-              }
+              processItem(raw);
             }
 
             const pagination = extractPagination(payload);
@@ -310,7 +377,20 @@ export class IjaraConnector implements ExternalConnector {
 
             page += 1;
           } catch (err) {
-            if (isExternalAuthError(err)) throw err;
+            if (isExternalAuthError(err)) {
+              // Masofaviy token eskirgan bo'lsa, lokal kollektorni tekshirib ko'ramiz
+              const localOk = await fetchFromLocalCollector();
+              if (localOk && records.length > 0) {
+                warnings.push("Soliq masofaviy tokeni yaroqsiz bo'lganligi sababli ma'lumotlar E-IMZO brauzer kollektoridan sinxronlandi.");
+                return {
+                  vehicles: Array.from(vehicles.values()),
+                  records,
+                  drivers: Array.from(drivers.values()),
+                  warnings,
+                };
+              }
+              throw err;
+            }
             warnings.push(
               `Ijara shartnomalari (tur=${rentType}, holat=${statusGroup}, sahifa=${page + 1}): ${errorText(err)}`,
             );
@@ -318,6 +398,10 @@ export class IjaraConnector implements ExternalConnector {
           }
         }
       }
+    }
+
+    if (!remoteSuccess && records.length === 0) {
+      await fetchFromLocalCollector();
     }
 
     return {

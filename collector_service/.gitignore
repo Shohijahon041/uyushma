@@ -1,0 +1,42 @@
+# Muhit o'zgaruvchilari va maxfiy kalitlar
+.env
+.env.*
+!.env.example
+
+# Playwright sessiya tokenlari va keshlar
+state/
+state/*.json
+state_*.json
+
+# E-IMZO va brauzer profillari
+profiles/
+profiles/*
+
+# Ma'lumotlar bazasi va SQLite fayllari
+*.db
+*.sqlite
+*.sqlite3
+
+# Test chiqish fayllari
+test_output_*.json
+*.jsonl
+
+# Python va virtual muhit
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Tizim va log fayllari
+logs/
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE sozlamalari
+.vscode/
+.idea/
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDateTime, useApi } from "@/lib/use-api";
@@ -126,6 +126,99 @@ function extractCodeFromInput(raw: string): string {
   return trimmed;
 }
 
+function launchConnector(code: string) {
+  window.location.href = `uyushma://connect/${encodeURIComponent(code)}`;
+}
+
+function LocalConnectorPanel({
+  code,
+  expiresAt,
+  providerLabel,
+  onOpen,
+}: {
+  code: string;
+  expiresAt: string | null;
+  providerLabel: string;
+  onOpen?: () => void;
+}) {
+  const [openAttempted, setOpenAttempted] = useState(false);
+
+  return (
+    <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs space-y-2.5">
+      <p className="font-bold text-indigo-950">💻 Kompyuteringizdagi brauzer orqali ulash</p>
+
+      <button
+        type="button"
+        onClick={() => {
+          setOpenAttempted(true);
+          if (onOpen) onOpen();
+          else launchConnector(code);
+        }}
+        className="btn-primary inline-flex w-full items-center justify-center gap-2 bg-indigo-600 px-4 py-2.5 text-sm font-bold shadow-sm hover:bg-indigo-700 sm:w-auto"
+      >
+        <span>▶</span>
+        <span>Ulagich oynasini ochish</span>
+      </button>
+
+      {openAttempted && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+          Oyna ochilmadimi? Demak bu kompyuterda ulagich hali o&apos;rnatilmagan.{" "}
+          <a
+            href="/uyushma-ulagich.bat"
+            download
+            className="font-bold underline hover:text-amber-950"
+          >
+            Uyushma-ulagich.bat
+          </a>{" "}
+          faylini yuklab oling va bir marta ishga tushiring.
+        </p>
+      )}
+
+      <ol className="list-decimal pl-4 space-y-1 text-[11px] text-indigo-900">
+        <li>
+          <strong>Birinchi marta:</strong>{" "}
+          <a
+            href="/uyushma-ulagich.bat"
+            download
+            className="font-bold text-indigo-700 underline hover:text-indigo-900"
+          >
+            Uyushma-ulagich.bat
+          </a>{" "}
+          faylini yuklab oling va ishga tushiring. Windows ogohlantirsa:{" "}
+          <strong>More info → Run anyway</strong>. Shu bilan kompyuterga bir marta o&apos;rnatiladi.
+        </li>
+        <li>
+          Keyingi safar hech narsa yuklab olish shart emas — yuqoridagi{" "}
+          <strong>«Ulagich oynasini ochish»</strong> tugmasini bosing.
+        </li>
+        <li>
+          Brauzer <strong>«Uyushma ulagichni ochish»</strong> deb so&apos;rasa:{" "}
+          <strong>«Ochish»</strong> ni tanlang va <strong>«Har doim ruxsat berish»</strong> ni
+          belgilang.
+        </li>
+        <li>
+          Ochilgan Chrome oynasida <strong>{providerLabel}</strong> ga kiring. Token avtomatik
+          saqlanadi va oyna o&apos;zi yopiladi.
+        </li>
+      </ol>
+
+      <details className="rounded-lg border border-indigo-200 bg-white/70 px-3 py-2">
+        <summary className="cursor-pointer text-[11px] font-semibold text-indigo-800">
+          Oyna ochilmadimi? Qo&apos;lda kod bilan ulash
+        </summary>
+        <p className="mt-1.5 text-[11px] text-indigo-900">
+          <strong>Uyushma-ulagich.bat</strong> faylini ishga tushiring va quyidagi kodni kiriting:{" "}
+          <span className="font-mono text-base font-bold tracking-[0.2em]">{code}</span>
+        </p>
+      </details>
+
+      <p className="text-[10px] text-indigo-600">
+        Kod amal qiladi: {expiresAt ? formatDateTime(expiresAt) : "10 daqiqa"}.
+      </p>
+    </div>
+  );
+}
+
 function ProviderCard({
   meta,
   connection,
@@ -147,9 +240,18 @@ function ProviderCard({
   const [showPassword, setShowPassword] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [ip, setIp] = useState("");
-  const [busy, setBusy] = useState<"save" | "sync" | "disable" | "eimzo" | null>(null);
+  const [busy, setBusy] = useState<"save" | "sync" | "disable" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
 
   const cleanedToken = cleanTokenInput(token);
   const canSave =
@@ -175,24 +277,30 @@ function ProviderCard({
     }
   }
 
-  async function handleLaunchInteractiveBrowser() {
-    if (meta.key === "IJARA") return;
+  async function handleLocalConnector() {
     setError(null);
     setMessage(null);
     setBusy("save");
     try {
-      await apiRequest(`/settings/integrations/${meta.key}/oneid-browser-interactive`, {
-        method: "POST",
-      });
-      setMessage(
-        "🌐 Kompyuterda Chrome/Edge oynasi ochildi. Unda OneID bilan kiring, sessiya avtomatik saqlanadi!",
+      const res = await apiRequest<{ code: string; expiresAt: string }>(
+        `/settings/integrations/${meta.key}/browser-pairing`,
+        { method: "POST" },
       );
-      const timer = setInterval(() => {
+      setPairing({ code: res.code, expiresAt: res.expiresAt });
+      if (pollRef.current) clearInterval(pollRef.current);
+      const startedAt = Date.now();
+      pollRef.current = setInterval(() => {
+        if (Date.now() - startedAt > 10 * 60_000) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
         void onChanged();
       }, 5000);
-      setTimeout(() => clearInterval(timer), 60000);
+      // O'rnatilgan ulagichni darhol ochishga harakat qilamiz.
+      window.setTimeout(() => launchConnector(res.code), 150);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Brauzer ochishda xatolik");
+      setError(err instanceof Error ? err.message : "Kod olishda xatolik");
     } finally {
       setBusy(null);
     }
@@ -273,62 +381,6 @@ function ProviderCard({
     }
   }
 
-  async function handleEImzoConnect() {
-    if (meta.key !== "IJARA") return;
-    setError(null);
-    setMessage(null);
-    setBusy("eimzo");
-    try {
-      // 1. Serverdan E-IMZO challenge olish
-      const challengeRes = await apiRequest<{ challenge: string }>(
-        "/settings/integrations/ijara/eimzo/challenge",
-      );
-
-      // 2. Mahalliy E-IMZO mijozi (127.0.0.1:64443) mavjudligini tekshirish
-      let pkcs7Signature: string | null = null;
-      try {
-        const localCheck = await fetch("http://127.0.0.1:64443/status", {
-          signal: AbortSignal.timeout(2000),
-        }).catch(() => null);
-
-        if (localCheck && localCheck.ok) {
-          pkcs7Signature = `eimzo_auto_signed_${Buffer.from(challengeRes.challenge).toString("base64")}`;
-        }
-      } catch {
-        // Mahalliy agent o'rnatilmagan yoki brauzer bloklagan
-      }
-
-      if (!pkcs7Signature) {
-        const inputKey = window.prompt(
-          "E-IMZO kalit seriya raqami yoki tasdiqlash kodini kiriting (yoki bo'sh qoldiring):",
-          "DSKEY-SOLIQ-2026",
-        );
-        if (inputKey === null) {
-          setBusy(null);
-          return;
-        }
-        pkcs7Signature = `eimzo_sig_${Buffer.from(challengeRes.challenge + "_" + inputKey).toString("base64")}_padded_valid_pkcs7_envelope_64`;
-      }
-
-      // 3. E-IMZO login yuborish
-      await apiRequest("/settings/integrations/ijara/eimzo/login", {
-        method: "POST",
-        body: {
-          challenge: challengeRes.challenge,
-          pkcs7_64: pkcs7Signature,
-          serialNumber: "SOLIQ-ERI-KEY",
-        },
-      });
-
-      setMessage("E-IMZO orqali ijara.soliq.uz ga muvaffaqiyatli ulandi va sinxronlash boshlandi!");
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tc("error"));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function disable() {
     if (!window.confirm("Rostdan ham ushbu ulanishni butunlay o'chirmoqchimisiz?")) return;
     setError(null);
@@ -341,24 +393,6 @@ function ProviderCard({
       setMessage("Ulanish muvaffaqiyatli o'chirildi");
       await onChanged();
       setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tc("error"));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleSeedDemoIjara() {
-    setError(null);
-    setMessage(null);
-    setBusy("save");
-    try {
-      const res = await apiRequest<{ success: boolean; seededContracts: number; message: string }>(
-        "/registry/cross-link/seed-demo-ijara",
-        { method: "POST" },
-      );
-      setMessage(res.message);
-      await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : tc("error"));
     } finally {
@@ -475,6 +509,13 @@ function ProviderCard({
             <Alert tone="success">{message}</Alert>
           </div>
         )}
+        {pairing && (
+          <LocalConnectorPanel
+            code={pairing.code}
+            expiresAt={pairing.expiresAt}
+            providerLabel={meta.domain}
+          />
+        )}
 
         {/* IJARA uchun ulanish va demo yuklash bloki */}
         {meta.key === "IJARA" && (
@@ -490,34 +531,18 @@ function ProviderCard({
                 <button
                   type="button"
                   className="btn-primary bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 text-xs font-semibold shadow-xs inline-flex items-center gap-1"
-                  onClick={() => void handleLaunchInteractiveBrowser()}
+                  onClick={() => void handleLocalConnector()}
                   disabled={busy !== null}
-                  title="Playwright orqali ijara.soliq.uz ni Chrome/Edge brauzerida ochadi va sessiyani avtomatik ulaydi"
+                  title="Kompyuteringizda Chrome oynasini ochadi va E-IMZO bilan kirgach tokenni avtomatik saqlaydi"
                 >
-                  <span>🌐 Brauzerda ochish</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary bg-white hover:bg-slate-100 text-slate-800 border-slate-300 px-2.5 py-1.5 text-xs font-semibold shadow-2xs inline-flex items-center gap-1"
-                  onClick={() => void handleSeedDemoIjara()}
-                  disabled={busy !== null}
-                  title="Mavjud barcha avtomobillar uchun namunaviy Soliq ijara shartnomalarini yuklaydi"
-                >
-                  <span>📄 Namuna yuklash</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary bg-blue-100 hover:bg-blue-200 text-blue-800 border-blue-200 px-2.5 py-1.5 text-xs font-semibold shadow-2xs"
-                  onClick={() => void handleEImzoConnect()}
-                  disabled={busy !== null}
-                >
-                  {busy === "eimzo" ? "Ulanmoqda..." : "🪪 E-IMZO"}
+                  <span>💻 Kompyuterda ulash</span>
                 </button>
               </div>
             </div>
             {isAuthError && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 p-2 text-[11px] text-rose-800">
-                <strong>Diqqat:</strong> Oldingi tokeningiz eskirgan (HTTP 401). Yuqoridagi <strong>&quot;Brauzerda ochish&quot;</strong> yoki <strong>&quot;Namuna yuklash&quot;</strong> tugmasi orqali shartnomalarni yangilang.
+                <strong>Diqqat:</strong> Oldingi tokeningiz eskirgan (HTTP 401).{" "}
+                <strong>&quot;Kompyuterda ulash&quot;</strong> tugmasidan foydalanib qayta ulang.
               </div>
             )}
           </div>
@@ -615,11 +640,11 @@ function ProviderCard({
                   <button
                     type="button"
                     className="btn-secondary bg-white hover:bg-purple-100 text-purple-700 border-purple-300 px-2.5 py-1 text-xs font-semibold shadow-2xs inline-flex items-center gap-1"
-                    onClick={() => void handleLaunchInteractiveBrowser()}
+                    onClick={() => void handleLocalConnector()}
                     disabled={busy !== null}
-                    title="Playwright orqali kompyuteringizda real brauzer oynasini ochadi va sessiyani avtomatik ulaydi"
+                    title="Kompyuteringizda Chrome oynasini ochadi va kirgach tokenni avtomatik saqlaydi"
                   >
-                    <span>🌐 Brauzerda ochish</span>
+                    <span>💻 Kompyuterda ulash</span>
                   </button>
                   {SSO_URLS[meta.key] && (
                     <a
@@ -822,7 +847,7 @@ function ProviderCard({
 }
 
 /**
- * Bitta OneID orqali portallarga ulanish markazi (SSO kod, Playwright avtomatika yoki Login/Parol orqali)
+ * Bitta OneID orqali portallarga ulanish markazi (SSO kod, kompyuter brauzeri yoki Login/Parol orqali)
  */
 function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void> }) {
   const t = useTranslations("settings");
@@ -836,10 +861,22 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [ssoSuccess, setSsoSuccess] = useState<string | null>(null);
 
-  // Playwright interactive state
+  // Kompyuter brauzeri (pairing) holati
   const [browserBusy, setBrowserBusy] = useState<"ETENDER" | "AUTOPARK" | null>(null);
-  const [browserMsg, setBrowserMsg] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{
+    code: string;
+    expiresAt: string;
+    provider: "ETENDER" | "AUTOPARK";
+  } | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [],
+  );
 
   // Login/parol state
   const [username, setUsername] = useState("");
@@ -892,58 +929,29 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
   async function handleLaunchBrowser(target: "ETENDER" | "AUTOPARK") {
     setBrowserBusy(target);
     setBrowserError(null);
-    setBrowserMsg(null);
+    setPairing(null);
     try {
-      await apiRequest<{ success: boolean; message: string }>(
-        `/settings/integrations/${target}/oneid-browser-interactive`,
+      const res = await apiRequest<{ code: string; expiresAt: string }>(
+        `/settings/integrations/${target}/browser-pairing`,
         { method: "POST" },
       );
-      setBrowserMsg(
-        "🌐 Kompyuteringizda Chrome/Edge oynasi ochildi! Unda OneID hisobingizga kiring. Kirishingiz bilan dastur sessiyani avtomatik ulaydi va oynani o'zi yopadi.",
-      );
-      // Periodik tekshirib turish
-      let checks = 0;
-      const interval = setInterval(async () => {
-        checks += 1;
-        await onChanged();
-        if (checks > 24) clearInterval(interval);
+      setPairing({ code: res.code, expiresAt: res.expiresAt, provider: target });
+      if (pollRef.current) clearInterval(pollRef.current);
+      const startedAt = Date.now();
+      pollRef.current = setInterval(() => {
+        if (Date.now() - startedAt > 10 * 60_000) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
+        void onChanged();
       }, 5000);
+      // O'rnatilgan ulagichni darhol ochishga harakat qilamiz.
+      window.setTimeout(() => launchConnector(res.code), 150);
     } catch (err) {
       setBrowserError(err instanceof Error ? err.message : tc("error"));
     } finally {
       setBrowserBusy(null);
-    }
-  }
-
-  async function handlePlaywrightLogin(target: "ETENDER" | "AUTOPARK") {
-    setError(null);
-    setResult(null);
-    setBusy(true);
-    try {
-      const res = await apiRequest<{ success: boolean; account?: string }>(
-        `/settings/integrations/${target}/oneid-browser-login`,
-        {
-          method: "POST",
-          body: {
-            username: username.trim(),
-            password,
-          },
-        },
-      );
-      setResult({
-        overallSuccess: true,
-        providers: {
-          [target]: {
-            success: true,
-            account: res.account,
-          },
-        },
-      });
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tc("error"));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -1010,7 +1018,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
             }`}
             onClick={() => setActiveTab("playwright")}
           >
-            🌐 Usul 2: Brauzer (Playwright)
+            💻 Usul 2: Kompyuter ulagichi
           </button>
           <button
             type="button"
@@ -1151,17 +1159,27 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
         <div className="mt-5 space-y-4">
           <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs text-indigo-950 space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-indigo-900 text-sm">🌐 Playwright Brauzer Avtomatizatsiyasi</span>
-              <span className="rounded-md bg-indigo-200/80 px-2 py-0.5 text-[10px] font-bold text-indigo-800">100% Avtomatik</span>
+              <span className="font-bold text-indigo-900 text-sm">💻 Kompyuter ulagichi orqali ulash</span>
+              <span className="rounded-md bg-indigo-200/80 px-2 py-0.5 text-[10px] font-bold text-indigo-800">Token avtomatik saqlanadi</span>
             </div>
             <p className="text-[11px] leading-relaxed text-indigo-800">
-              Ushbu tugmani bosganingizda kompyuteringizda real Chrome/Edge brauzer oynasi ochiladi. Siz OneID oynasida xohlagan usulda (QR-kod, Mobile-ID, E-IMZO yoki login/parol) kirasiz. 
-              <strong> Hech qanday kod nusxalashingiz shart emas</strong> — Playwright tizimi kirganingizni avtomatik sezib, sessiyani dasturga ulaydi va oynani o&apos;zi yopadi!
+              Tugmani bosganingizda kompyuteringizda Chrome oynasi o&apos;zi ochiladi. Buning
+              uchun <strong>Uyushma-ulagich.bat</strong> bir marta o&apos;rnatilgan bo&apos;lishi
+              kerak. OneID bilan kirganingizdan so&apos;ng token avtomatik saqlanadi va oyna
+              o&apos;zi yopiladi — har safar kod kiritish shart emas.
             </p>
           </div>
 
           {browserError && <Alert tone="error">{browserError}</Alert>}
-          {browserMsg && <Alert tone="success">{browserMsg}</Alert>}
+          {pairing && (
+            <LocalConnectorPanel
+              code={pairing.code}
+              expiresAt={pairing.expiresAt}
+              providerLabel={
+                pairing.provider === "ETENDER" ? "e-tender.uztrans.uz" : "bm.dtransport.uz"
+              }
+            />
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-col justify-between">
@@ -1182,7 +1200,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
                   disabled={browserBusy !== null}
                 >
                   <span>🌐</span>
-                  <span>{browserBusy === "ETENDER" ? "Ochilmoqda..." : "e-tender uchun brauzerda ochish"}</span>
+                  <span>{browserBusy === "ETENDER" ? "Ulanish ochilmoqda..." : "Ulagich oynasini ochish"}</span>
                 </button>
               </div>
             </div>
@@ -1194,7 +1212,8 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
                   <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Toshkent Avtopark</span>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Avtobuslar ro&apos;yxati, GPS IMEI va haydovchilar uchun OneID oynasini ochish.
+                  Avtobuslar, GPS IMEI va haydovchilar uchun OneID oynasi. Korxona
+                  tanlash chiqsa, kerakli firmani (masalan, CAR LUX) tanlang.
                 </p>
               </div>
               <div className="mt-4">
@@ -1205,7 +1224,7 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
                   disabled={browserBusy !== null}
                 >
                   <span>🌐</span>
-                  <span>{browserBusy === "AUTOPARK" ? "Ochilmoqda..." : "bm.dtransport uchun brauzerda ochish"}</span>
+                  <span>{browserBusy === "AUTOPARK" ? "Ulanish ochilmoqda..." : "Ulagich oynasini ochish"}</span>
                 </button>
               </div>
             </div>
@@ -1335,32 +1354,6 @@ function OneIdUnifiedConnectCard({ onChanged }: { onChanged: () => Promise<void>
               </button>
             </div>
           </form>
-
-          {username.trim().length >= 3 && password.length >= 4 && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <span className="text-slate-600">
-                Agar OneID to&apos;g&apos;ridan-to&apos;g&apos;ri API kirishni bloklasa, Playwright brauzeri orqali urinib ko&apos;ring:
-              </span>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  className="btn-secondary px-3 py-1.5 text-xs font-semibold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                  onClick={() => void handlePlaywrightLogin("ETENDER")}
-                  disabled={busy}
-                >
-                  ⚡ e-tender (Playwright)
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary px-3 py-1.5 text-xs font-semibold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                  onClick={() => void handlePlaywrightLogin("AUTOPARK")}
-                  disabled={busy}
-                >
-                  ⚡ bm.dtransport (Playwright)
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1420,7 +1413,15 @@ export function ExternalSettings({ role }: { role: string }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <a
+            href="/uyushma-ulagich.bat"
+            download
+            className="btn-secondary flex items-center gap-1.5 px-4 py-2 text-xs font-semibold"
+          >
+            <span>💻</span>
+            <span>Ulagichni o&apos;rnatish (bir marta)</span>
+          </a>
           <button
             type="button"
             className="btn-primary flex items-center gap-1.5 px-4 py-2 text-xs font-semibold shadow-sm"
@@ -1431,6 +1432,17 @@ export function ExternalSettings({ role }: { role: string }) {
             <span>{syncingAll ? "Sinxronlanmoqda..." : "Barchasini sinxronlash"}</span>
           </button>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-[11px] leading-relaxed text-indigo-900">
+        <p className="font-bold">💻 Kompyuter yordamchisi — bir marta o&apos;rnatiladi</p>
+        <p className="mt-1">
+          Yuqoridagi <strong>«Ulagichni o&apos;rnatish (bir marta)»</strong> faylini yuklab, bir
+          marta ishga tushiring (Windows ogohlantirsa: <strong>More info → Run anyway</strong>).
+          Shundan keyin istalgan portal kartasida <strong>«💻 Kompyuterda ulash»</strong> tugmasini
+          bossangiz, Chrome oynasi o&apos;zi ochiladi — kod kiritish yoki faylni qayta yuklash shart
+          emas. OneID / E-IMZO bilan kirganingizdan so&apos;ng token avtomatik saqlanadi.
+        </p>
       </div>
 
       {actionMessage && (

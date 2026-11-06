@@ -18,6 +18,7 @@ import { AuditService } from "../audit/audit.service";
 import { AutoparkConnector } from "./connectors/autopark.connector";
 import { EtenderConnector } from "./connectors/etender.connector";
 import { IjaraConnector } from "./connectors/ijara.connector";
+import { createNativeVehicleSafe } from "./native-vehicle";
 import { cleanBearerToken, isExternalAuthError } from "./connectors/http";
 import {
   extractOneIdCode,
@@ -25,6 +26,7 @@ import {
   PROVIDER_LABELS,
   type ExternalConnector,
   type ExternalFetchResult,
+  type ExternalProfileOption,
   type NormalizedRecord,
   type NormalizedDriver,
   type NormalizedVehicle,
@@ -49,6 +51,26 @@ function routeKey(name: string): string {
 
 function normalizePlate(plate: string | null): string {
   return (plate ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+}
+
+function organizationKey(name: string | null | undefined): string {
+  return (name ?? "").toLocaleLowerCase("ru").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/** True when a JWT access token is missing or about to expire. */
+function tokenExpiresWithin(token: string, skewMs: number): boolean {
+  if (!token) return true;
+  const payload = token.split(".")[1];
+  if (!payload) return true;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      exp?: number;
+    };
+    if (typeof parsed.exp !== "number") return false;
+    return parsed.exp * 1000 - Date.now() <= skewMs;
+  } catch {
+    return false;
+  }
 }
 
 function publicConnection(connection: ExternalConnection) {
@@ -112,9 +134,11 @@ export class ExternalService {
     provider: ExternalProvider,
     dto: {
       token?: string;
+      refreshToken?: string;
       credentials?: ProviderCredentials;
       baseUrl?: string;
       config?: Record<string, unknown>;
+      profiles?: ExternalProfileOption[];
     },
     ip: string | null,
   ) {
@@ -123,7 +147,20 @@ export class ExternalService {
     if (!baseUrl.startsWith("https://")) {
       throw new BadRequestException("Manzil https:// bilan boshlanishi kerak");
     }
-    const config = (dto.config ?? {}) as ProviderConfig;
+    const config = { ...(dto.config ?? {}) } as ProviderConfig;
+    if (provider === "AUTOPARK" && !config.organizationName) {
+      try {
+        const company = await this.tenantPrisma.withTenant(actor.tenantId, (tx) =>
+          tx.company.findUnique({
+            where: { id: actor.tenantId },
+            select: { name: true },
+          }),
+        );
+        if (company?.name) config.organizationName = company.name;
+      } catch {
+        // Organisation matching is best-effort; the captured token still works.
+      }
+    }
     const credentials: ProviderCredentials | null = dto.credentials
       ? {
           username: (dto.credentials.username ?? dto.credentials.code ?? "").trim(),
@@ -168,9 +205,28 @@ export class ExternalService {
         }
       }
     } else {
+      if (connector.selectAccount && dto.profiles?.length) {
+        try {
+          const selection = await connector.selectAccount(
+            baseUrl,
+            token,
+            {
+              organizationName: config.organizationName,
+              profileId: config.profileId,
+            },
+            dto.profiles,
+          );
+          if (selection) {
+            token = cleanBearerToken(selection.token);
+            account = selection.account;
+          }
+        } catch {
+          // Keep the captured token when the profile switch is unavailable.
+        }
+      }
       try {
         const probe = await connector.test(baseUrl, token);
-        account = probe.account;
+        account = probe.account ?? account;
       } catch (error) {
         throw new BadRequestException(
           `Ulanish tekshiruvi muvaffaqiyatsiz: ${errorText(error)}`,
@@ -179,9 +235,12 @@ export class ExternalService {
     }
 
     const tokenEncrypted = this.encryption.encrypt(token);
+    const refreshToken = dto.refreshToken?.trim();
     const credentialsEncrypted = credentials
       ? this.encryption.encrypt(JSON.stringify(credentials))
-      : null;
+      : refreshToken
+        ? this.encryption.encrypt(JSON.stringify({ refreshToken }))
+        : null;
     const connection = await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
       const saved = await tx.externalConnection.upsert({
         where: {
@@ -193,15 +252,16 @@ export class ExternalService {
           baseUrl,
           tokenEncrypted,
           credentialsEncrypted,
-          config: dto.config ? jsonValue(dto.config) : undefined,
+          config: Object.keys(config).length ? jsonValue(config) : undefined,
           status: "ACTIVE",
           lastLoginAt,
         },
         update: {
           baseUrl,
           tokenEncrypted,
-          credentialsEncrypted,
-          config: dto.config ? jsonValue(dto.config) : undefined,
+          // A token-only re-capture without a refresh token must keep the stored one.
+          ...(credentialsEncrypted ? { credentialsEncrypted } : {}),
+          config: Object.keys(config).length ? jsonValue(config) : undefined,
           status: "ACTIVE",
           lastLoginAt,
           lastError: null,
@@ -300,7 +360,13 @@ export class ExternalService {
     }
 
     const connector = this.connector(provider);
-    let token = this.encryption.decrypt(connection.tokenEncrypted);
+    let token = "";
+    try {
+      token = this.encryption.decrypt(connection.tokenEncrypted);
+    } catch {
+      // Shifrlanmagan yoki buzilgan token — login/parol yoki yangi token talab qilinadi.
+      token = "";
+    }
     const config = (connection.config ?? {}) as ProviderConfig;
     const credentials = this.credentialsOf(connection);
     let loginError: unknown = null;
@@ -322,6 +388,53 @@ export class ExternalService {
         );
       } catch (error) {
         loginError = error;
+      }
+    }
+
+    // Browser-captured sessions carry a refresh token; renew before it dies so
+    // the 6-hourly sync keeps working without asking the user to reconnect.
+    if (!credentials) {
+      const refreshToken = this.refreshTokenOf(connection);
+      if (connector.refresh && refreshToken && tokenExpiresWithin(token, 5 * 60_000)) {
+        try {
+          const renewed = await connector.refresh(connection.baseUrl, refreshToken);
+          let renewedToken = cleanBearerToken(renewed.token);
+          if (connector.selectAccount && config.profileId) {
+            // The refreshed session belongs to the account's default company;
+            // switching back is mandatory, otherwise the wrong fleet is synced.
+            const selection = await connector.selectAccount(
+              connection.baseUrl,
+              renewedToken,
+              {
+                organizationName: config.organizationName,
+                profileId: config.profileId,
+              },
+              [{ id: config.profileId }],
+            );
+            if (!selection) {
+              throw new Error("Tanlangan korxona profiliga o'tib bo'lmadi");
+            }
+            renewedToken = cleanBearerToken(selection.token);
+          }
+          token = renewedToken;
+          const nextRefresh = renewed.refreshToken ?? refreshToken;
+          await this.tenantPrisma.withTenant(tenantId, (tx) =>
+            tx.externalConnection.update({
+              where: { id: connection.id },
+              data: {
+                tokenEncrypted: this.encryption.encrypt(token),
+                credentialsEncrypted: this.encryption.encrypt(
+                  JSON.stringify({ refreshToken: nextRefresh }),
+                ),
+                lastLoginAt: new Date(),
+              },
+            }),
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Token refresh failed provider=${provider}: ${errorText(error)}`,
+          );
+        }
       }
     }
 
@@ -403,6 +516,20 @@ export class ExternalService {
     }
   }
 
+  private refreshTokenOf(connection: ExternalConnection): string | null {
+    if (!connection.credentialsEncrypted) return null;
+    try {
+      const parsed = JSON.parse(
+        this.encryption.decrypt(connection.credentialsEncrypted),
+      ) as Partial<ProviderCredentials>;
+      return typeof parsed.refreshToken === "string" && parsed.refreshToken
+        ? parsed.refreshToken
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   private credentialsOf(connection: ExternalConnection): ProviderCredentials | null {
     if (!connection.credentialsEncrypted) return null;
     try {
@@ -466,20 +593,18 @@ export class ExternalService {
           // The company fleet lives in e-tender; mirror it as a native vehicle so
           // contracts, tariffs and the dashboard work off the same records.
           if (!vehicleId && plateKey && owner) {
-            const native = await tx.vehicle.create({
-              data: {
-                tenantId,
-                ownerId: owner.id,
-                plateNumber: vehicle.plateNumber!.trim().slice(0, 20),
-                model: (vehicle.vehicleModel ?? "Ko'rsatilmagan").trim().slice(0, 120),
-                capacity: seatCount(vehicle.raw),
-                routeId: routeIdFor(vehicle.routeName),
-                status: "ACTIVE",
-              },
+            const native = await createNativeVehicleSafe(tx, {
+              tenantId,
+              ownerId: owner.id,
+              plateNumber: vehicle.plateNumber!.trim().slice(0, 20),
+              model: (vehicle.vehicleModel ?? "Ko'rsatilmagan").trim().slice(0, 120),
+              capacity: seatCount(vehicle.raw),
+              routeId: routeIdFor(vehicle.routeName),
+              status: "ACTIVE",
             });
             vehicleId = native.id;
             byPlate.set(plateKey, native.id);
-            created += 1;
+            if (native.created) created += 1;
           } else if (vehicleId) {
             // Only empty fields are filled; manual edits are never overwritten.
             const native = nativeById.get(vehicleId);
@@ -498,6 +623,25 @@ export class ExternalService {
         }
         for (const record of result.records) {
           await this.upsertRecord(tx, tenantId, provider, record);
+        }
+        // One login can see several provider organizations. After switching the
+        // target company the previous organization's rows must not linger.
+        const syncedOrganizations = new Set(
+          result.vehicles
+            .map((vehicle) => organizationKey(vehicle.organizationName))
+            .filter((key) => key.length > 0),
+        );
+        if (syncedOrganizations.size > 0) {
+          const existingOrganizations = await tx.externalVehicle.findMany({
+            where: { tenantId, provider, NOT: { organizationName: null } },
+            select: { id: true, organizationName: true },
+          });
+          const staleIds = existingOrganizations
+            .filter((row) => !syncedOrganizations.has(organizationKey(row.organizationName)))
+            .map((row) => row.id);
+          if (staleIds.length > 0) {
+            await tx.externalVehicle.deleteMany({ where: { id: { in: staleIds } } });
+          }
         }
         const drivers = await this.importDrivers(tx, tenantId, result.drivers ?? []);
 

@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsArray,
   IsIn,
   IsInt,
   IsObject,
@@ -142,6 +143,57 @@ export class OneIdBrowserLoginDto {
   @MinLength(4)
   @MaxLength(200)
   password!: string;
+}
+
+export class LocalConnectorProfileDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  id!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  organizationName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  fullName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  tin?: string;
+}
+
+export class LocalConnectorCaptureDto {
+  @IsString()
+  @MinLength(4)
+  @MaxLength(16)
+  code!: string;
+
+  @IsString()
+  @MinLength(20)
+  @MaxLength(4000)
+  token!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  refreshToken?: string;
+
+  /** Company profiles the provider offered after login (BM profile picker). */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LocalConnectorProfileDto)
+  profiles?: LocalConnectorProfileDto[];
 }
 
 export class EImzoLoginRequestDto {

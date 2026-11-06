@@ -83,6 +83,18 @@ export interface ProviderConfig {
   reportBody?: unknown;
   /** Organization name reported by the provider; written by sync, display only. */
   account?: string;
+  /** Target organization when one login account has several provider profiles. */
+  organizationName?: string;
+  profileId?: string;
+}
+
+/** A company profile the provider offers after authentication (BM profile picker). */
+export interface ExternalProfileOption {
+  id: string;
+  organizationName?: string | null;
+  companyName?: string | null;
+  fullName?: string | null;
+  tin?: string | null;
 }
 
 export function extractOneIdCode(input?: string | null): string {
@@ -134,6 +146,8 @@ export interface ProviderCredentials {
   password?: string;
   code?: string;
   ip?: string;
+  /** Browser-session refresh token, kept so sync can renew an expired access token. */
+  refreshToken?: string;
 }
 
 export interface LoginResult {
@@ -149,6 +163,21 @@ export interface ExternalConnector {
     credentials: ProviderCredentials,
     config: ProviderConfig,
   ): Promise<LoginResult>;
+  /**
+   * Picks the configured organization when the account owns several profiles.
+   * Used for token-only connections captured from a browser session.
+   */
+  selectAccount?(
+    baseUrl: string,
+    token: string,
+    target: { organizationName?: string; profileId?: string },
+    profiles: ExternalProfileOption[],
+  ): Promise<LoginResult | null>;
+  /** Exchanges a stored refresh token for a fresh access token. */
+  refresh?(
+    baseUrl: string,
+    refreshToken: string,
+  ): Promise<{ token: string; refreshToken?: string }>;
   test(baseUrl: string, token: string): Promise<{ account: string | null }>;
   fetchAll(
     baseUrl: string,
@@ -241,9 +270,51 @@ export interface CrossLinkedVehicleView {
     gpsImei: string | null;
     routeName: string | null;
     organizationName: string | null;
+    vehicleModel?: string | null;
+    vehicleClass?: string | null;
     drivers: Array<{ fullName: string; phone?: string | null }>;
   } | null;
   // Qonuniylik va to'liqlik darajasi
   complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
   complianceNotes: string[];
+  daysToLicenseExpiry?: number | null;
+  daysToRentExpiry?: number | null;
+  urgencyLevel?: "EXPIRED" | "URGENT_15" | "WARNING_30" | "SAFE" | "NO_RENT";
+}
+
+export interface PublicVehiclePassport {
+  plateNumber: string;
+  plateDisplay: string;
+  model: string;
+  vin: string | null;
+  companyName: string;
+  routeName: string | null;
+  routeNumber: string | null;
+  driverName: string | null;
+  driverPhone?: string | null;
+  driverSource?: "SOLIQ" | "PLATFORM" | null;
+  license: {
+    number: string | null;
+    expiresAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+  };
+  soliqLease: {
+    contractNumber: string | null;
+    startsAt?: string | null;
+    endsAt: string | null;
+    isValid: boolean;
+    daysLeft: number | null;
+    lesseeName?: string | null;
+    lesseePinfl?: string | null;
+    lesseePhone?: string | null;
+  };
+  shiftStatus: {
+    isOnShift: boolean;
+    startedAt: string | null;
+  };
+  complianceStatus: "FULLY_COMPLIANT" | "PARTIAL" | "EXPIRED" | "NO_RENT_CONTRACT";
+  isVerified: boolean;
+  verificationNotes?: string[];
+  verifiedAt: string;
 }

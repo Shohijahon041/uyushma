@@ -1,30 +1,22 @@
+import Image from "next/image";
 import { Link } from "@/i18n/navigation";
 
-export function Brand({
-  href = "/dashboard",
-  light = false,
-}: {
-  href?: string;
-  light?: boolean;
-}) {
+export function Brand({ href = "/dashboard" }: { href?: string }) {
   return (
     <Link href={href} className="flex items-center gap-3">
-      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-800 text-lg font-black text-white shadow-md shadow-brand-600/20">
-        U
-      </span>
-      <span className="leading-tight">
-        <span
-          className={`block text-[15px] font-extrabold tracking-tight ${
-            light ? "text-white" : "text-slate-900"
-          }`}
-        >
+      <Image
+        src="/brand/bm-brutto-mark.webp"
+        alt="BM Brutto"
+        width={44}
+        height={44}
+        priority
+        className="h-11 w-11 shrink-0 rounded-xl"
+      />
+      <span className="min-w-0 leading-tight">
+        <span className="block truncate text-[15px] font-extrabold tracking-tight text-slate-900 dark:text-white">
           Uyushmachilar
         </span>
-        <span
-          className={`block text-[10px] font-medium uppercase tracking-[0.14em] ${
-            light ? "text-brand-100/80" : "text-slate-400"
-          }`}
-        >
+        <span className="hidden text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 sm:block">
           Transport platformasi
         </span>
       </span>

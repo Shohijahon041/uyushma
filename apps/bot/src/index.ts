@@ -7,12 +7,15 @@ import {
   BotApiClient,
   type BotDocuments,
   type BotDriver,
+  type BotPublicPassport,
   type BotSummary,
   type DocumentField,
   type TelegramProfile,
 } from "./api-client";
 
+dotenv.config({ path: join(process.cwd(), ".env") });
 dotenv.config({ path: join(process.cwd(), "../../.env") });
+dotenv.config({ path: join(__dirname, "../../../.env") });
 dotenv.config();
 
 const token = process.env.BOT_TOKEN;
@@ -45,6 +48,19 @@ function escapeHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+/** O'zbekiston davlat raqami: 60A125UA -> "60 A 125 UA". */
+function formatPlate(plate: string | null | undefined): string {
+  const clean = (plate ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (!clean) return "";
+  const standard = /^(\d{2})([A-Z])(\d{3})([A-Z]{2})$/.exec(clean);
+  if (standard) {
+    return `${standard[1]} ${standard[2]} ${standard[3]} ${standard[4]}`;
+  }
+  const short = /^([A-Z])(\d{3})([A-Z]{2})$/.exec(clean);
+  if (short) return `${short[1]} ${short[2]} ${short[3]}`;
+  return clean;
 }
 
 function chatIdOf(ctx: Context): string {
@@ -101,6 +117,18 @@ function mainMenu(kind: "user" | "driver"): InlineKeyboard {
     return {
       inline_keyboard: [
         [
+          { text: "🚦 Smena (Chiqish / Yakun)", callback_data: "d:shift" },
+          { text: "🚨 SOS / Nosozlik", callback_data: "d:sos" },
+        ],
+        [
+          { text: "🪪 QR Yo'l Pasporti", callback_data: "d:passport" },
+          { text: "💳 Masofaviy to'lov", callback_data: "d:pay" },
+        ],
+        [
+          { text: "📄 Ijara shartnomasi", callback_data: "d:lease" },
+          { text: "📷 Hujjat rasmlari", callback_data: "d:photos" },
+        ],
+        [
           { text: "👤 Profil", callback_data: "d:profile" },
           { text: "🚌 Mashinam", callback_data: "d:vehicle" },
         ],
@@ -109,10 +137,7 @@ function mainMenu(kind: "user" | "driver"): InlineKeyboard {
           { text: "🧾 To'lovlarim", callback_data: "d:payments" },
         ],
         [
-          { text: "💳 Masofaviy to'lov (Karta)", callback_data: "d:pay" },
-        ],
-        [
-          { text: "🪪 Hujjatlarim", callback_data: "d:docs" },
+          { text: "📑 Hujjatlarim", callback_data: "d:docs" },
           { text: "🔄 Yangilash", callback_data: "d:refresh" },
         ],
       ],
@@ -156,9 +181,26 @@ const METHOD_UZ: Record<string, string> = {
 function vehicleLines(driver: BotDriver): string[] {
   if (!driver.vehicle) return ["🚌 Avtomobil biriktirilmagan"];
   return [
-    `🚌 <b>${escapeHtml(driver.vehicle.plateNumber)}</b> · ${escapeHtml(driver.vehicle.model)}`,
+    `🚌 <b>${escapeHtml(formatPlate(driver.vehicle.plateNumber))}</b> · ${escapeHtml(driver.vehicle.model)}`,
     driver.vehicle.routeName ? `🛣 ${escapeHtml(driver.vehicle.routeName)}` : "",
   ];
+}
+
+function coverageLines(driver: BotDriver): string[] {
+  if (driver.coverage?.workedToday) {
+    return [
+      `✅ <b>Bugun ishga chiqqan</b> — ${driver.coverage.days} kunlik to'lov (${humanDate(driver.coverage.coveredUntil)} gacha)`,
+      driver.nextCoverage
+        ? `📅 Keyingi to'lov: ${humanDate(driver.nextCoverage.coveredFrom)} — ${humanDate(driver.nextCoverage.coveredUntil)} (${driver.nextCoverage.days} kun)`
+        : "",
+    ].filter(Boolean);
+  }
+  return [
+    "⛔ <b>Bugun uchun to'lov qilinmagan</b> — ishga chiqish uchun to'lov qiling",
+    driver.nextCoverage
+      ? `📅 Keyingi to'lov: ${humanDate(driver.nextCoverage.coveredFrom)} — ${humanDate(driver.nextCoverage.coveredUntil)} (${driver.nextCoverage.days} kun)`
+      : "",
+  ].filter(Boolean);
 }
 
 function monthLines(driver: BotDriver): string[] {
@@ -177,6 +219,8 @@ function driverText(driver: BotDriver): string {
     driver.companyName ? escapeHtml(driver.companyName) : "",
     ...vehicleLines(driver),
     "",
+    ...coverageLines(driver),
+    "",
     ...monthLines(driver),
   ]
     .filter((line, index, all) => line !== "" || all[index - 1] !== "")
@@ -191,7 +235,7 @@ function driverPaymentsText(driver: BotDriver): string {
     "<b>Oxirgi to'lovlar</b>",
     ...driver.payments.map(
       (payment) =>
-        `${payment.paidAt.slice(0, 10)} — <b>${money(payment.amount)}</b> (${METHOD_UZ[payment.method] ?? payment.method}) · ${escapeHtml(payment.plateNumber)}`,
+        `${payment.paidAt.slice(0, 10)} — <b>${money(payment.amount)}</b> (${METHOD_UZ[payment.method] ?? payment.method}, ${payment.days} kun) · ${escapeHtml(payment.plateNumber)}`,
     ),
     "",
     `Shu oy qarzi: <b>${money(driver.month.debt)}</b>`,
@@ -208,6 +252,106 @@ async function userProfileText(chatId: string): Promise<string> {
     `Kutilayotgan to'lovlar: <b>${summary.pendingCount}</b> — ${money(summary.pendingAmount)}`,
     `Oxirgi 30 kun to'langan: ${money(summary.paidLast30Days)}`,
   ].join("\n");
+}
+
+// ---- Raqamli yo'l pasporti va QR kod ----
+
+const COMPLIANCE_UZ: Record<BotPublicPassport["complianceStatus"], string> = {
+  FULLY_COMPLIANT: "✅ To'liq qonuniy — Soliq ijara va litsenziya faol",
+  PARTIAL: "⚠️ Qisman qonuniy — hujjatlarni to'liq tekshiring",
+  EXPIRED: "⛔ Hujjatlar muddati o'tgan",
+  NO_RENT_CONTRACT: "⚠️ Soliq ijara shartnomasi ro'yxatdan o'tmagan",
+};
+
+function passportCaption(plate: string, passport: BotPublicPassport | null): string {
+  const lines: string[] = ["🪪 <b>RAQAMLI YO'L PASPORTI</b>", ""];
+  const display = passport?.plateDisplay ?? formatPlate(plate);
+  lines.push(
+    `🚘 <b>${escapeHtml(display)}</b>${passport?.model ? ` · ${escapeHtml(passport.model)}` : ""}`,
+  );
+  if (passport?.companyName) lines.push(`🏢 ${escapeHtml(passport.companyName)}`);
+  const route = passport
+    ? `${passport.routeNumber ? `№${passport.routeNumber} ` : ""}${passport.routeName ?? ""}`.trim()
+    : "";
+  if (route) lines.push(`🛣 ${escapeHtml(route)}`);
+
+  if (passport) {
+    if (passport.driverName) {
+      lines.push(
+        `👤 ${escapeHtml(passport.driverName)}${passport.driverSource === "SOLIQ" ? " <i>(Soliq ijarachi)</i>" : ""}`,
+      );
+    }
+    if (passport.driverPhone) lines.push(`📞 ${escapeHtml(passport.driverPhone)}`);
+    lines.push("", COMPLIANCE_UZ[passport.complianceStatus] ?? passport.complianceStatus, "");
+    lines.push(
+      passport.soliqLease.contractNumber
+        ? `📄 Soliq ijara: №${escapeHtml(passport.soliqLease.contractNumber)} (${passport.soliqLease.startsAt ?? "—"} — ${passport.soliqLease.endsAt ?? "—"})`
+        : "📄 Soliq ijara shartnomasi: topilmadi",
+    );
+    lines.push(
+      passport.license.number
+        ? `🎫 Litsenziya: №${escapeHtml(passport.license.number)}${passport.license.expiresAt ? ` (${passport.license.expiresAt} gacha)` : ""}`
+        : "🎫 E-Tender litsenziyasi: topilmadi",
+    );
+    if (passport.license.daysLeft !== null && passport.license.daysLeft >= 0) {
+      lines.push(`⏱ Litsenziya: ${passport.license.daysLeft} kun qoldi`);
+    }
+    if (passport.soliqLease.daysLeft !== null && passport.soliqLease.daysLeft >= 0) {
+      lines.push(`⏱ Ijara: ${passport.soliqLease.daysLeft} kun qoldi`);
+    }
+  } else {
+    lines.push("", "ℹ️ To'liq pasport ma'lumotlari hozircha mavjud emas.");
+  }
+
+  lines.push(
+    "",
+    "📷 <i>QR kodni YPX xodimi yoki transport nazorati skanerlaydi — ma'lumotlar jonli reyestrdan tekshiriladi.</i>",
+  );
+  return lines.filter((line) => line !== undefined).join("\n");
+}
+
+async function sendPassport(ctx: Context): Promise<void> {
+  const driver = await api.driver(chatIdOf(ctx));
+  if (!driver.vehicle?.plateNumber) {
+    await ctx.reply(
+      "⚠️ Sizga hali avtomobil biriktirilmagan. Iltimos, dispetcherga murojaat qiling.",
+      { reply_markup: mainMenu("driver") },
+    );
+    return;
+  }
+
+  const plate = driver.vehicle.plateNumber;
+  let passport: BotPublicPassport | null = null;
+  try {
+    passport = await api.publicPassport(plate);
+  } catch (error) {
+    console.error("Passport error:", describeError(error));
+  }
+
+  const webBase = process.env.APP_ORIGIN ?? process.env.WEB_PUBLIC_URL ?? "http://localhost:3000";
+  const verifyUrl = `${webBase.replace(/\/$/, "")}/uz/verify/${encodeURIComponent(plate)}`;
+  const replyMarkup = {
+    inline_keyboard: [
+      [{ text: "🪪 Pasportni ochish (onlayn)", url: verifyUrl }],
+      [{ text: "🔄 Bosh menyu", callback_data: "d:refresh" }],
+    ],
+  };
+  const caption = passportCaption(plate, passport);
+
+  const qr = await api.publicPassportQr(plate).catch(() => null);
+  if (qr) {
+    try {
+      await ctx.replyWithPhoto(
+        { source: qr },
+        { caption, parse_mode: "HTML", reply_markup: replyMarkup },
+      );
+      return;
+    } catch (error) {
+      console.error("QR yuborishda xatolik:", describeError(error));
+    }
+  }
+
+  await ctx.reply(caption, { parse_mode: "HTML", reply_markup: replyMarkup });
 }
 
 // ---- Telegram profilini haydovchi profiliga qo'shish ----
@@ -324,6 +468,22 @@ function receiptSessionFor(chatId: string): PendingReceiptSession | null {
   return session;
 }
 
+interface PendingShiftSession {
+  action: "START" | "END";
+  expiresAt: number;
+}
+const pendingShifts = new Map<string, PendingShiftSession>();
+
+function shiftSessionFor(chatId: string): PendingShiftSession | null {
+  const session = pendingShifts.get(chatId);
+  if (!session) return null;
+  if (session.expiresAt < Date.now()) {
+    pendingShifts.delete(chatId);
+    return null;
+  }
+  return session;
+}
+
 function pendingFor(chatId: string): DocumentField | null {
   const pending = pendingInput.get(chatId);
   if (!pending) return null;
@@ -377,8 +537,88 @@ function documentsKeyboard(): InlineKeyboard {
       })),
     );
   }
+  rows.push([
+    { text: "📷 Passport rasmi", callback_data: "docphoto:passport" },
+    { text: "📷 Guvohnoma rasmi", callback_data: "docphoto:license" },
+  ]);
   rows.push([{ text: "⬅️ Menyu", callback_data: "d:profile" }]);
   return { inline_keyboard: rows };
+}
+
+async function sendDocumentPhoto(
+  ctx: Context,
+  kind: "passport" | "license",
+): Promise<void> {
+  const label = kind === "passport" ? "Passport" : "Guvohnoma";
+  try {
+    const { fileId } = await api.driverPhoto(chatIdOf(ctx), kind);
+    await ctx.replyWithPhoto(fileId, {
+      caption: `📷 <b>${label} rasmi</b>\n\nYuklab olish uchun rasmni bossangiz, asl nusxasi ochiladi.`,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📑 Hujjatlarim", callback_data: "d:docs" }],
+          [{ text: "🔄 Bosh menyu", callback_data: "d:refresh" }],
+        ],
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      await ctx.reply(
+        `ℹ️ ${label} rasmi hali yuklanmagan.\n\n«📑 Hujjatlarim» bo'limida «📷 ${label} rasmi» tugmasi orqali yuklang.`,
+        { reply_markup: mainMenu("driver") },
+      );
+      return;
+    }
+    if (isUnlinked(error)) {
+      await sendUnlinked(ctx);
+      return;
+    }
+    throw error;
+  }
+}
+
+async function sendLeaseDocument(ctx: Context): Promise<void> {
+  const driver = await api.driver(chatIdOf(ctx));
+  if (!driver.vehicle?.plateNumber) {
+    await ctx.reply(
+      "⚠️ Sizga hali avtomobil biriktirilmagan. Iltimos, dispetcherga murojaat qiling.",
+      { reply_markup: mainMenu("driver") },
+    );
+    return;
+  }
+
+  const plate = driver.vehicle.plateNumber;
+  let passport: BotPublicPassport | null = null;
+  try {
+    passport = await api.publicPassport(plate);
+  } catch (error) {
+    console.error("Lease passport error:", describeError(error));
+  }
+
+  const pdf = await api.publicPassportPdf(plate).catch(() => null);
+  if (!pdf) {
+    await ctx.reply(
+      "ℹ️ Ijara shartnomasi va litsenziya ma'lumotnomasi hozircha mavjud emas. Birozdan so'ng qayta urinib ko'ring.",
+      { reply_markup: mainMenu("driver") },
+    );
+    return;
+  }
+
+  const filename = `ijara-${plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase()}.pdf`;
+  await ctx.replyWithDocument(
+    { source: pdf, filename },
+    {
+      caption: passportCaption(plate, passport),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🪪 QR Yo'l Pasporti", callback_data: "d:passport" }],
+          [{ text: "🔄 Bosh menyu", callback_data: "d:refresh" }],
+        ],
+      },
+    },
+  );
 }
 
 const CANCEL_KEYBOARD: InlineKeyboard = {
@@ -414,6 +654,93 @@ async function saveDocument(ctx: Context, field: DocumentField, value: string): 
     }
     throw error;
   }
+}
+
+// ---- Smena va SOS ----
+
+async function showShiftStatus(ctx: Context): Promise<void> {
+  const chatId = chatIdOf(ctx);
+  try {
+    const shift = await api.currentShift(chatId);
+    if (shift && shift.status === "ACTIVE") {
+      const startTime = new Date(shift.startedAt).toLocaleTimeString("uz-UZ", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const lines = [
+        "🚦 <b>FAOL SMENA HOLATI</b>",
+        "",
+        `🚌 Avtomobil: <b>${escapeHtml(shift.vehicle.plateNumber)}</b> · ${escapeHtml(shift.vehicle.model)}`,
+        shift.vehicle.route?.name ? `🛣 Yo'nalish: <b>${escapeHtml(shift.vehicle.route.name)}</b>` : null,
+        `⏰ Chiqish vaqti: <b>${startTime}</b>`,
+        shift.startOdometer ? `🔢 Boshlang'ich probeg: <b>${shift.startOdometer.toLocaleString("uz-UZ")} km</b>` : null,
+        shift.note ? `📝 Izoh: <i>${escapeHtml(shift.note)}</i>` : null,
+        "",
+        "<i>Smenani yakunlash uchun pastdagi tugmani bosing:</i>",
+      ].filter(Boolean).join("\n");
+
+      await ctx.reply(lines, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏁 Smenani yakunlash", callback_data: "shift:prompt_end" }],
+            [{ text: "🔙 Asosiy menyu", callback_data: "d:refresh" }],
+          ],
+        },
+      });
+      return;
+    }
+
+    const driver = await api.driver(chatId);
+    const vehicleText = driver.vehicle
+      ? `\n🚌 Biriktirilgan: <b>${escapeHtml(driver.vehicle.plateNumber)}</b> · ${escapeHtml(driver.vehicle.model)}${driver.vehicle.routeName ? ` (${escapeHtml(driver.vehicle.routeName)})` : ""}`
+      : "\n⚠️ Sizga hali avtomobil biriktirilmagan.";
+
+    await ctx.reply(
+      `🚦 <b>Smenaga chiqish</b>${vehicleText}\n\nBugungi smenani boshlash uchun quyidagi tugmani bosing:`,
+      {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🚦 Smenani boshlash", callback_data: "shift:prompt_start" }],
+            [{ text: "🔙 Asosiy menyu", callback_data: "d:refresh" }],
+          ],
+        },
+      },
+    );
+  } catch (err) {
+    console.error("showShiftStatus error:", describeError(err));
+    await ctx.reply("Smena ma'lumotlarini yuklashda xatolik yuz berdi.");
+  }
+}
+
+async function showSosMenu(ctx: Context): Promise<void> {
+  const lines = [
+    "🚨 <b>FAVQULODDA HODISA VA NOSOZLIK (SOS)</b>",
+    "",
+    "Yo'nalishda texnik nosozlik yoki hodisa yuz berdimi?",
+    "Holat turini tanlang, xabar zudlik bilan dispetcher va ma'muriyatga yetkaziladi:",
+  ].join("\n");
+
+  await ctx.reply(lines, {
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🛞 G'ildirak / Shina teshildi", callback_data: "sos:send:SHINA" },
+          { text: "⚠️ Motor / Texnik nosozlik", callback_data: "sos:send:MOTOR" },
+        ],
+        [
+          { text: "💥 YTH (Yo'l-transport hodisasi)", callback_data: "sos:send:YTH" },
+          { text: "🚧 Yo'l yopiq / Tirbandlik", callback_data: "sos:send:TIRBANDLIK" },
+        ],
+        [
+          { text: "❓ Boshqa nosozlik", callback_data: "sos:send:BOSHQALIK" },
+        ],
+        [{ text: "❌ Bekor qilish", callback_data: "sos:cancel" }],
+      ],
+    },
+  });
 }
 
 // ---- Asosiy menyu ----
@@ -543,13 +870,27 @@ bot.command("mashina", (ctx) =>
   driverOnly(ctx, () => sendDriverHome(ctx), "Ma'lumot olishda xatolik."),
 );
 
+bot.command("smena", (ctx) =>
+  driverOnly(ctx, () => showShiftStatus(ctx), "Smena ma'lumotlarini olishda xatolik."),
+);
+
+bot.command("sos", (ctx) =>
+  driverOnly(ctx, () => showSosMenu(ctx), "SOS menyusini ochishda xatolik."),
+);
+
 bot.command("qarz", (ctx) =>
   driverOnly(
     ctx,
     async () => {
       const driver = await api.driver(chatIdOf(ctx));
       await ctx.reply(
-        [...monthLines(driver), "", "Qarz har oy yig'iladi — o'tgan oylar qarzi saqlanadi."].join("\n"),
+        [
+          ...coverageLines(driver),
+          "",
+          ...monthLines(driver),
+          "",
+          "Qarz har oy yig'iladi — o'tgan oylar qarzi saqlanadi.",
+        ].join("\n"),
         { parse_mode: "HTML", reply_markup: mainMenu("driver") },
       );
     },
@@ -559,6 +900,18 @@ bot.command("qarz", (ctx) =>
 
 bot.command("hujjatlar", (ctx) =>
   driverOnly(ctx, () => showDocuments(ctx), "Hujjatlarni olishda xatolik."),
+);
+
+bot.command("pasport", (ctx) =>
+  driverOnly(ctx, () => sendPassport(ctx), "Pasport ma'lumotlarini olishda xatolik."),
+);
+
+bot.command("ijara", (ctx) =>
+  driverOnly(
+    ctx,
+    () => sendLeaseDocument(ctx),
+    "Ijara shartnomasini olishda xatolik.",
+  ),
 );
 
 bot.command("shartnomalar", (ctx) =>
@@ -630,6 +983,8 @@ bot.command("yordam", (ctx) =>
       "/profil — profil",
       "/qarz — oylik plan va qarz (haydovchi)",
       "/mashina — biriktirilgan avtomobil (haydovchi)",
+      "/pasport — QR yo'l pasporti (haydovchi)",
+      "/ijara — ijara shartnomasi va litsenziya (PDF)",
       "/hujjatlar — passport va guvohnoma (haydovchi)",
       "/shartnomalar — shartnomalar (xodim)",
       "/tolovlar — oxirgi to'lovlar",
@@ -808,6 +1163,68 @@ bot.on(message("text"), async (ctx) => {
     }
   }
 
+  const shiftSession = shiftSessionFor(chatId);
+  if (shiftSession) {
+    const cleanNum = text.replace(/\s+/g, "");
+    const odometer = Number(cleanNum);
+    if (isNaN(odometer) || odometer < 0 || odometer > 2_000_000) {
+      await ctx.reply(
+        "⚠️ Iltimos, spidometr ko'rsatkichini to'g'ri raqamda yozing (masalan: <code>125000</code>):",
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "shift:cancel" }]],
+          },
+        },
+      );
+      return;
+    }
+
+    pendingShifts.delete(chatId);
+    if (shiftSession.action === "START") {
+      try {
+        const res = await api.startShift(chatId, odometer > 0 ? odometer : undefined);
+        const shift = res.shift;
+        const startKm = shift.startOdometer
+          ? `🔢 Boshlang'ich probeg: <b>${shift.startOdometer.toLocaleString("uz-UZ")} km</b>\n`
+          : "";
+        await ctx.reply(
+          `✅ <b>Smena boshlandi!</b>\n\n🚌 Avtomobil: <b>${escapeHtml(shift.vehicle.plateNumber)}</b> · ${escapeHtml(shift.vehicle.model)}\n${shift.vehicle.route?.name ? `🛣 Yo'nalish: <b>${escapeHtml(shift.vehicle.route.name)}</b>\n` : ""}⏰ Chiqish vaqti: <b>${new Date(shift.startedAt).toLocaleTimeString("uz-UZ")}</b>\n${startKm}\n<i>Oq yo'l! Yo'l harakati qoidalariga rioya qiling.</i>`,
+          { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+        );
+      } catch (err) {
+        console.error("Start shift error:", describeError(err));
+        const reason = err instanceof ApiError ? err.message : "Smenani boshlashda xatolik yuz berdi.";
+        await ctx.reply(`❌ ${reason}`, { reply_markup: mainMenu("driver") });
+      }
+      return;
+    }
+
+    if (shiftSession.action === "END") {
+      try {
+        const res = await api.endShift(chatId, odometer > 0 ? odometer : undefined);
+        const shift = res.shift;
+        const hours = Math.floor(res.durationMinutes / 60);
+        const mins = res.durationMinutes % 60;
+        const durText = hours > 0 ? `${hours} soat ${mins} daqiqa` : `${mins} daqiqa`;
+        const distanceText =
+          res.distanceKm !== null
+            ? `🛣 Bosib o'tilgan masofa: <b>${res.distanceKm.toLocaleString("uz-UZ")} km</b>\n`
+            : "";
+
+        await ctx.reply(
+          `🏁 <b>Smena muvaffaqiyatli yakunlandi!</b>\n\n🚌 Avtomobil: <b>${escapeHtml(shift.vehicle.plateNumber)}</b>\n⏰ Ish vaqti: <b>${durText}</b>\n${distanceText}\n<i>Yaxshi dam oling!</i>`,
+          { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+        );
+      } catch (err) {
+        console.error("End shift error:", describeError(err));
+        const reason = err instanceof ApiError ? err.message : "Smenani yakunlashda xatolik yuz berdi.";
+        await ctx.reply(`❌ ${reason}`, { reply_markup: mainMenu("driver") });
+      }
+      return;
+    }
+  }
+
   const field = pendingFor(chatId);
   if (field) {
     if (DOCUMENT_FIELDS[field].photo) {
@@ -859,6 +1276,16 @@ bot.on("callback_query", async (ctx) => {
       await showDocuments(ctx);
       return;
     }
+    if (data.startsWith("docphoto:")) {
+      const kind = data.slice(9);
+      if (kind !== "passport" && kind !== "license") return;
+      await driverOnly(
+        ctx,
+        () => sendDocumentPhoto(ctx, kind),
+        "Hujjat rasmini olishda xatolik.",
+      );
+      return;
+    }
     if (data.startsWith("doc:")) {
       const field = data.slice(4);
       if (!isDocumentField(field)) return;
@@ -871,10 +1298,118 @@ bot.on("callback_query", async (ctx) => {
       return;
     }
 
+    if (data === "shift:cancel") {
+      pendingShifts.delete(chatId);
+      await ctx.reply("Smena jarayoni bekor qilindi.", {
+        reply_markup: mainMenu("driver"),
+      });
+      return;
+    }
+
+    if (data === "shift:prompt_start") {
+      pendingShifts.set(chatId, { action: "START", expiresAt: Date.now() + PENDING_TTL_MS });
+      await ctx.reply(
+        "🚦 <b>Smenani boshlash</b>\n\nIltimos, avtomobil spidometridagi ko'rsatkichni (km) yozing (masalan: <code>124500</code>)\nYoki o'tkazib yuborish uchun <code>0</code> deb yozing:",
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "shift:cancel" }]],
+          },
+        },
+      );
+      return;
+    }
+
+    if (data === "shift:prompt_end") {
+      pendingShifts.set(chatId, { action: "END", expiresAt: Date.now() + PENDING_TTL_MS });
+      await ctx.reply(
+        "🏁 <b>Smenani yakunlash</b>\n\nIltimos, avtomobil spidometridagi yakuniy ko'rsatkichni (km) raqamda yozing (masalan: <code>124780</code>):",
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "shift:cancel" }]],
+          },
+        },
+      );
+      return;
+    }
+
+    if (data === "sos:cancel") {
+      await ctx.reply("Bekor qilindi.", { reply_markup: mainMenu("driver") });
+      return;
+    }
+
+    if (data.startsWith("sos:send:")) {
+      const code = data.slice(9);
+      const kindMap: Record<string, string> = {
+        SHINA: "🛞 G'ildirak / Shina teshildi",
+        MOTOR: "⚠️ Motor / Texnik nosozlik",
+        YTH: "💥 YTH (Avariya)",
+        TIRBANDLIK: "🚧 Yo'l yopiq / Tirbandlik",
+        BOSHQALIK: "❓ Boshqa favqulodda holat",
+      };
+      const kindName = kindMap[code] || code;
+      try {
+        await api.reportIncident(chatId, kindName);
+        await ctx.reply(
+          `🚨 <b>Favqulodda xabar yuborildi!</b>\n\nHolat: <b>${kindName}</b>\n\nDispetcher va ma'muriyat zudlik bilan ogohlantirildi. Tez orada siz bilan bog'lanishadi.`,
+          { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+        );
+      } catch (err) {
+        console.error("reportIncident error:", describeError(err));
+        await ctx.reply("Xabar yuborishda xatolik yuz berdi. Qaytadan urinib ko'ring.");
+      }
+      return;
+    }
+
     if (data.startsWith("d:")) {
       pendingInput.delete(chatId);
+      if (data === "d:shift") {
+        await showShiftStatus(ctx);
+        return;
+      }
+      if (data === "d:sos") {
+        await showSosMenu(ctx);
+        return;
+      }
       if (data === "d:docs") {
         await showDocuments(ctx);
+        return;
+      }
+      if (data === "d:passport") {
+        try {
+          await sendPassport(ctx);
+        } catch (err) {
+          console.error("Passport error:", describeError(err));
+          await ctx.reply("Pasport ma'lumotlarini olishda xatolik yuz berdi.", {
+            reply_markup: mainMenu("driver"),
+          });
+        }
+        return;
+      }
+      if (data === "d:lease") {
+        try {
+          await sendLeaseDocument(ctx);
+        } catch (err) {
+          console.error("Lease document error:", describeError(err));
+          await ctx.reply("Ijara shartnomasini olishda xatolik yuz berdi.", {
+            reply_markup: mainMenu("driver"),
+          });
+        }
+        return;
+      }
+      if (data === "d:photos") {
+        await ctx.reply("📷 Qaysi hujjat rasmini ko'rmoqchisiz?", {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "📷 Passport rasmi", callback_data: "docphoto:passport" },
+                { text: "📷 Guvohnoma rasmi", callback_data: "docphoto:license" },
+              ],
+              [{ text: "⬅️ Menyu", callback_data: "d:profile" }],
+            ],
+          },
+        });
         return;
       }
       if (data === "d:pay") {
@@ -893,6 +1428,9 @@ bot.on("callback_query", async (ctx) => {
             expiresAt: Date.now() + PENDING_TTL_MS,
           });
 
+          const rawCardDigits = cardInfo.paymentCardNumber.replace(/\D/g, "");
+          const paymeLink = `https://payme.uz/fallback/transfer/${rawCardDigits}`;
+          const clickLink = `https://my.click.uz/app/p2p?card=${rawCardDigits}`;
           const formattedCard = cardInfo.paymentCardNumber.replace(/(\d{4})/g, "$1 ").trim();
           const lines = [
             "💳 <b>Masofaviy to'lov (Karta orqali)</b>",
@@ -902,14 +1440,20 @@ bot.on("callback_query", async (ctx) => {
             cardInfo.paymentCardBank ? `Bank: <b>${escapeHtml(cardInfo.paymentCardBank)}</b>` : null,
             cardInfo.paymentInstructions ? `\nKo'rsatma: <i>${escapeHtml(cardInfo.paymentInstructions)}</i>` : null,
             "",
-            "📲 <i>Ilovangiz (Click, Payme, Uzum va h.k.) orqali yuqoridagi kartaga to'lovni bajaring.</i>",
+            "📲 <i>Quyidagi tugmalar orqali to'g'ridan-to'g'ri Click yoki Payme ilovasida to'lashingiz mumkin:</i>",
             "📥 <b>To'lov qilgach, chek rasmini (yoki skrinshotini) shu yerga yuboring:</b>",
           ].filter(Boolean).join("\n");
 
           await ctx.reply(lines, {
             parse_mode: "HTML",
             reply_markup: {
-              inline_keyboard: [[{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }]],
+              inline_keyboard: [
+                [
+                  { text: "🔹 Payme orqali to'lash", url: paymeLink },
+                  { text: "🟢 Click orqali to'lash", url: clickLink },
+                ],
+                [{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }],
+              ],
             },
           });
           return;
@@ -934,9 +1478,12 @@ bot.on("callback_query", async (ctx) => {
           break;
         case "d:debt":
           text = [
+            ...coverageLines(driver),
+            "",
             ...monthLines(driver),
             "",
             "To'lovni har kuni chiqishdan oldin naqd yoki plastik bilan qilishingiz mumkin.",
+            "Bir necha kunlik oldindan to'lov ham qabul qilinadi.",
           ].join("\n");
           break;
         case "d:payments":
@@ -1035,6 +1582,8 @@ function startPolling(attempt = 1): void {
           { command: "start", description: "Boshlash / ro'yxatdan o'tish" },
           { command: "menu", description: "Tugmali menyu" },
           { command: "qarz", description: "Oylik plan va qarz" },
+          { command: "pasport", description: "QR yo'l pasporti" },
+          { command: "ijara", description: "Ijara shartnomasi (PDF)" },
           { command: "tolovlar", description: "Oxirgi to'lovlar" },
           { command: "hujjatlar", description: "Passport va guvohnoma" },
           { command: "yordam", description: "Yordam" },

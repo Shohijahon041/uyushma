@@ -5,11 +5,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { money } from "../../common/money/money";
 import { TenantPrismaService, TenantTx } from "../../common/prisma/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { NotificationsQueueService } from "../notifications/notifications.queue";
+import { TelegramNotifier } from "../notifications/telegram.notifier";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import {
   addMonths,
@@ -42,6 +43,7 @@ import {
   documentsView,
   normalizeDocumentValue,
 } from "./documents";
+import { TelegramFiles } from "./telegram-files";
 
 const LINK_TTL_MS = 15 * 60 * 1000;
 const DEBT_WINDOW_MONTHS = 36;
@@ -77,6 +79,8 @@ export class DriversService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsQueueService,
+    private readonly notifier: TelegramNotifier,
+    private readonly telegramFiles: TelegramFiles,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -127,8 +131,9 @@ export class DriversService {
       });
 
       const period = currentPeriodStart();
+      const today = todayDateOnly();
       const ids = drivers.map((driver) => driver.id);
-      const [plans, payments, planTotals, paymentTotals] = await Promise.all([
+      const [plans, payments, coverage, planTotals, paymentTotals] = await Promise.all([
         tx.vehicleMonthlyPlan.findMany({
           where: { driverId: { in: ids }, periodStart: period },
           select: { driverId: true, amount: true },
@@ -136,6 +141,15 @@ export class DriversService {
         tx.driverPayment.findMany({
           where: { driverId: { in: ids }, periodStart: period },
           select: { driverId: true, amount: true },
+        }),
+        tx.driverPayment.findMany({
+          where: {
+            driverId: { in: ids },
+            coveredFrom: { lte: today },
+            coveredUntil: { gte: today },
+          },
+          orderBy: { coveredUntil: "desc" },
+          select: { driverId: true, days: true, coveredUntil: true },
         }),
         tx.vehicleMonthlyPlan.groupBy({
           by: ["driverId", "periodStart"],
@@ -159,6 +173,16 @@ export class DriversService {
           payment.driverId,
           (paid.get(payment.driverId) ?? 0) + sum(payment.amount),
         );
+      }
+      const coverageMap = new Map<string, { days: number; coveredUntil: Date }>();
+      for (const payment of coverage) {
+        const current = coverageMap.get(payment.driverId);
+        if (!current || payment.coveredUntil > current.coveredUntil) {
+          coverageMap.set(payment.driverId, {
+            days: payment.days,
+            coveredUntil: payment.coveredUntil,
+          });
+        }
       }
       const totalDebt = debtByKey(
         planTotals.map((row) => ({
@@ -189,6 +213,7 @@ export class DriversService {
               linked: driver.telegramChatId !== null,
               username: driver.telegramUsername,
               linkedAt: driver.telegramLinkedAt,
+              hasPhoto: driver.telegramPhotoFileId !== null,
             },
             vehicle: assignment
               ? {
@@ -208,6 +233,10 @@ export class DriversService {
               surplus: Math.max(0, paidMonth - dueMonth).toFixed(2),
             },
             totalDebt: ((totalDebt.get(driver.id) ?? 0) / 100).toFixed(2),
+            workedToday: coverageMap.has(driver.id),
+            paidDays: coverageMap.get(driver.id)?.days ?? 0,
+            coveredUntil:
+              coverageMap.get(driver.id)?.coveredUntil.toISOString().slice(0, 10) ?? null,
           };
         }),
       };
@@ -293,7 +322,8 @@ export class DriversService {
   }
 
   async profile(tenantId: string, id: string) {
-    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+    let telegramChatId: bigint | null = null;
+    const result = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
       const driver = await tx.driver.findFirst({
         where: { id },
         include: {
@@ -308,6 +338,7 @@ export class DriversService {
         },
       });
       if (!driver) throw new NotFoundException("Haydovchi topilmadi");
+      telegramChatId = driver.telegramChatId;
 
       const current = driver.assignments.find((row) => row.endDate === null) ?? null;
       const period = currentPeriodStart();
@@ -440,6 +471,22 @@ export class DriversService {
         payments: recentPayments.map(serializePayment),
       };
     });
+
+    // Bot ulanganda rasm saqlanmagan bo'lsa, Telegram'dan bir marta olib qo'shamiz.
+    if (telegramChatId !== null && !result.driver.telegram.hasPhoto) {
+      const photo = await this.telegramFiles.profilePhotoFileId(telegramChatId);
+      if (photo) {
+        await this.tenantPrisma.withTenant(tenantId, async (tx) => {
+          await tx.driver.update({
+            where: { id },
+            data: { telegramPhotoFileId: photo },
+          });
+        });
+        result.driver.telegram.hasPhoto = true;
+      }
+    }
+
+    return result;
   }
 
   async createTelegramLink(actor: AuthenticatedUser, id: string, ip: string | null) {
@@ -729,7 +776,7 @@ export class DriversService {
         await tx.vehicleMonthlyPlan.createMany({ data: planRows, skipDuplicates: true });
       }
 
-      const [plans, monthPayments, todayPayments, planTotals, paymentTotals] =
+      const [plans, monthPayments, todayPayments, coveragePayments, planTotals, paymentTotals] =
         await Promise.all([
           tx.vehicleMonthlyPlan.findMany({
             where: { vehicleId: { in: vehicleIds }, periodStart: period },
@@ -747,6 +794,21 @@ export class DriversService {
               receivedBy: { select: { id: true, fullName: true } },
             },
             orderBy: { paidAt: "desc" },
+          }),
+          tx.driverPayment.findMany({
+            where: {
+              vehicleId: { in: vehicleIds },
+              coveredFrom: { lte: date },
+              coveredUntil: { gte: date },
+            },
+            orderBy: { coveredUntil: "desc" },
+            select: {
+              vehicleId: true,
+              driverId: true,
+              days: true,
+              coveredFrom: true,
+              coveredUntil: true,
+            },
           }),
           tx.vehicleMonthlyPlan.groupBy({
             by: ["vehicleId", "periodStart"],
@@ -780,6 +842,22 @@ export class DriversService {
           (todayMap.get(payment.vehicleId) ?? 0) + sum(payment.amount),
         );
       }
+      // Shu sanani qoplaydigan to'lovlar — haydovchi "ishga chiqqan" hisoblanadi.
+      const coverageMap = new Map<
+        string,
+        { days: number; coveredFrom: Date; coveredUntil: Date; driverId: string }
+      >();
+      for (const payment of coveragePayments) {
+        const current = coverageMap.get(payment.vehicleId);
+        if (!current || payment.coveredUntil > current.coveredUntil) {
+          coverageMap.set(payment.vehicleId, {
+            days: payment.days,
+            coveredFrom: payment.coveredFrom,
+            coveredUntil: payment.coveredUntil,
+            driverId: payment.driverId,
+          });
+        }
+      }
       const totalDebt = debtByKey(
         planTotals.map((row) => ({
           key: row.vehicleId,
@@ -796,6 +874,7 @@ export class DriversService {
       const items = filtered.map((row) => {
         const due = dueMap.get(row.vehicle.id) ?? 0;
         const paid = paidMap.get(row.vehicle.id) ?? 0;
+        const coverage = coverageMap.get(row.vehicle.id) ?? null;
         return {
           vehicleId: row.vehicle.id,
           plateNumber: row.vehicle.plateNumber,
@@ -818,6 +897,10 @@ export class DriversService {
           },
           paidToday: (todayMap.get(row.vehicle.id) ?? 0).toFixed(2),
           totalDebt: ((totalDebt.get(row.vehicle.id) ?? 0) / 100).toFixed(2),
+          worked: coverage !== null,
+          paidDays: coverage?.days ?? 0,
+          coveredFrom: coverage?.coveredFrom.toISOString().slice(0, 10) ?? null,
+          coveredUntil: coverage?.coveredUntil.toISOString().slice(0, 10) ?? null,
         };
       });
 
@@ -836,6 +919,7 @@ export class DriversService {
           .reduce((total, payment) => total + sum(payment.amount), 0)
           .toFixed(2),
         paymentsToday: todayPayments.length,
+        workedToday: items.filter((item) => item.worked).length,
         totalDebt: items.reduce((total, item) => total + Number(item.totalDebt), 0).toFixed(2),
       };
 
@@ -863,34 +947,45 @@ export class DriversService {
   ) {
     const amount = money(dto.amount);
     if (amount.lte(0)) throw new BadRequestException("Summa noldan katta bo'lishi kerak");
+    const days = dto.days ?? 1;
+    if (days < 1 || days > 31) {
+      throw new BadRequestException("Kunlar soni 1 dan 31 gacha bo'lishi kerak");
+    }
     const now = new Date();
-    let paidAt: Date;
-    let paidDate: Date;
+    const today = todayDateOnly(now);
+    let coverageStart: Date;
     if (dto.paidAt && /^\d{4}-\d{2}-\d{2}$/.test(dto.paidAt.trim())) {
       const day = parseDateOnly(dto.paidAt);
       if (!day) throw new BadRequestException("To'lov sanasi noto'g'ri");
-      paidDate = day;
-      paidAt =
-        day.getTime() === todayDateOnly(now).getTime()
-          ? now
-          : new Date(tashkentDayRange(day).from.getTime() + 12 * 60 * 60 * 1000);
-    } else {
-      paidAt = dto.paidAt ? new Date(dto.paidAt) : now;
-      if (Number.isNaN(paidAt.getTime())) {
+      coverageStart = day;
+    } else if (dto.paidAt) {
+      const parsed = new Date(dto.paidAt);
+      if (Number.isNaN(parsed.getTime())) {
         throw new BadRequestException("To'lov sanasi noto'g'ri");
       }
-      paidDate = todayDateOnly(paidAt);
+      coverageStart = todayDateOnly(parsed);
+    } else {
+      coverageStart = today;
     }
-    if (paidAt.getTime() > now.getTime() + 5 * 60 * 1000) {
-      throw new BadRequestException("Kelajakdagi sana bilan to'lov qabul qilinmaydi");
+    // Haydovchi ertangi kunlar uchun oldindan to'lashi mumkin — 31 kungacha.
+    if (coverageStart.getTime() > addDays(today, 31).getTime()) {
+      throw new BadRequestException("To'lov sanasi 31 kundan keyin bo'lishi mumkin emas");
     }
+    const paidAt =
+      coverageStart.getTime() === today.getTime()
+        ? now
+        : coverageStart.getTime() < today.getTime()
+          ? new Date(tashkentDayRange(coverageStart).from.getTime() + 12 * 60 * 60 * 1000)
+          : now;
+    const coveredFrom = coverageStart;
+    const coveredUntil = addDays(coverageStart, days - 1);
     const key = idempotencyKey.trim();
     if (key && !/^[A-Za-z0-9_.:-]{8,120}$/.test(key)) {
       throw new BadRequestException(
         "Idempotency-Key sarlavhasi 8-120 belgidan iborat bo'lishi kerak",
       );
     }
-    const period = periodStartFor(paidAt);
+    const period = periodStartFor(coverageStart);
 
     try {
       const result = await this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
@@ -903,7 +998,11 @@ export class DriversService {
             },
           });
           if (existing) {
-            if (existing.vehicleId !== dto.vehicleId || !existing.amount.eq(amount)) {
+            if (
+              existing.vehicleId !== dto.vehicleId ||
+              !existing.amount.eq(amount) ||
+              existing.days !== days
+            ) {
               throw new ConflictException("Idempotency-Key boshqa to'lov bilan ishlatilgan");
             }
             return { payment: serializePayment(existing), idempotentReplay: true };
@@ -920,8 +1019,8 @@ export class DriversService {
         const assignment = await tx.vehicleAssignment.findFirst({
           where: {
             vehicleId: vehicle.id,
-            startDate: { lte: paidDate },
-            OR: [{ endDate: null }, { endDate: { gte: paidDate } }],
+            startDate: { lte: coverageStart },
+            OR: [{ endDate: null }, { endDate: { gte: coverageStart } }],
           },
           include: { driver: { select: { id: true, fullName: true } } },
         });
@@ -960,6 +1059,9 @@ export class DriversService {
             amount,
             method: dto.method,
             periodStart: period,
+            coveredFrom,
+            coveredUntil,
+            days,
             paidAt,
             source: "PANEL",
             note: dto.note?.trim() || null,
@@ -985,6 +1087,9 @@ export class DriversService {
             amount: created.amount.toFixed(2),
             method: created.method,
             period: formatPeriod(period),
+            days,
+            coveredFrom: coveredFrom.toISOString().slice(0, 10),
+            coveredUntil: coveredUntil.toISOString().slice(0, 10),
           },
           ip,
         });
@@ -1288,8 +1393,9 @@ export class DriversService {
       });
       if (!driver) throw new NotFoundException("Haydovchi topilmadi");
       const period = currentPeriodStart();
+      const today = todayDateOnly();
       const windowStart = addMonths(period, -(DEBT_WINDOW_MONTHS - 1));
-      const [dueRow, paidRow, planTotals, paymentTotals, payments] =
+      const [dueRow, paidRow, planTotals, paymentTotals, payments, coverageRows, nextCoverageRows] =
         await Promise.all([
           tx.vehicleMonthlyPlan.findMany({
             where: { driverId, periodStart: period },
@@ -1316,6 +1422,18 @@ export class DriversService {
             include: {
               vehicle: { select: { plateNumber: true } },
             },
+          }),
+          tx.driverPayment.findMany({
+            where: { driverId, coveredFrom: { lte: today }, coveredUntil: { gte: today } },
+            orderBy: { coveredUntil: "desc" },
+            take: 1,
+            select: { days: true, coveredFrom: true, coveredUntil: true },
+          }),
+          tx.driverPayment.findMany({
+            where: { driverId, coveredFrom: { gt: today } },
+            orderBy: { coveredFrom: "asc" },
+            take: 1,
+            select: { days: true, coveredFrom: true, coveredUntil: true },
           }),
         ]);
 
@@ -1357,11 +1475,27 @@ export class DriversService {
           debt: Math.max(0, due - paid).toFixed(2),
         },
         totalDebt: (totalDebt / 100).toFixed(2),
+        coverage: coverageRows[0]
+          ? {
+              workedToday: true,
+              days: coverageRows[0].days,
+              coveredFrom: coverageRows[0].coveredFrom.toISOString().slice(0, 10),
+              coveredUntil: coverageRows[0].coveredUntil.toISOString().slice(0, 10),
+            }
+          : null,
+        nextCoverage: nextCoverageRows[0]
+          ? {
+              days: nextCoverageRows[0].days,
+              coveredFrom: nextCoverageRows[0].coveredFrom.toISOString().slice(0, 10),
+              coveredUntil: nextCoverageRows[0].coveredUntil.toISOString().slice(0, 10),
+            }
+          : null,
         payments: payments.map((payment) => ({
           id: payment.id,
           amount: payment.amount.toFixed(2),
           method: payment.method,
           paidAt: payment.paidAt,
+          days: payment.days,
           plateNumber: payment.vehicle.plateNumber,
         })),
       };
@@ -1473,5 +1607,450 @@ export class DriversService {
       if (!fileId) throw new NotFoundException("Rasm yo'q");
       return fileId;
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Smenalar (Shift tracking: smenaga chiqish va smenani yakunlash)
+  // -------------------------------------------------------------------------
+
+  async startShift(tenantId: string, driverId: string, startOdometer?: number, note?: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const assignment = await tx.vehicleAssignment.findFirst({
+        where: { driverId, endDate: null },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+      if (!assignment || !assignment.vehicle) {
+        throw new BadRequestException("Sizga hozirda faol avtomobil biriktirilmagan");
+      }
+
+      const existing = await tx.driverShift.findFirst({
+        where: { driverId, status: "ACTIVE" },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+      });
+
+      if (existing) {
+        return {
+          alreadyActive: true,
+          shift: existing,
+          message: "Sizda allaqachon faol smena mavjud",
+        };
+      }
+
+      const shift = await tx.driverShift.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          driverId,
+          vehicleId: assignment.vehicle.id,
+          startOdometer: startOdometer ? Math.floor(startOdometer) : null,
+          status: "ACTIVE",
+          note: note?.trim() || null,
+        },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      return {
+        alreadyActive: false,
+        shift,
+        message: "Smena muvaffaqiyatli boshlandi",
+      };
+    });
+  }
+
+  async endShift(tenantId: string, driverId: string, endOdometer?: number, note?: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const activeShift = await tx.driverShift.findFirst({
+        where: { driverId, status: "ACTIVE" },
+        orderBy: { startedAt: "desc" },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      if (!activeShift) {
+        throw new BadRequestException("Sizda hozirda faol smena topilmadi");
+      }
+
+      const endedAt = new Date();
+      const durationMs = endedAt.getTime() - activeShift.startedAt.getTime();
+      const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
+      const endKm = endOdometer ? Math.floor(endOdometer) : null;
+      let distanceKm: number | null = null;
+      if (endKm && activeShift.startOdometer && endKm >= activeShift.startOdometer) {
+        distanceKm = endKm - activeShift.startOdometer;
+      }
+
+      const updated = await tx.driverShift.update({
+        where: { id: activeShift.id },
+        data: {
+          endedAt,
+          endOdometer: endKm,
+          status: "COMPLETED",
+          note: note ? (activeShift.note ? `${activeShift.note} | ${note}` : note) : activeShift.note,
+        },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      return {
+        shift: updated,
+        durationMinutes,
+        distanceKm,
+        message: "Smena muvaffaqiyatli yakunlandi",
+      };
+    });
+  }
+
+  async getCurrentShift(tenantId: string, driverId: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      return tx.driverShift.findFirst({
+        where: { driverId, status: "ACTIVE" },
+        orderBy: { startedAt: "desc" },
+        include: {
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  async listShifts(tenantId: string, query?: { date?: string; status?: string }) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      let dateFilter: { gte?: Date; lte?: Date } | undefined;
+      if (query?.date) {
+        const start = new Date(`${query.date}T00:00:00+05:00`);
+        const end = new Date(`${query.date}T23:59:59+05:00`);
+        dateFilter = { gte: start, lte: end };
+      }
+
+      const shifts = await tx.driverShift.findMany({
+        where: {
+          ...(query?.status ? { status: query.status as any } : {}),
+          ...(dateFilter ? { startedAt: dateFilter } : {}),
+        },
+        include: {
+          driver: { select: { id: true, fullName: true, phone: true } },
+          vehicle: {
+            select: {
+              id: true,
+              plateNumber: true,
+              model: true,
+              route: { select: { id: true, name: true } },
+            },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+        take: 100,
+      });
+
+      return shifts.map((s) => ({
+        id: s.id,
+        driverId: s.driverId,
+        driverName: s.driver.fullName,
+        driverPhone: s.driver.phone,
+        vehicleId: s.vehicleId,
+        plateNumber: s.vehicle.plateNumber,
+        model: s.vehicle.model,
+        routeName: s.vehicle.route?.name ?? null,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        startOdometer: s.startOdometer,
+        endOdometer: s.endOdometer,
+        distanceKm:
+          s.endOdometer && s.startOdometer && s.endOdometer >= s.startOdometer
+            ? s.endOdometer - s.startOdometer
+            : null,
+        status: s.status,
+        note: s.note,
+      }));
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Favqulodda hodisa va SOS nosozliklar
+  // -------------------------------------------------------------------------
+
+  async reportIncident(tenantId: string, driverId: string, kind: string, description?: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const driver = await tx.driver.findFirst({
+        where: { id: driverId },
+        include: {
+          assignments: {
+            where: { endDate: null },
+            take: 1,
+            include: {
+              vehicle: {
+                select: {
+                  id: true,
+                  plateNumber: true,
+                  model: true,
+                  route: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!driver) throw new NotFoundException("Haydovchi topilmadi");
+
+      const vehicle = driver.assignments[0]?.vehicle;
+      if (!vehicle) {
+        throw new BadRequestException("Biriktirilgan avtomobil topilmadi");
+      }
+
+      const incident = await tx.driverIncident.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          driverId,
+          vehicleId: vehicle.id,
+          kind: kind.trim(),
+          description: description?.trim() || null,
+          status: "OPEN",
+        },
+        include: {
+          driver: { select: { fullName: true, phone: true } },
+          vehicle: {
+            select: {
+              plateNumber: true,
+              model: true,
+              route: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      return incident;
+    });
+  }
+
+  async listIncidents(tenantId: string, status?: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const incidents = await tx.driverIncident.findMany({
+        where: {
+          ...(status ? { status: status as any } : {}),
+        },
+        include: {
+          driver: { select: { fullName: true, phone: true } },
+          vehicle: {
+            select: {
+              plateNumber: true,
+              model: true,
+              route: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { reportedAt: "desc" },
+        take: 50,
+      });
+
+      return incidents.map((inc) => ({
+        id: inc.id,
+        driverId: inc.driverId,
+        driverName: inc.driver.fullName,
+        driverPhone: inc.driver.phone,
+        vehicleId: inc.vehicleId,
+        plateNumber: inc.vehicle.plateNumber,
+        model: inc.vehicle.model,
+        routeName: inc.vehicle.route?.name ?? null,
+        kind: inc.kind,
+        description: inc.description,
+        status: inc.status,
+        reportedAt: inc.reportedAt,
+        resolvedAt: inc.resolvedAt,
+      }));
+    });
+  }
+
+  async resolveIncident(tenantId: string, incidentId: string) {
+    return this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const incident = await tx.driverIncident.findFirst({
+        where: { id: incidentId },
+      });
+      if (!incident) throw new NotFoundException("Nosozlik xabari topilmadi");
+
+      return tx.driverIncident.update({
+        where: { id: incidentId },
+        data: {
+          status: "RESOLVED",
+          resolvedAt: new Date(),
+        },
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Haydovchiga qarzdorlik eslatmasi (Telegram reminder)
+  // -------------------------------------------------------------------------
+
+  async sendDebtReminder(tenantId: string, driverId: string) {
+    const data = await this.tenantPrisma.withTenant(tenantId, async (tx) => {
+      const driver = await tx.driver.findFirst({
+        where: { id: driverId },
+        include: {
+          assignments: {
+            where: { endDate: null },
+            take: 1,
+            include: { vehicle: true },
+          },
+        },
+      });
+      if (!driver) throw new NotFoundException("Haydovchi topilmadi");
+      if (!driver.telegramChatId) {
+        throw new BadRequestException("Haydovchi Telegram botga ulanmagan");
+      }
+
+      const period = currentPeriodStart();
+      const windowStart = addMonths(period, -(DEBT_WINDOW_MONTHS - 1));
+      const [planTotals, paymentTotals, company] = await Promise.all([
+        tx.vehicleMonthlyPlan.groupBy({
+          by: ["driverId", "periodStart"],
+          where: { driverId, periodStart: { gte: windowStart } },
+          _sum: { amount: true },
+        }),
+        tx.driverPayment.groupBy({
+          by: ["driverId", "periodStart"],
+          where: { driverId, periodStart: { gte: windowStart } },
+          _sum: { amount: true },
+        }),
+        tx.company.findFirst({
+          where: { id: tenantId },
+          select: {
+            name: true,
+            paymentCardNumber: true,
+            paymentCardHolder: true,
+            paymentCardBank: true,
+          },
+        }),
+      ]);
+
+      const debtMap = debtByKey(
+        planTotals.map((r) => ({
+          key: r.driverId,
+          periodStart: r.periodStart,
+          amount: sum(r._sum.amount),
+        })),
+        paymentTotals.map((r) => ({
+          key: r.driverId,
+          periodStart: r.periodStart,
+          amount: sum(r._sum.amount),
+        })),
+      );
+
+      const totalDebt = debtMap.get(driverId) ?? 0;
+      if (totalDebt <= 0) {
+        throw new BadRequestException("Haydovchida to'lanmagan qarzdorlik mavjud emas");
+      }
+
+      return {
+        driver,
+        company,
+        totalDebt,
+        plateNumber: driver.assignments[0]?.vehicle?.plateNumber ?? "avtomobil",
+      };
+    });
+
+    const cardInfo = data.company?.paymentCardNumber
+      ? `\n💳 <b>To'lov kartasi:</b> <code>${data.company.paymentCardNumber}</code> (${data.company.paymentCardHolder ?? ""} ${data.company.paymentCardBank ? `· ${data.company.paymentCardBank}` : ""})`
+      : "";
+
+    const message = [
+      `🔔 <b>Hurmatli ${data.driver.fullName}!</b>`,
+      "",
+      `<b>${data.company?.name ?? "Korxona"}</b> ma'muriyati shuni eslatadiki, <b>${data.plateNumber}</b> bo'yicha to'lanmagan qarzdorlik mavjud:`,
+      `💰 <b>Qarzdorlik summasi:</b> ${Math.round(data.totalDebt).toLocaleString("uz-UZ")} so'm`,
+      cardInfo,
+      "",
+      `<i>Iltimos, to'lovni o'z vaqtida amalga oshiring. To'lov chekini ushbu botda «💳 Masofaviy to'lov (Karta)» bo'limi orqali yuborishingiz mumkin.</i>`,
+    ].filter(Boolean).join("\n");
+
+    const chatId = data.driver.telegramChatId;
+    if (!chatId) {
+      throw new BadRequestException("Haydovchi Telegram botga ulanmagan");
+    }
+
+    await this.notifier.send(chatId.toString(), message);
+
+    return {
+      ok: true,
+      sent: true,
+      driverName: data.driver.fullName,
+      debt: data.totalDebt,
+      message: `${data.driver.fullName} ga eslatma muvaffaqiyatli yuborildi`,
+    };
+  }
+
+  async sendBulkDebtReminders(tenantId: string) {
+    const list = await this.daily(tenantId);
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const item of list.items) {
+      const debtNum = Number(item.totalDebt) > 0 ? Number(item.totalDebt) : Number(item.month.debt);
+      if (debtNum > 0 && item.driver?.id) {
+        try {
+          await this.sendDebtReminder(tenantId, item.driver.id);
+          sentCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    }
+
+    return {
+      total: list.items.length,
+      sentCount,
+      failedCount,
+      message: `${sentCount} ta qarzdor haydovchiga eslatma muvaffaqiyatli yuborildi`,
+    };
   }
 }

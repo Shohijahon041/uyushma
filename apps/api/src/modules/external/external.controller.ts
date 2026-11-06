@@ -4,17 +4,19 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Post,
   Put,
   Query,
   Req,
+  Res,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import type { ExternalProvider } from "@prisma/client";
-import type { Request } from "express";
-import { CurrentUser, Roles } from "../../common/auth/decorators";
+import type { Request, Response } from "express";
+import { CurrentUser, Public, Roles } from "../../common/auth/decorators";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import {
   EImzoLoginRequestDto,
@@ -31,6 +33,7 @@ import { OneIdAuthService } from "./connectors/oneid.service";
 import { OneIdBrowserService } from "./connectors/oneid-browser.service";
 import { EImzoService } from "./connectors/eimzo.service";
 import { ExternalCrossLinkService } from "./cross-link.service";
+import { LocalConnectorService } from "./local-connector.service";
 
 function providerOf(value: string): ExternalProvider {
   if (value === "ETENDER" || value === "AUTOPARK" || value === "IJARA") return value;
@@ -51,6 +54,7 @@ export class ExternalSettingsController {
     private readonly oneIdAuth: OneIdAuthService,
     private readonly browserAuth: OneIdBrowserService,
     private readonly eimzo: EImzoService,
+    private readonly localConnector: LocalConnectorService,
   ) {}
 
   @Get()
@@ -115,6 +119,19 @@ export class ExternalSettingsController {
     }
 
     return this.oneIdAuth.exchangeCode(user, prov, browserResult.code, ip(request));
+  }
+
+  /**
+   * Kompyuterdagi "Uyushma ulagich" skripti uchun bir martalik kod.
+   * Skript Chrome oynasini ochadi, login tugagach tokenni avtomatik yuboradi.
+   */
+  @Post(":provider/browser-pairing")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  browserPairing(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+  ) {
+    return this.localConnector.issue(user, providerOf(provider));
   }
 
   /**
@@ -299,14 +316,65 @@ export class RegistryController {
   }
 
   /**
-   * Mavjud avtomobillar uchun Soliq ijara namunaviy shartnomalarini yuklash (Demo)
+   * Yo'l inspeksiyasi (YPX / Transport nazorati) va yo'lovchilar uchun
+   * davlat raqami bo'yicha avtomobilning raqamli yo'l pasportini tekshirish (Ommaviy QR)
    */
-  @Post("cross-link/seed-demo-ijara")
-  @Roles("OWNER", "ADMIN")
-  seedDemoIjara(
-    @CurrentUser() user: AuthenticatedUser,
-    @Req() request: Request,
+  @Public()
+  @Get("public-verify/:plateNumber")
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async publicVerify(@Param("plateNumber") plateNumber: string) {
+    const passport = await this.crossLink.getPublicPassport(plateNumber);
+    if (!passport) {
+      throw new NotFoundException("Avtomobil ma'lumotlari reyestrdan topilmadi");
+    }
+    return passport;
+  }
+
+  /**
+   * QR Pasport uchun grafik QR kod (PNG). Telegram bot va chop etish uchun ishlatiladi.
+   */
+  @Public()
+  @Get("public-verify/:plateNumber/qr")
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  async publicVerifyQr(
+    @Param("plateNumber") plateNumber: string,
+    @Res() response: Response,
   ) {
-    return this.crossLink.seedDemoIjaraContracts(user, ip(request));
+    const passport = await this.crossLink.getPublicPassport(plateNumber);
+    if (!passport) {
+      throw new NotFoundException("Avtomobil ma'lumotlari reyestrdan topilmadi");
+    }
+    const png = await this.crossLink.buildPassportQr(passport.plateNumber);
+    response.setHeader("Content-Type", "image/png");
+    response.setHeader("Cache-Control", "public, max-age=300");
+    response.setHeader(
+      "Content-Disposition",
+      `inline; filename="qr-${passport.plateNumber}.png"`,
+    );
+    response.send(png);
+  }
+
+  /**
+   * QR Pasportning chop etiladigan PDF varianti.
+   * Haydovchi, korxona va inspeksiya yuklab olishi mumkin.
+   */
+  @Public()
+  @Get("public-verify/:plateNumber/pdf")
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async publicVerifyPdf(
+    @Param("plateNumber") plateNumber: string,
+    @Res() response: Response,
+  ) {
+    const passport = await this.crossLink.getPublicPassport(plateNumber);
+    if (!passport) {
+      throw new NotFoundException("Avtomobil ma'lumotlari reyestrdan topilmadi");
+    }
+    const pdf = await this.crossLink.buildPassportPdf(passport);
+    response.setHeader("Content-Type", "application/pdf");
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="ijara-malumotnoma-${passport.plateNumber}.pdf"`,
+    );
+    response.send(pdf);
   }
 }

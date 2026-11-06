@@ -65,6 +65,10 @@ export function formatMoney(value: string | null | undefined): string {
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
+  // API already sends Tashkent calendar dates (YYYY-MM-DD); parse them as-is so
+  // a browser in another timezone cannot shift the document date by one day.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) return `${dateOnly[3]}.${dateOnly[2]}.${dateOnly[1]}`;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 10);
   return new Intl.DateTimeFormat("uz-UZ", {

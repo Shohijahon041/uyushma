@@ -18,7 +18,10 @@ export type IconName =
   | "database"
   | "bell"
   | "sun"
-  | "moon";
+  | "moon"
+  | "alert"
+  | "clock"
+  | "ban";
 
 const paths: Record<IconName, React.ReactNode> = {
   sun: (
@@ -113,6 +116,24 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </>
+  ),
+  alert: (
+    <>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  ban: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m5.6 5.6 12.8 12.8" />
     </>
   ),
 };

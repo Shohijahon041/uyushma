@@ -54,6 +54,7 @@ export interface AuthUserView {
   phone: string | null;
   fullName: string;
   role: UserRole;
+  isSuperAdmin: boolean;
   twoFactorEnabled: boolean;
 }
 
@@ -742,6 +743,7 @@ export class AuthService implements OnModuleInit {
       phone: user.phone,
       fullName: user.fullName,
       role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
       twoFactorEnabled: user.twoFactorEnabled,
     };
   }

@@ -6,6 +6,8 @@ import { apiRequest } from "@/lib/client-api";
 import { formatMoney } from "@/lib/use-api";
 import { todayTashkent } from "@/lib/tashkent";
 import type { DailyBoard, DailyBoardItem } from "@/lib/types";
+import { formatUzPlate } from "@/lib/plate";
+import { formatUzPhone } from "@/lib/phone";
 import { normalizeMoneyInput } from "./route-plan-input";
 
 const MONEY = /^\d{1,16}(\.\d{1,2})?$/;
@@ -220,7 +222,7 @@ function QuickPayDialog({ onClose }: { onClose: () => void }) {
                       onClick={() => choose(item)}
                     >
                       <span>
-                        <span className="font-mono font-semibold text-slate-900">{item.plateNumber}</span>
+                        <span className="font-mono font-semibold text-slate-900">{formatUzPlate(item.plateNumber)}</span>
                         <span className="ml-2 text-slate-600">{item.driver.fullName}</span>
                         {item.route && (
                           <span className="block text-[11px] text-slate-400">{item.route.name}</span>
@@ -243,9 +245,11 @@ function QuickPayDialog({ onClose }: { onClose: () => void }) {
               <div className="rounded-xl border border-slate-200 p-3 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-mono text-base font-bold text-slate-900">{selected.plateNumber}</p>
+                    <p className="font-mono text-base font-bold text-slate-900">{formatUzPlate(selected.plateNumber)}</p>
                     <p className="text-slate-600">{selected.driver.fullName}</p>
-                    <p className="font-mono text-[11px] text-slate-400">{selected.driver.phone}</p>
+                    <p className="font-mono text-[11px] text-slate-400">
+                      {formatUzPhone(selected.driver.phone)}
+                    </p>
                   </div>
                   <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={reset}>
                     {t("change")}

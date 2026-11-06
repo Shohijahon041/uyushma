@@ -116,6 +116,7 @@ export class DriversController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", new ParseUUIDPipe()) id: string,
     @Param("kind") kind: string,
+    @Query("download") download: string | undefined,
     @Res() response: Response,
   ) {
     if (!(DRIVER_PHOTO_KINDS as readonly string[]).includes(kind)) {
@@ -124,11 +125,21 @@ export class DriversController {
     }
     const fileId = await this.drivers.photoFileId(user.tenantId, id, kind as DriverPhotoKind);
     const file = await this.telegramFiles.download(fileId);
+    const extension = file.contentType.includes("png")
+      ? "png"
+      : file.contentType.includes("webp")
+        ? "webp"
+        : "jpg";
+    const attachment = download === "1" || download === "true";
     response
       .status(200)
       .setHeader("Content-Type", file.contentType)
       .setHeader("Cache-Control", "private, max-age=300")
       .setHeader("X-Content-Type-Options", "nosniff")
+      .setHeader(
+        "Content-Disposition",
+        `${attachment ? "attachment" : "inline"}; filename="${kind}-${id}.${extension}"`,
+      )
       .send(file.body);
   }
 
@@ -164,6 +175,34 @@ export class DriversController {
   ) {
     return this.drivers.createTelegramLink(user, id, ip(request));
   }
+
+  @Get("shifts/all")
+  @Roles(...READ_ROLES)
+  shifts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("date") date?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.drivers.listShifts(user.tenantId, { date, status });
+  }
+
+  @Get("incidents/all")
+  @Roles(...READ_ROLES)
+  incidents(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("status") status?: string,
+  ) {
+    return this.drivers.listIncidents(user.tenantId, status);
+  }
+
+  @Patch("incidents/:id/resolve")
+  @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER)
+  resolveIncident(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ) {
+    return this.drivers.resolveIncident(user.tenantId, id);
+  }
 }
 
 @ApiTags("billing")
@@ -171,6 +210,23 @@ export class DriversController {
 @Controller("billing")
 export class BillingController {
   constructor(private readonly drivers: DriversService) {}
+
+  @Post("remind/:driverId")
+  @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.ACCOUNTANT)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  sendDebtReminder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("driverId", new ParseUUIDPipe()) driverId: string,
+  ) {
+    return this.drivers.sendDebtReminder(user.tenantId, driverId);
+  }
+
+  @Post("remind-all")
+  @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.ACCOUNTANT)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  sendBulkDebtReminders(@CurrentUser() user: AuthenticatedUser) {
+    return this.drivers.sendBulkDebtReminders(user.tenantId);
+  }
 
   @Get("daily")
   @Roles(...READ_ROLES)

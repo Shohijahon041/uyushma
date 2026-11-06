@@ -164,7 +164,9 @@ export async function sessionLogin(payload: {
     body: JSON.stringify(payload),
   });
   if (!response.ok) await parseError(response);
-  return response.json();
+  const result = (await response.json()) as SessionLoginResult;
+  if (!("mfaRequired" in result)) clearSessionCache();
+  return result;
 }
 
 export async function sessionVerifyTwoFactor(payload: {
@@ -179,10 +181,12 @@ export async function sessionVerifyTwoFactor(payload: {
     body: JSON.stringify(payload),
   });
   if (!response.ok) await parseError(response);
-  return response.json();
+  const result = (await response.json()) as SessionUser;
+  clearSessionCache();
+  return result;
 }
 
-export async function sessionLogout(): Promise<void> {
+export function clearSessionCache(): void {
   if (typeof window !== "undefined") {
     try {
       sessionStorage.removeItem("uyushma_me");
@@ -191,6 +195,10 @@ export async function sessionLogout(): Promise<void> {
     }
   }
   invalidateApiCache();
+}
+
+export async function sessionLogout(): Promise<void> {
+  clearSessionCache();
   await fetch("/api/session/logout", {
     method: "POST",
     credentials: "same-origin",

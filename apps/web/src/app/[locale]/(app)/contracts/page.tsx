@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatMoney, useApi } from "@/lib/use-api";
 import type { Contract, ExternalRecordRow, Tariff, Vehicle } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
+import { formatUzPlate } from "@/lib/plate";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -138,7 +139,7 @@ export default function ContractsPage() {
                   .filter((vehicle) => vehicle.status !== "INACTIVE")
                   .map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
-                      {vehicle.plateNumber} — {vehicle.model}
+                      {formatUzPlate(vehicle.plateNumber)} — {vehicle.model}
                     </option>
                   ))}
               </select>
@@ -271,7 +272,7 @@ export default function ContractsPage() {
                   <tr key={contract.id}>
                     <td>
                       <p className="font-semibold text-slate-900">
-                        {contract.vehicle.plateNumber}
+                        {formatUzPlate(contract.vehicle.plateNumber)}
                       </p>
                       <p className="text-xs text-slate-400">{contract.vehicle.model}</p>
                     </td>

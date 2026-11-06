@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { formatDateTime, useApi } from "@/lib/use-api";
 import { apiRequest } from "@/lib/client-api";
 import { Alert, EmptyState, Loading, PageHeader } from "@/components/ui";
+import { formatUzPlate } from "@/lib/plate";
 
 interface NotificationItem {
   id: string;
@@ -250,7 +251,7 @@ export default function NotificationsPage() {
                         )}
                       </td>
                       <td className="text-xs text-slate-600 max-w-xs truncate">
-                        {p.plateNumber && <span className="font-semibold text-slate-800 mr-2">{String(p.plateNumber)}</span>}
+                        {p.plateNumber && <span className="font-semibold text-slate-800 mr-2">{formatUzPlate(String(p.plateNumber))}</span>}
                         {p.amount && <span className="text-emerald-700 font-medium mr-2">{String(p.amount)} so'm</span>}
                         {p.driverName && <span className="text-slate-500 mr-2">({String(p.driverName)})</span>}
                         {p.daysLeft !== undefined && <span className="text-red-600 font-medium mr-2">{String(p.daysLeft)} kun qoldi</span>}

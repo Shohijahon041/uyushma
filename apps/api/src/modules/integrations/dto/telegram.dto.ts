@@ -97,3 +97,46 @@ export class SubmitReceiptBotDto {
   @IsString()
   note?: string;
 }
+
+export class StartShiftBotDto {
+  @IsString()
+  @Matches(CHAT_ID, { message: "chatId noto'g'ri" })
+  chatId!: string;
+
+  @IsOptional()
+  startOdometer?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
+export class EndShiftBotDto {
+  @IsString()
+  @Matches(CHAT_ID, { message: "chatId noto'g'ri" })
+  chatId!: string;
+
+  @IsOptional()
+  endOdometer?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
+export class ReportIncidentBotDto {
+  @IsString()
+  @Matches(CHAT_ID, { message: "chatId noto'g'ri" })
+  chatId!: string;
+
+  @IsString()
+  @MaxLength(80)
+  kind!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+}

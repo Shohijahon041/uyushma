@@ -1,6 +1,16 @@
-import { AutoparkConnector } from "./autopark.connector";
+import { AutoparkConnector, chooseProfile } from "./autopark.connector";
 import { EtenderConnector } from "./etender.connector";
 import { IjaraConnector } from "./ijara.connector";
+import { formatPlateDisplay } from "./mapping";
+
+describe("formatPlateDisplay", () => {
+  it("renders Uzbek plate numbers in the official layout", () => {
+    expect(formatPlateDisplay("60A125UA")).toBe("60 A 125 UA");
+    expect(formatPlateDisplay("01 a 123 bc")).toBe("01 A 123 BC");
+    expect(formatPlateDisplay("A125BC")).toBe("A 125 BC");
+    expect(formatPlateDisplay("")).toBe("");
+  });
+});
 
 type Handler = (url: URL, method: string, init?: RequestInit) => unknown | Promise<unknown>;
 
@@ -657,6 +667,113 @@ describe("AutoparkConnector", () => {
         {},
       ),
     ).rejects.toThrow(/BM login yoki parol xato/);
+  });
+
+  it("matches the target company despite legal-form suffixes", () => {
+    const profiles = [
+      { id: "p1", organizationName: '"MARDON AVTO SERVIS" MCHJ' },
+      { id: "p2", organizationName: '"CAR LUX" MCHJ' },
+    ];
+    expect(chooseProfile(profiles, { organizationName: "CARLUX" })?.id).toBe("p2");
+    expect(chooseProfile(profiles, { organizationName: "MARDON AVTO SERVIS" })?.id).toBe("p1");
+    expect(chooseProfile(profiles, { organizationName: "Noma'lum" })).toBeNull();
+    expect(chooseProfile(profiles, { profileId: "p1" })?.id).toBe("p1");
+  });
+
+  it("switches to the configured profile after OneID login", async () => {
+    const fetchMock = installFetch((url, method) => {
+      if (
+        method === "POST" &&
+        url.pathname === "/user-management/api/v1/user-profile/login-via-oneid/profiles"
+      ) {
+        return {
+          data: {
+            token: { access_token: "default-token" },
+            profiles: [
+              { id: "p1", organizationName: '"MARDON AVTO SERVIS" MCHJ' },
+              { id: "p2", organizationName: '"CAR LUX" MCHJ' },
+            ],
+          },
+        };
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/user-management/api/v1/user-profile/get-token-by-profile/p2"
+      ) {
+        return { access_token: "carlux-token" };
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`);
+    });
+
+    const result = await connector.login(
+      "https://bmapi.dtransport.uz",
+      { code: "one-code" },
+      { organizationName: "CARLUX" },
+    );
+
+    expect(result.token).toBe("carlux-token");
+    expect(result.account).toBe('"CAR LUX" MCHJ');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("switches profiles returned by the password login response", async () => {
+    installFetch((url, method) => {
+      if (url.pathname === "/user-management/api/v1/user-profile/login" && method === "POST") {
+        return {
+          access_token: "default-token",
+          data: {
+            profiles: [
+              { id: "p1", organizationName: '"MARDON AVTO SERVIS" MCHJ' },
+              { id: "p2", organizationName: '"CAR LUX" MCHJ' },
+            ],
+          },
+        };
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/user-management/api/v1/user-profile/get-token-by-profile/p2"
+      ) {
+        return { access_token: "carlux-token" };
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`);
+    });
+
+    const result = await connector.login(
+      "https://bmapi.dtransport.uz",
+      { username: "dispatcher", password: "bm-pass" },
+      { organizationName: "CARLUX" },
+    );
+
+    expect(result.token).toBe("carlux-token");
+    expect(result.account).toBe('"CAR LUX" MCHJ');
+  });
+
+  it("renews an expired BM session and returns the rotated refresh token", async () => {
+    const fetchMock = installFetch((url, method) => {
+      if (
+        method === "POST" &&
+        url.pathname === "/user-management/api/v1/user-profile/refresh-token"
+      ) {
+        return {
+          data: { access_token: "fresh-token", refresh_token: "fresh-refresh" },
+        };
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`);
+    });
+
+    const result = await connector.refresh(
+      "https://bmapi.dtransport.uz",
+      "old-refresh",
+    );
+
+    expect(result).toEqual({
+      token: "fresh-token",
+      refreshToken: "fresh-refresh",
+    });
+    const body = JSON.parse(
+      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
+    ) as Record<string, string>;
+    expect(body).toEqual({ refreshToken: "old-refresh" });
   });
 });
 

@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yagona Transport & Ijara Portali</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        [x-cloak] { display: none !important; }
+        .badge-etender { background-color: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
+        .badge-bm { background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+        .badge-ijara { background-color: #FEF3C7; color: #B45309; border: 1px solid #FDE68A; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white text-lg font-bold">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-slate-800 leading-tight">Yagona Transport Portali</h1>
+                    <p class="text-xs text-slate-500">e-tender • bm.dtransport • ijara.soliq</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <button id="syncBtn" onclick="triggerSync()" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition duration-150 shadow-sm">
+                    <i id="syncIcon" class="fa-solid fa-arrows-rotate mr-2"></i>
+                    <span>Sinxronizatsiya</span>
+                </button>
+                <div class="text-sm text-slate-600 border-l border-slate-200 pl-4 flex items-center space-x-2">
+                    <i class="fa-solid fa-user-circle text-slate-400 text-lg"></i>
+                    <span class="font-medium text-slate-700">{{ username }}</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Asosiy mazmun -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- KPI Kartochkalari -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Jami Yozuvlar</p>
+                        <h3 id="statTotal" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Avtomobillar</p>
+                        <h3 id="statVehicles" class="text-2xl font-bold text-emerald-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-bus"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Ijara Shartnomalari</p>
+                        <h3 id="statIjara" class="text-2xl font-bold text-amber-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-file-contract"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Litsenziya / Tenderlar</p>
+                        <h3 id="statTender" class="text-2xl font-bold text-indigo-600 mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-stamp"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtrlar va Qidiruv -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-center">
+            <div class="relative w-full md:w-96">
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
+                <input id="searchInput" type="text" placeholder="Davlat raqam, shartnoma, ism qidirish..." 
+                       class="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <select id="sourceFilter" onchange="loadRecords()" class="text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Barcha Manbalar</option>
+                    <option value="etender">e-tender.uztrans.uz</option>
+                    <option value="bm_dtransport">bm.dtransport.uz</option>
+                    <option value="ijara_soliq">ijara.soliq.uz</option>
+                </select>
+
+                <select id="typeFilter" onchange="loadRecords()" class="text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Barcha Turlar</option>
+                    <option value="CAR">Avtomobil</option>
+                    <option value="CONTRACT">Tender Shartnomasi</option>
+                    <option value="RENT_CONTRACT">Ijara Shartnomasi</option>
+                    <option value="DRIVER">Haydovchi</option>
+                    <option value="CERTIFICATE">Guvohnoma</option>
+                </select>
+
+                <button onclick="loadRecords()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition duration-150">
+                    <i class="fa-solid fa-filter mr-1"></i> Filtr
+                </button>
+            </div>
+        </div>
+
+        <!-- Ma'lumotlar Jadvali -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-50 text-slate-600 text-xs uppercase font-semibold">
+                        <tr>
+                            <th class="px-6 py-3.5 text-left">Manba</th>
+                            <th class="px-6 py-3.5 text-left">Turi</th>
+                            <th class="px-6 py-3.5 text-left">Davlat Raqami / ID</th>
+                            <th class="px-6 py-3.5 text-left">Tavsif / Sarlavha</th>
+                            <th class="px-6 py-3.5 text-left">Tomonlar (FIO / STIR)</th>
+                            <th class="px-6 py-3.5 text-left">To'lov / Summa</th>
+                            <th class="px-6 py-3.5 text-left">Holat</th>
+                            <th class="px-6 py-3.5 text-right">Amallar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsBody" class="divide-y divide-slate-100 text-sm">
+                        <tr>
+                            <td colspan="8" class="text-center py-10 text-slate-500">
+                                <i class="fa-solid fa-spinner fa-spin mr-2"></i> Ma'lumotlar yuklanmoqda...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sinxronizatsiya jurnali (Sync Logs) -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
+                <i class="fa-solid fa-clock-rotate-left mr-1.5 text-slate-500"></i> Oxirgi Sinxronizatsiyalar Tarixi
+            </h3>
+            <div id="logsContainer" class="space-y-2 text-xs text-slate-600">
+                <p class="text-slate-400">Loglar yuklanmoqda...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal: Batafsil ko'rish -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 id="modalTitle" class="text-base font-bold text-slate-800">Yozuv tafsilotlari</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="modalContent" class="p-6 overflow-y-auto space-y-4 text-sm">
+                <!-- Javascript orqali to'ldiriladi -->
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded-lg text-sm">
+                    Yopish
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Javascript Funksiyalari -->
+    <script>
+        let searchTimeout = null;
+        const authKey = new URLSearchParams(window.location.search).get('key') || '';
+        function getApiUrl(path) {
+            const u = new URL(path, window.location.origin);
+            if (authKey) u.searchParams.set('key', authKey);
+            return u;
+        }
+
+        document.getElementById('searchInput').addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(loadRecords, 400);
+        });
+
+        async function loadSummary() {
+            try {
+                const res = await fetch(getApiUrl('/api/summary'));
+                const data = await res.json();
+                
+                document.getElementById('statTotal').innerText = data.total_records.toLocaleString();
+                document.getElementById('statVehicles').innerText = data.total_vehicles.toLocaleString();
+                document.getElementById('statIjara').innerText = (data.by_source['ijara_soliq'] || 0).toLocaleString();
+                document.getElementById('statTender').innerText = ((data.by_source['etender'] || 0) + (data.by_source['bm_dtransport'] || 0)).toLocaleString();
+
+                const logsBox = document.getElementById('logsContainer');
+                if (data.recent_logs && data.recent_logs.length > 0) {
+                    logsBox.innerHTML = data.recent_logs.slice(0, 5).map(l => `
+                        <div class="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-100">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-semibold ${l.status === 'SUCCESS' ? 'text-emerald-600' : 'text-rose-600'}">
+                                    [${l.status}]
+                                </span>
+                                <span class="font-mono text-slate-700">${l.source}</span>
+                                <span class="text-slate-400">(${l.items} ta obyekt, ${l.duration}s)</span>
+                                ${l.error ? `<span class="text-rose-500 font-medium">${l.error}</span>` : ''}
+                            </div>
+                            <span class="text-slate-400">${l.at ? new Date(l.at).toLocaleTimeString() : ''}</span>
+                        </div>
+                    `).join('');
+                } else {
+                    logsBox.innerHTML = '<p class="text-slate-400">Hozircha loglar mavjud emas.</p>';
+                }
+            } catch (err) {
+                console.error("Summary yuklashda xatolik:", err);
+            }
+        }
+
+        async function loadRecords() {
+            const source = document.getElementById('sourceFilter').value;
+            const type = document.getElementById('typeFilter').value;
+            const search = document.getElementById('searchInput').value;
+
+            const url = getApiUrl('/api/records');
+            if (source) url.searchParams.set('source', source);
+            if (type) url.searchParams.set('record_type', type);
+            if (search) url.searchParams.set('search', search);
+
+            const tbody = document.getElementById('recordsBody');
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Yuklanmoqda...</td></tr>`;
+
+            try {
+                const res = await fetch(url);
+                const records = await res.json();
+
+                if (!records || records.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-400">Yozuvlar topilmadi.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = records.map(r => {
+                    const sourceBadgeClass = r.source === 'etender' ? 'badge-etender' : (r.source === 'bm_dtransport' ? 'badge-bm' : 'badge-ijara');
+                    const sourceLabel = r.source === 'etender' ? 'e-tender' : (r.source === 'bm_dtransport' ? 'bm.dtransport' : 'ijara.soliq');
+                    
+                    const lessor = r.parties?.lessor_name || r.parties?.organization_name || '';
+                    const lessee = r.parties?.lessee_name || r.parties?.driver_name || '';
+                    const partiesText = [lessor, lessee].filter(Boolean).join(' → ') || '-';
+
+                    return `
+                        <tr class="hover:bg-slate-50/80 transition duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2.5 py-1 text-xs font-semibold rounded-full ${sourceBadgeClass}">
+                                    ${sourceLabel}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-600 font-medium">
+                                ${r.record_type}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono font-bold text-slate-900">
+                                ${r.identifier || '<span class="text-slate-400 font-normal">-</span>'}
+                            </td>
+                            <td class="px-6 py-4 text-slate-700 max-w-xs truncate" title="${r.title || ''}">
+                                ${r.title || '-'}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600 text-xs max-w-xs truncate" title="${partiesText}">
+                                ${partiesText}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-slate-800 font-medium">
+                                ${r.amount > 0 ? r.amount.toLocaleString() + " so'm" : '-'}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 py-0.5 text-xs rounded font-medium ${r.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}">
+                                    ${r.status || 'Noma\'lum'}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right">
+                                <button onclick="viewDetails(${r.id})" class="text-blue-600 hover:text-blue-800 text-xs font-semibold">
+                                    Batafsil
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-rose-500">Xatolik yuz berdi: ${err}</td></tr>`;
+            }
+        }
+
+        async function viewDetails(id) {
+            try {
+                const res = await fetch(getApiUrl(`/api/records/${id}`));
+                const data = await res.json();
+
+                document.getElementById('modalTitle').innerText = `${data.title || 'Yozuv #' + data.id}`;
+                
+                let content = `
+                    <div class="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <div><strong class="text-slate-500">Manba:</strong> <span class="font-semibold text-slate-800">${data.source}</span></div>
+                        <div><strong class="text-slate-500">Turi:</strong> <span class="font-semibold text-slate-800">${data.record_type}</span></div>
+                        <div><strong class="text-slate-500">Identifikator:</strong> <span class="font-mono font-bold text-slate-900">${data.identifier || '-'}</span></div>
+                        <div><strong class="text-slate-500">Holat:</strong> <span class="font-medium text-emerald-700">${data.status}</span></div>
+                        <div><strong class="text-slate-500">Boshlanish:</strong> ${data.starts_at || '-'}</div>
+                        <div><strong class="text-slate-500">Tugash:</strong> ${data.ends_at || '-'}</div>
+                        <div><strong class="text-slate-500">Oylik summa:</strong> ${data.amount ? data.amount.toLocaleString() + " so'm" : '-'}</div>
+                        <div><strong class="text-slate-500">Yangilangan:</strong> ${data.updated_at || '-'}</div>
+                    </div>
+                `;
+
+                if (data.parties && Object.keys(data.parties).length > 0) {
+                    content += `
+                        <div>
+                            <h4 class="font-bold text-slate-700 mb-2">Tomonlar ma'lumoti:</h4>
+                            <pre class="bg-slate-100 p-3 rounded-lg text-xs overflow-x-auto text-slate-800">${JSON.stringify(data.parties, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+
+                if (data.raw_data && data.raw_data.contractViewUrl) {
+                    content += `
+                        <div class="pt-2">
+                            <a href="${data.raw_data.contractViewUrl}" target="_blank" class="inline-flex items-center text-blue-600 hover:underline font-semibold text-xs">
+                                <i class="fa-solid fa-arrow-up-right-from-square mr-1.5"></i> ijara.soliq.uz portalida to'liq ochish
+                            </a>
+                        </div>
+                    `;
+                }
+
+                content += `
+                    <div>
+                        <h4 class="font-bold text-slate-700 mb-2">Asl API JSON Ma'lumoti:</h4>
+                        <pre class="bg-slate-900 text-slate-100 p-3 rounded-lg text-xs overflow-x-auto max-h-48">${JSON.stringify(data.raw_data, null, 2)}</pre>
+                    </div>
+                `;
+
+                document.getElementById('modalContent').innerHTML = content;
+                document.getElementById('detailModal').classList.remove('hidden');
+
+            } catch (err) {
+                alert("Tafsilotlarni yuklashda xatolik: " + err);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').classList.add('hidden');
+        }
+
+        async function triggerSync() {
+            const btn = document.getElementById('syncBtn');
+            const icon = document.getElementById('syncIcon');
+            btn.disabled = true;
+            icon.classList.add('fa-spin');
+
+            try {
+                const res = await fetch(getApiUrl('/api/sync/run'), { method: 'POST' });
+                const data = await res.json();
+                alert(data.message || "Sinxronizatsiya boshlandi!");
+                
+                setTimeout(() => {
+                    loadSummary();
+                    loadRecords();
+                    btn.disabled = false;
+                    icon.classList.remove('fa-spin');
+                }, 5000);
+
+            } catch (err) {
+                alert("Sinxronizatsiya chaqiruvida xatolik: " + err);
+                btn.disabled = false;
+                icon.classList.remove('fa-spin');
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSummary();
+            loadRecords();
+        });
+    </script>
+</body>
+</html>
+
