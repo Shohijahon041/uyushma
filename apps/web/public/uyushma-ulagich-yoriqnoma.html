@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <title>Uyushma ulagich - yo'riqnoma</title>
+    <style>
+      :root {
+        --navy: #0b2141;
+        --navy-soft: #16345c;
+        --orange: #f97316;
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #e2e8f0;
+        --bg: #f8fafc;
+        --ok: #047857;
+        --warn: #b45309;
+        --err: #b91c1c;
+      }
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      }
+      .top {
+        background: var(--navy);
+        color: #fff;
+        padding: 28px 20px;
+      }
+      .wrap { max-width: 900px; margin: 0 auto; }
+      .top h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+      .top p { margin: 0; color: #c7d2e3; font-size: 14px; }
+      .badge {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: rgba(249, 115, 22, 0.16);
+        border: 1px solid rgba(249, 115, 22, 0.42);
+        color: #fdba74;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      main { padding: 28px 20px 64px; }
+      section {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 22px 24px;
+        margin-bottom: 18px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+      h3 { margin: 20px 0 8px; font-size: 15px; }
+      p { margin: 0 0 12px; }
+      ol, ul { margin: 0 0 12px; padding-left: 22px; }
+      li { margin-bottom: 6px; }
+      code {
+        background: #f1f5f9;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1px 6px;
+        font-size: 13px;
+        word-break: break-all;
+      }
+      a { color: var(--navy-soft); }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 18px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .btn-primary { background: var(--navy); color: #fff; }
+      .btn-accent { background: var(--orange); color: #1a1206; }
+      .btn-ghost { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+      .note {
+        border-left: 3px solid var(--orange);
+        background: #fff7ed;
+        padding: 10px 14px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        margin: 12px 0;
+      }
+      .note.ok { border-color: var(--ok); background: #ecfdf5; }
+      .note.err { border-color: var(--err); background: #fef2f2; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td {
+        text-align: left;
+        vertical-align: top;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      th { background: #f8fafc; font-size: 13px; }
+      tr:last-child td { border-bottom: 0; }
+      .path {
+        font-family: Consolas, "Courier New", monospace;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        word-break: break-all;
+      }
+      footer { max-width: 900px; margin: 0 auto; padding: 0 20px 48px; color: var(--muted); font-size: 13px; }
+      @media (max-width: 640px) {
+        section { padding: 18px 16px; }
+        th, td { padding: 8px; }
+        table, thead, tbody, tr, td, th { display: block; }
+        thead { display: none; }
+        tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+        td { border: 0; padding: 4px 0; }
+        td::before {
+          content: attr(data-label);
+          display: block;
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--muted);
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+      }
+      @media print {
+        body { background: #fff; }
+        .top { background: #fff; color: #000; padding: 0 0 12px; border-bottom: 2px solid #000; }
+        .top p, .badge { color: #000; }
+        main { padding: 16px 0; }
+        section { border: 1px solid #000; break-inside: avoid; }
+        .actions { display: none; }
+        a { color: #000; text-decoration: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <span class="badge">Uyushma ulagich</span>
+        <h1>Kompyuterdan portalga ulanish yo'riqnomasi</h1>
+        <p>Windows kompyuterda bir marta o'rnatiladi. Keyin saytdagi tugma brauzerni o'zi ochadi.</p>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section>
+        <h2>Ulagich nima qiladi?</h2>
+        <p>
+          Ulagich kompyuteringizda alohida Chrome oynasini ochadi. Siz OneID, E-IMZO yoki login-parol
+          bilan o'sha oynada kirasiz. Tizim bergan kalit (token) avtomatik ravishda Uyushma serveriga
+          yuboriladi va oyna o'zi yopiladi.
+        </p>
+        <ul>
+          <li>Parolingiz hech qayerda saqlanmaydi.</li>
+          <li>Ulagich shaxsiy Chrome profilingizga tegmaydi - alohida profil ishlatiladi.</li>
+          <li>Token faqat rasmiy <strong>uyushma.bmbrutto.uz</strong> serveriga yuboriladi.</li>
+        </ul>
+        <div class="actions">
+          <a class="btn btn-accent" href="/uyushma-ulagich.bat" download>Ulagichni yuklab olish (.bat)</a>
+          <a class="btn btn-primary" href="/uz/settings">Sozlamalar sahifasiga o'tish</a>
+        </div>
+      </section>
+
+      <section>
+        <h2>1. O'rnatish (faqat bir marta)</h2>
+        <ol>
+          <li>Yuqoridagi <strong>«Ulagichni yuklab olish (.bat)»</strong> tugmasini bosing.</li>
+          <li>
+            Yuklangan <code>uyushma-ulagich.bat</code> faylini oching (ikki marta bosing).
+            Windows «Windows protected your PC» deb ogohlantirsa:
+            <strong>More info</strong> &rarr; <strong>Run anyway</strong> ni tanlang.
+          </li>
+          <li>Qora oyna ochiladi va «ORRNATILDI! TAYYOR» deb yozadi.</li>
+          <li>Enter bosing - saytning Sozlamalar sahifasi ochiladi.</li>
+        </ol>
+        <div class="note">
+          O'rnatish tugagach ish stolida ikkita yorliq paydo bo'ladi:
+          <strong>«Uyushma bilan ulash»</strong> va <strong>«Uyushma ulagich - tekshirish»</strong>.
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Saytdan ulanish</h2>
+        <ol>
+          <li>Saytda <strong>Sozlamalar &rarr; Tashqi tizimlar</strong> bo'limiga kiring.</li>
+          <li>Kerakli tizim (masalan, e-tender yoki ijara.soliq.uz) yonidagi <strong>«Kompyuterda ulash»</strong> tugmasini bosing.</li>
+          <li>Brauzer «Uyushma ulagichni ochish» deb so'rasa: <strong>«Ochish»</strong> ni tanlang va <strong>«Har doim ruxsat berish»</strong> ni belgilang.</li>
+          <li>Ochilgan oynada tizimga kiring. Korxona tanlash chiqsa - kerakli korxonani tanlang.</li>
+          <li>Token topilgach oyna o'zi yopiladi va ma'lumotlar sinxronlanadi.</li>
+        </ol>
+        <div class="note ok">
+          Keyingi safar hech narsa yuklab olish shart emas: saytdagi tugmani bossangiz bo'ldi.
+        </div>
+        <h3>Saytdagi tugma ishlamasa (qo'lda ulanish)</h3>
+        <p>
+          Ba'zi korporativ kompyuterlarda Windows <code>uyushma://</code> havolasini bloklaydi.
+          Bunday holatda ham ulanish mumkin:
+        </p>
+        <ol>
+          <li>Saytdagi <strong>«Kompyuterda ulash»</strong> tugmasini bosing - ekranda 6 xonali kod chiqadi.</li>
+          <li>Ish stolidagi <strong>«Uyushma bilan ulash»</strong> yorlig'ini oching (yoki yuklab olingan
+            <code>.bat</code> faylini qayta ishga tushiring).</li>
+          <li>Ochilgan qora oynada shu 6 xonali kodni kiriting.</li>
+        </ol>
+        <div class="note">
+          Kod 10 daqiqa amal qiladi va faqat bir marta ishlatiladi. Muddati o'tsa, saytda tugmani qayta bosing.
+        </div>
+        <div class="note">
+          Birinchi ishga tushirishda Windows <strong>administrator ruxsatini</strong> so'rashi mumkin.
+          Bu registrni tuzatish uchun kerak — <strong>«Ha» (Yes)</strong> ni bosing. Ruxsat bermasangiz ham
+          kod bilan ulanish ishlaydi.
+        </div>
+      </section>
+
+      <section>
+        <h2>3. Holatni tekshirish</h2>
+        <p>
+          Muammo bo'lsa, ish stolidagi <strong>«Uyushma ulagich - tekshirish»</strong> yorlig'ini oching.
+          Ulagich kompyuteringizni tekshirib, <code>uyushma-tashxis.txt</code> hisobotini yaratadi va
+          papkani o'zi ochadi.
+        </p>
+        <p>Shu hisobotda quyidagilar ko'rinadi:</p>
+        <ul>
+          <li>Windows va PowerShell versiyasi;</li>
+          <li>ulagich qaysi papkaga o'rnatilgani va yozish mumkinligi;</li>
+          <li>Chrome yoki Edge topilgani;</li>
+          <li>serverga aloqa bor-yo'qligi;</li>
+          <li>oxirgi log yozuvlari.</li>
+        </ul>
+        <div class="note">
+          Xatolik chiqsa, shu <code>uyushma-tashxis.txt</code> faylini yuboring - muammo aniq ko'rinadi.
+        </div>
+      </section>
+
+      <section>
+        <h2>4. Muammolar va yechimlar</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Belgi</th>
+              <th>Sabab</th>
+              <th>Yechim</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Belgi">«Log fayli topilmadi» yoki oyna darhol yopiladi</td>
+              <td data-label="Sabab">Ulagich papkasi yaratilmagan yoki eski nusxa ishlayapti</td>
+              <td data-label="Yechim">
+                Saytdan <code>.bat</code> faylini qayta yuklab, bir marta ishga tushiring.
+                Keyin «Uyushma ulagich - tekshirish» yorlig'ini oching.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">Tugma bosilganda hech narsa ochilmaydi</td>
+              <td data-label="Sabab">Bu kompyuterda ulagich o'rnatilmagan yoki protokol buzilgan</td>
+              <td data-label="Yechim">
+                <code>.bat</code> faylini ishga tushiring. Ulagich protokol yozuvini o'zi tuzatadi.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Windows registrga yozishga ruxsat bermadi»</td>
+              <td data-label="Sabab">
+                Windows siyosati yoki antivirus registrga yozishni bloklaydi
+              </td>
+              <td data-label="Yechim">
+                Ulagich o'zi <strong>administrator ruxsatini so'raydi</strong> — chiqqan oynada
+                <strong>«Ha» (Yes)</strong> ni bosing. Ruxsat berilsa, hammasi avtomatik tuzaladi.
+                Korporativ kompyuterda administrator ruxsati bilan ham bloklansa — <strong>bu xato emas</strong>:
+                ulagich kod bilan ishlashda davom etadi. Saytdan 6 xonali kod oling va
+                «Uyushma bilan ulash» yorlig'ida kiriting.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Protokol tuzatilmadi» (eski versiyada «Launcher yangilanmadi»)</td>
+              <td data-label="Sabab">
+                Windows registrga yozishni bloklaydi. Yangi versiya yordamchi (VBS) faylni umuman ishlatmaydi.
+              </td>
+              <td data-label="Yechim">
+                <code>.bat</code> faylini bir marta qayta ishga tushiring — ulagich yangi usulga o'zi o'tadi.
+                Bloklangan bo'lsa ham u ishdan chiqmaydi: kod bilan ulanish to'liq ishlaydi.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Kod topilmadi yoki muddati o'tgan»</td>
+              <td data-label="Sabab">Kod 10 daqiqada eskiradi yoki bir marta ishlatiladi</td>
+              <td data-label="Yechim">Saytda tugmani qayta bosing va yangi kod oling.</td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Chrome yoki Edge topilmadi»</td>
+              <td data-label="Sabab">Kompyuterda brauzer o'rnatilmagan</td>
+              <td data-label="Yechim">
+                Chrome o'rnating: <a href="https://www.google.com/chrome/">google.com/chrome</a>
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Windows protected your PC»</td>
+              <td data-label="Sabab">Windows internetdan yuklangan faylni tekshiradi</td>
+              <td data-label="Yechim">
+                <strong>More info</strong> &rarr; <strong>Run anyway</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">Antivirus faylni o'chiradi</td>
+              <td data-label="Sabab">Antivirus notanish skriptni bloklaydi</td>
+              <td data-label="Yechim">
+                Faylni «ruxsat berilgan» ro'yxatiga qo'shing yoki administrator bilan gaplashing.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«running scripts is disabled on this system»</td>
+              <td data-label="Sabab">Kompyuterda PowerShell skriptlari administrator tomonidan o'chirilgan</td>
+              <td data-label="Yechim">
+                Tashkilot administratori (IT) bilan gaplashing. Ular ruxsat bergach, <code>.bat</code> faylini
+                qayta ishga tushiring.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">E-IMZO kalitlari ko'rinmaydi</td>
+              <td data-label="Sabab">E-IMZO moduli eski yoki ishlamayapti</td>
+              <td data-label="Yechim">
+                <a href="https://e-imzo.soliq.uz/download">e-imzo.soliq.uz/download</a> dan yangi modulni o'rnating.
+                Muqobil: saytda «Token yordamida kirish» yoki OneID.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">Bir nechta korxona chiqadi</td>
+              <td data-label="Sabab">Hisobingizga bir nechta korxona bog'langan</td>
+              <td data-label="Yechim">
+                Oynada kerakli korxonani tanlab, «Davom etish» tugmasini bosing.
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">«Brauzer yopildi» yoki token topilmadi</td>
+              <td data-label="Sabab">Oyna kutilgandan oldin yopilgan yoki login tugallanmagan</td>
+              <td data-label="Yechim">Saytda tugmani qayta bosing va oynada to'liq kiring.</td>
+            </tr>
+            <tr>
+              <td data-label="Belgi">Eski kompyuterda yangilanish kelmayapti</td>
+              <td data-label="Sabab">Juda eski o'rnatishda avtomatik yangilash kodi yo'q</td>
+              <td data-label="Yechim">
+                <code>.bat</code> faylini bir marta qayta ishga tushiring - shundan keyin yangilanish o'zi keladi.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>5. Fayllar qayerda saqlanadi?</h2>
+        <p>Ulagich o'z fayllarini foydalanuvchi papkasida saqlaydi:</p>
+        <div class="path">%LOCALAPPDATA%\UyushmaUlagich</div>
+        <p style="margin-top: 12px">Asosiy fayllar:</p>
+        <ul>
+          <li><code>uyushma-connect.ps1</code> - ulagichning o'zi;</li>
+          <li><code>installed.txt</code> - o'rnatilgan versiya belgisi;</li>
+          <li><code>ulagich.log</code> - ish jurnali;</li>
+          <li><code>uyushma-tashxis.txt</code> - tekshiruv hisoboti;</li>
+          <li><code>profile\</code> - alohida brauzer profili.</li>
+        </ul>
+        <p>
+          Papkani tez ochish: <strong>Win + R</strong> tugmalarini bosing, quyidagini yozing va Enter bosing:
+        </p>
+        <div class="path">%LOCALAPPDATA%\UyushmaUlagich</div>
+        <div class="note">
+          Agar <code>%LOCALAPPDATA%</code> yozish uchun yopiq bo'lsa, ulagich logni
+          <code>%TEMP%\UyushmaUlagich</code> ichiga yozadi. Tashxis hisoboti aniq yo'lni ko'rsatadi.
+        </div>
+      </section>
+
+      <section>
+        <h2>6. Yangilanish qanday ishlaydi?</h2>
+        <p>
+          Har safar ishga tushganda ulagich saytdagi versiyani tekshiradi. Yangiroq versiya bo'lsa,
+          o'zini avtomatik yangilaydi. Qo'lda hech narsa qilish shart emas.
+        </p>
+        <p>
+          Faqat juda eski o'rnatishlarda (birinchi versiyalar) avtomatik yangilash bo'lmagan - bunday
+          kompyuterda <code>.bat</code> faylini bir marta qayta ishga tushirish kifoya.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Uyushma ulagich - <a href="https://uyushma.bmbrutto.uz">uyushma.bmbrutto.uz</a> uchun ichki
+        yordamchi dastur. Savollar bo'lsa, tashxis faylini yuboring.
+      </p>
+      <p>Hujjat versiyasi: 2026-11-06.</p>
+    </footer>
+  </body>
+</html>

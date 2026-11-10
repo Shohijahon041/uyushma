@@ -79,6 +79,28 @@ const CONTACT_KEYBOARD = {
   one_time_keyboard: true,
 };
 
+const DRIVER_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: "🚦 Smena (Chiqish / Yakun)" }, { text: "🪪 QR Yo'l Pasporti" }],
+    [{ text: "💰 Oylik plan va qarz" }, { text: "💳 Masofaviy to'lov" }],
+    [{ text: "🚨 SOS / Nosozlik" }, { text: "📋 Barcha xizmatlar" }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: "Kerakli bo'limni tanlang...",
+};
+
+const USER_REPLY_KEYBOARD = {
+  keyboard: [
+    [{ text: "👤 Profil va hisobot" }, { text: "📄 Shartnomalar" }],
+    [{ text: "💳 Oxirgi to'lovlar" }, { text: "📊 Balans va qoldiq" }],
+    [{ text: "🔄 Yangilash" }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: "Kerakli bo'limni tanlang...",
+};
+
 const unlinkedMessage = [
   "Assalomu alaykum! Botdan foydalanish uchun ro'yxatdan o'ting.",
   "",
@@ -745,6 +767,214 @@ async function showSosMenu(ctx: Context): Promise<void> {
 
 // ---- Asosiy menyu ----
 
+async function showDriverDebt(ctx: Context): Promise<void> {
+  const chatId = chatIdOf(ctx);
+  const driver = await api.driver(chatId);
+  const text = [
+    ...coverageLines(driver),
+    "",
+    ...monthLines(driver),
+    "",
+    "To'lovni har kuni chiqishdan oldin naqd yoki plastik bilan qilishingiz mumkin.",
+    "Bir necha kunlik oldindan to'lov ham qabul qilinadi.",
+  ].join("\n");
+  await ctx.reply(text, {
+    parse_mode: "HTML",
+    reply_markup: mainMenu("driver"),
+  });
+}
+
+async function showPaymentCard(ctx: Context): Promise<void> {
+  const chatId = chatIdOf(ctx);
+  try {
+    const cardInfo = await api.paymentCard(chatId);
+    if (!cardInfo.paymentCardNumber) {
+      await ctx.reply(
+        "ℹ️ Kompaniya tomonidan to'lov kartasi hali belgilanmagan. Iltimos, dispetcher yoki hisobchiga murojaat qiling.",
+        { reply_markup: mainMenu("driver") },
+      );
+      return;
+    }
+
+    pendingReceipts.set(chatId, {
+      step: "WAITING_RECEIPT",
+      expiresAt: Date.now() + PENDING_TTL_MS,
+    });
+
+    const rawCardDigits = cardInfo.paymentCardNumber.replace(/\D/g, "");
+    const paymeLink = `https://payme.uz/fallback/transfer/${rawCardDigits}`;
+    const clickLink = `https://my.click.uz/app/p2p?card=${rawCardDigits}`;
+    const formattedCard = cardInfo.paymentCardNumber.replace(/(\d{4})/g, "$1 ").trim();
+    const lines = [
+      "💳 <b>Masofaviy to'lov (Karta orqali)</b>",
+      "",
+      `Karta raqami: <code>${formattedCard}</code>`,
+      cardInfo.paymentCardHolder ? `Karta egasi: <b>${escapeHtml(cardInfo.paymentCardHolder)}</b>` : null,
+      cardInfo.paymentCardBank ? `Bank: <b>${escapeHtml(cardInfo.paymentCardBank)}</b>` : null,
+      cardInfo.paymentInstructions ? `\nKo'rsatma: <i>${escapeHtml(cardInfo.paymentInstructions)}</i>` : null,
+      "",
+      "📲 <i>Quyidagi tugmalar orqali to'g'ridan-to'g'ri Click yoki Payme ilovasida to'lashingiz mumkin:</i>",
+      "📥 <b>To'lov qilgach, chek rasmini (yoki skrinshotini) shu yerga yuboring:</b>",
+    ].filter(Boolean).join("\n");
+
+    await ctx.reply(lines, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🔹 Payme orqali to'lash", url: paymeLink },
+            { text: "🟢 Click orqali to'lash", url: clickLink },
+          ],
+          [{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }],
+        ],
+      },
+    });
+  } catch (err) {
+    console.error("Payment card error:", describeError(err));
+    await ctx.reply("Karta ma'lumotlarini olishda xatolik yuz berdi.");
+  }
+}
+
+async function handleReplyButton(ctx: Context, text: string): Promise<boolean> {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  const chatId = chatIdOf(ctx);
+
+  const isShift = trimmed === "🚦 Smena (Chiqish / Yakun)" || lower.includes("smena");
+  const isPassport = trimmed === "🪪 QR Yo'l Pasporti" || lower.includes("yo'l pasporti") || lower.includes("qr yo'l");
+  const isDebt = trimmed === "💰 Oylik plan va qarz" || lower.includes("oylik plan") || lower.includes("qarz");
+  const isPay = trimmed === "💳 Masofaviy to'lov" || lower.includes("masofaviy to'lov");
+  const isSos = trimmed === "🚨 SOS / Nosozlik" || lower.includes("sos") || lower.includes("nosozlik");
+  const isAllServices = trimmed === "📋 Barcha xizmatlar" || lower.includes("barcha xizmatlar");
+
+  const isUserProfile = trimmed === "👤 Profil va hisobot" || lower.includes("profil va hisobot");
+  const isContracts = trimmed === "📄 Shartnomalar" || lower.includes("shartnomalar");
+  const isLastPayments = trimmed === "💳 Oxirgi to'lovlar" || lower.includes("oxirgi to'lovlar");
+  const isBalance = trimmed === "📊 Balans va qoldiq" || lower.includes("balans va qoldiq");
+  const isRefresh = trimmed === "🔄 Yangilash" || lower === "yangilash";
+
+  const matched =
+    isShift ||
+    isPassport ||
+    isDebt ||
+    isPay ||
+    isSos ||
+    isAllServices ||
+    isUserProfile ||
+    isContracts ||
+    isLastPayments ||
+    isBalance ||
+    isRefresh;
+
+  if (!matched) return false;
+
+  pendingReceipts.delete(chatId);
+  pendingShifts.delete(chatId);
+  pendingInput.delete(chatId);
+
+  try {
+    if (isShift) {
+      await showShiftStatus(ctx);
+      return true;
+    }
+    if (isPassport) {
+      await sendPassport(ctx);
+      return true;
+    }
+    if (isDebt) {
+      await showDriverDebt(ctx);
+      return true;
+    }
+    if (isPay) {
+      await showPaymentCard(ctx);
+      return true;
+    }
+    if (isSos) {
+      await showSosMenu(ctx);
+      return true;
+    }
+    if (isAllServices) {
+      await sendDriverHome(ctx, "📋 <b>Barcha xizmatlar menyusi:</b>");
+      return true;
+    }
+    if (isUserProfile) {
+      const info = await userProfileText(chatId);
+      await ctx.reply(info, { parse_mode: "HTML", reply_markup: mainMenu("user") });
+      return true;
+    }
+    if (isContracts) {
+      const { items } = await api.contracts(chatId);
+      const msg =
+        items.length === 0
+          ? "Shartnomalar topilmadi."
+          : items
+              .slice(0, 10)
+              .map(
+                (contract) =>
+                  `<b>${escapeHtml(contract.vehicle.plateNumber)}</b> — ${escapeHtml(contract.vehicle.model)}\n${STATUS_UZ[contract.type] ?? contract.type}, ${STATUS_UZ[contract.status] ?? contract.status}`,
+              )
+              .join("\n\n");
+      await ctx.reply(msg, { parse_mode: "HTML", reply_markup: mainMenu("user") });
+      return true;
+    }
+    if (isLastPayments) {
+      const who = await api.whoami(chatId);
+      if (who.kind === "driver") {
+        const driver = await api.driver(chatId);
+        await ctx.reply(driverPaymentsText(driver), {
+          parse_mode: "HTML",
+          reply_markup: mainMenu("driver"),
+        });
+      } else {
+        const { items } = await api.payments(chatId);
+        const msg =
+          items.length === 0
+            ? "To'lovlar topilmadi."
+            : items
+                .slice(0, 10)
+                .map(
+                  (payment) =>
+                    `${payment.createdAt.slice(0, 10)} — <b>${money(payment.amount)}</b> — ${STATUS_UZ[payment.status] ?? payment.status} (${escapeHtml(payment.plateNumber)})`,
+                )
+                .join("\n");
+        await ctx.reply(msg, { parse_mode: "HTML", reply_markup: mainMenu("user") });
+      }
+      return true;
+    }
+    if (isBalance) {
+      const balance = await api.balance(chatId);
+      const msg =
+        balance.pendingCount === 0
+          ? "Kutilayotgan to'lov yo'q. Qoldiq: 0.00 so'm."
+          : `Kutilayotgan to'lov: <b>${money(balance.pendingAmount)}</b> (${balance.pendingCount} ta).`;
+      await ctx.reply(msg, { parse_mode: "HTML", reply_markup: mainMenu("user") });
+      return true;
+    }
+    if (isRefresh) {
+      const who = await api.whoami(chatId);
+      if (who.kind === "driver") {
+        await sendDriverHome(ctx, "🔄 <b>Ma'lumotlar yangilandi:</b>");
+      } else {
+        const info = await userProfileText(chatId);
+        await ctx.reply(`🔄 <b>Ma'lumotlar yangilandi:</b>\n\n${info}`, {
+          parse_mode: "HTML",
+          reply_markup: mainMenu("user"),
+        });
+      }
+      return true;
+    }
+  } catch (err) {
+    if (isUnlinked(err)) {
+      await sendUnlinked(ctx);
+      return true;
+    }
+    console.error("handleReplyButton error:", describeError(err));
+    await ctx.reply("Buyruqni bajarishda xatolik yuz berdi. Qaytadan urinib ko'ring.");
+    return true;
+  }
+  return false;
+}
+
 async function sendDriverHome(ctx: Context, prefix?: string): Promise<void> {
   const driver = await api.driver(chatIdOf(ctx));
   await ctx.reply(prefix ? `${prefix}\n\n${driverText(driver)}` : driverText(driver), {
@@ -760,9 +990,15 @@ bot.start(async (ctx) => {
       const who = await api.whoami(chatIdOf(ctx));
       if (who.kind === "driver") {
         void syncDriverProfile(ctx);
+        await ctx.reply("Pastdagi qulay menyudan foydalanishingiz mumkin 👇", {
+          reply_markup: DRIVER_REPLY_KEYBOARD,
+        });
         await sendDriverHome(ctx);
         return;
       }
+      await ctx.reply("Pastdagi qulay menyu faollashtirildi 👇", {
+        reply_markup: USER_REPLY_KEYBOARD,
+      });
       await ctx.reply(`Assalomu alaykum, <b>${escapeHtml(who.fullName)}</b>!`, {
         parse_mode: "HTML",
         reply_markup: mainMenu("user"),
@@ -779,11 +1015,12 @@ bot.start(async (ctx) => {
     const header = `✅ Akkaunt bog'landi.\n${escapeHtml(result.fullName)} — ${escapeHtml(result.companyName)}`;
     if (result.kind === "driver") {
       await syncDriverProfile(ctx);
-      await ctx.reply(header, { parse_mode: "HTML", reply_markup: { remove_keyboard: true } });
+      await ctx.reply(header, { parse_mode: "HTML", reply_markup: DRIVER_REPLY_KEYBOARD });
       await sendDriverHome(ctx);
       return;
     }
-    await ctx.reply(header, { parse_mode: "HTML", reply_markup: mainMenu("user") });
+    await ctx.reply(header, { parse_mode: "HTML", reply_markup: USER_REPLY_KEYBOARD });
+    await ctx.reply("Asosiy menyu:", { reply_markup: mainMenu("user") });
   } catch (error) {
     if (error instanceof ApiError) {
       await sendUnlinked(ctx, `⚠️ ${escapeHtml(error.message)}`);
@@ -808,8 +1045,8 @@ bot.on(message("contact"), async (ctx) => {
     const result = await api.linkPhone({ ...profile, phone: contact.phone_number });
     pendingInput.delete(chatIdOf(ctx));
     await ctx.reply(
-      `✅ Ro'yxatdan o'tdingiz!\n<b>${escapeHtml(result.fullName)}</b> — ${escapeHtml(result.companyName)}`,
-      { parse_mode: "HTML", reply_markup: { remove_keyboard: true } },
+      `✅ Ro'yxatdan o'tdingiz!\n<b>${escapeHtml(result.fullName)}</b> — ${escapeHtml(result.companyName)}\n\nDoimiy qulay klaviatura ulandi 👇`,
+      { parse_mode: "HTML", reply_markup: DRIVER_REPLY_KEYBOARD },
     );
     await sendDriverHome(ctx);
   } catch (error) {
@@ -830,7 +1067,17 @@ bot.on(message("contact"), async (ctx) => {
 bot.command("menu", async (ctx) => {
   try {
     const who = await api.whoami(chatIdOf(ctx));
-    await ctx.reply("Menyu:", { reply_markup: mainMenu(who.kind) });
+    if (who.kind === "driver") {
+      await ctx.reply("Doimiy boshqaruv menyusi 👇", {
+        reply_markup: DRIVER_REPLY_KEYBOARD,
+      });
+      await sendDriverHome(ctx);
+    } else {
+      await ctx.reply("Doimiy boshqaruv menyusi 👇", {
+        reply_markup: USER_REPLY_KEYBOARD,
+      });
+      await ctx.reply("Menyu:", { reply_markup: mainMenu(who.kind) });
+    }
   } catch {
     await sendUnlinked(ctx);
   }
@@ -879,23 +1126,11 @@ bot.command("sos", (ctx) =>
 );
 
 bot.command("qarz", (ctx) =>
-  driverOnly(
-    ctx,
-    async () => {
-      const driver = await api.driver(chatIdOf(ctx));
-      await ctx.reply(
-        [
-          ...coverageLines(driver),
-          "",
-          ...monthLines(driver),
-          "",
-          "Qarz har oy yig'iladi — o'tgan oylar qarzi saqlanadi.",
-        ].join("\n"),
-        { parse_mode: "HTML", reply_markup: mainMenu("driver") },
-      );
-    },
-    "Qarz ma'lumotini olishda xatolik.",
-  ),
+  driverOnly(ctx, () => showDriverDebt(ctx), "Qarz ma'lumotini olishda xatolik."),
+);
+
+bot.command("tolov", (ctx) =>
+  driverOnly(ctx, () => showPaymentCard(ctx), "Karta ma'lumotlarini olishda xatolik."),
 );
 
 bot.command("hujjatlar", (ctx) =>
@@ -1094,6 +1329,11 @@ bot.on(message("text"), async (ctx) => {
   }
   const chatId = chatIdOf(ctx);
 
+  // Pastki doimiy Reply Keyboard tugmalarini tekshirish
+  if (await handleReplyButton(ctx, text)) {
+    return;
+  }
+
   const receiptSession = receiptSessionFor(chatId);
   if (receiptSession) {
     if (receiptSession.step === "WAITING_AMOUNT") {
@@ -1238,7 +1478,17 @@ bot.on(message("text"), async (ctx) => {
   }
   try {
     const who = await api.whoami(chatId);
-    await ctx.reply("Menyu:", { reply_markup: mainMenu(who.kind) });
+    if (who.kind === "driver") {
+      await ctx.reply("Quyidagi qulay pastki menyudan foydalanishingiz mumkin 👇", {
+        reply_markup: DRIVER_REPLY_KEYBOARD,
+      });
+      await sendDriverHome(ctx);
+    } else {
+      await ctx.reply("Quyidagi qulay pastki menyudan foydalanishingiz mumkin 👇", {
+        reply_markup: USER_REPLY_KEYBOARD,
+      });
+      await ctx.reply("Menyu:", { reply_markup: mainMenu("user") });
+    }
   } catch (error) {
     if (!isUnlinked(error)) {
       console.error(describeError(error));
@@ -1413,55 +1663,12 @@ bot.on("callback_query", async (ctx) => {
         return;
       }
       if (data === "d:pay") {
-        try {
-          const cardInfo = await api.paymentCard(chatId);
-          if (!cardInfo.paymentCardNumber) {
-            await ctx.reply(
-              "ℹ️ Kompaniya tomonidan to'lov kartasi hali belgilanmagan. Iltimos, dispetcher yoki hisobchiga murojaat qiling.",
-              { reply_markup: mainMenu("driver") },
-            );
-            return;
-          }
-
-          pendingReceipts.set(chatId, {
-            step: "WAITING_RECEIPT",
-            expiresAt: Date.now() + PENDING_TTL_MS,
-          });
-
-          const rawCardDigits = cardInfo.paymentCardNumber.replace(/\D/g, "");
-          const paymeLink = `https://payme.uz/fallback/transfer/${rawCardDigits}`;
-          const clickLink = `https://my.click.uz/app/p2p?card=${rawCardDigits}`;
-          const formattedCard = cardInfo.paymentCardNumber.replace(/(\d{4})/g, "$1 ").trim();
-          const lines = [
-            "💳 <b>Masofaviy to'lov (Karta orqali)</b>",
-            "",
-            `Karta raqami: <code>${formattedCard}</code>`,
-            cardInfo.paymentCardHolder ? `Karta egasi: <b>${escapeHtml(cardInfo.paymentCardHolder)}</b>` : null,
-            cardInfo.paymentCardBank ? `Bank: <b>${escapeHtml(cardInfo.paymentCardBank)}</b>` : null,
-            cardInfo.paymentInstructions ? `\nKo'rsatma: <i>${escapeHtml(cardInfo.paymentInstructions)}</i>` : null,
-            "",
-            "📲 <i>Quyidagi tugmalar orqali to'g'ridan-to'g'ri Click yoki Payme ilovasida to'lashingiz mumkin:</i>",
-            "📥 <b>To'lov qilgach, chek rasmini (yoki skrinshotini) shu yerga yuboring:</b>",
-          ].filter(Boolean).join("\n");
-
-          await ctx.reply(lines, {
-            parse_mode: "HTML",
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: "🔹 Payme orqali to'lash", url: paymeLink },
-                  { text: "🟢 Click orqali to'lash", url: clickLink },
-                ],
-                [{ text: "❌ Bekor qilish", callback_data: "pay:cancel" }],
-              ],
-            },
-          });
-          return;
-        } catch (err) {
-          console.error("Payment card error:", describeError(err));
-          await ctx.reply("Karta ma'lumotlarini olishda xatolik yuz berdi.");
-          return;
-        }
+        await showPaymentCard(ctx);
+        return;
+      }
+      if (data === "d:debt") {
+        await showDriverDebt(ctx);
+        return;
       }
       const driver = await api.driver(chatId);
       let text: string;
@@ -1475,16 +1682,6 @@ bot.on("callback_query", async (ctx) => {
                 "Avtomobil o'zgarsa, administratsiya yangilaydi.",
               ].join("\n")
             : "Sizga hali avtomobil biriktirilmagan. Administratsiyaga murojaat qiling.";
-          break;
-        case "d:debt":
-          text = [
-            ...coverageLines(driver),
-            "",
-            ...monthLines(driver),
-            "",
-            "To'lovni har kuni chiqishdan oldin naqd yoki plastik bilan qilishingiz mumkin.",
-            "Bir necha kunlik oldindan to'lov ham qabul qilinadi.",
-          ].join("\n");
           break;
         case "d:payments":
           text = driverPaymentsText(driver);
@@ -1580,9 +1777,12 @@ function startPolling(attempt = 1): void {
       void bot.telegram
         .setMyCommands([
           { command: "start", description: "Boshlash / ro'yxatdan o'tish" },
-          { command: "menu", description: "Tugmali menyu" },
-          { command: "qarz", description: "Oylik plan va qarz" },
+          { command: "menu", description: "Tugmali menyu va klaviatura" },
+          { command: "smena", description: "Smena holati (chiqish / yakun)" },
           { command: "pasport", description: "QR yo'l pasporti" },
+          { command: "qarz", description: "Oylik plan va qarz" },
+          { command: "tolov", description: "Masofaviy to'lov (karta)" },
+          { command: "sos", description: "Favqulodda hodisa / SOS" },
           { command: "ijara", description: "Ijara shartnomasi (PDF)" },
           { command: "tolovlar", description: "Oxirgi to'lovlar" },
           { command: "hujjatlar", description: "Passport va guvohnoma" },

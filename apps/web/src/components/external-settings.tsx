@@ -130,6 +130,10 @@ function launchConnector(code: string) {
   window.location.href = `uyushma://connect/${encodeURIComponent(code)}`;
 }
 
+function launchDiagnostics() {
+  window.location.href = "uyushma://diagnose";
+}
+
 function LocalConnectorPanel({
   code,
   expiresAt,
@@ -173,6 +177,32 @@ function LocalConnectorPanel({
           faylini yuklab oling va bir marta ishga tushiring.
         </p>
       )}
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
+        <a
+          href="/uyushma-ulagich-yoriqnoma.html"
+          target="_blank"
+          rel="noreferrer"
+          className="font-bold text-indigo-700 underline hover:text-indigo-900"
+        >
+          Yo&apos;riqnoma (batafsil qo&apos;llanma)
+        </a>
+        <button
+          type="button"
+          onClick={launchDiagnostics}
+          className="font-semibold text-indigo-700 underline hover:text-indigo-900"
+        >
+          Holatni tekshirish
+        </button>
+      </div>
+      <p className="text-[10px] leading-relaxed text-indigo-500">
+        Log: %LOCALAPPDATA%\UyushmaUlagich\ulagich.log
+      </p>
+      <p className="text-[10px] leading-relaxed text-indigo-600">
+        Tugmalar javob bermasa (Windows protokolni bloklagan bo&apos;lsa), ish stolidagi{" "}
+        <strong>«Uyushma bilan ulash»</strong> yorlig&apos;ini ochib, quyidagi kodni kiriting. Birinchi
+        ishga tushirishda Windows administrator ruxsatini so&apos;rasa — <strong>«Ha»</strong> ni bosing.
+      </p>
 
       <ol className="list-decimal pl-4 space-y-1 text-[11px] text-indigo-900">
         <li>
@@ -1421,6 +1451,15 @@ export function ExternalSettings({ role }: { role: string }) {
           >
             <span>💻</span>
             <span>Ulagichni o&apos;rnatish (bir marta)</span>
+          </a>
+          <a
+            href="/uyushma-ulagich-yoriqnoma.html"
+            target="_blank"
+            rel="noreferrer"
+            className="btn-secondary flex items-center gap-1.5 px-4 py-2 text-xs font-semibold"
+          >
+            <span>📘</span>
+            <span>Yo&apos;riqnoma</span>
           </a>
           <button
             type="button"

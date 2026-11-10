@@ -9,8 +9,6 @@ import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/component
 import { todayTashkent } from "@/lib/tashkent";
 import { DriverAvatar, DriverDocuments } from "@/components/driver-documents";
 import { exportToExcelTable } from "@/lib/export-excel";
-import { formatUzPlate } from "@/lib/plate";
-import { formatUzPhone } from "@/lib/phone";
 
 export default function DriversPage() {
   const t = useTranslations("drivers");
@@ -35,33 +33,7 @@ export default function DriversPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [standaloneView, setStandaloneView] = useState(false);
   const profile = useApi<DriverProfile>(selectedId ? `/drivers/${selectedId}` : null);
-
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("driver");
-    if (id) {
-      setSelectedId(id);
-      setStandaloneView(true);
-    }
-  }, []);
-
-  const profileModalOpen = !!selectedId && !standaloneView;
-
-  useEffect(() => {
-    if (!profileModalOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
-    };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [profileModalOpen]);
-
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionOk, setActionOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,24 +45,12 @@ export default function DriversPage() {
     Record<string, { code: string; expiresAt: string }>
   >({});
 
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
-    fullName: "",
-    phone: "",
-    licenseNumber: "",
-    notes: "",
-  });
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-
   useEffect(() => {
     setAssignVehicleId("");
     setAssignDate(todayTashkent());
     setAssignAmount("");
     setActionError(null);
     setActionOk(null);
-    setEditing(false);
-    setEditError(null);
   }, [selectedId]);
 
   const activeVehicles = useMemo(
@@ -192,45 +152,7 @@ export default function DriversPage() {
     }, tc("success"));
   }
 
-  function startEditing(profileRow: DriverProfile) {
-    setEditForm({
-      fullName: profileRow.driver.fullName,
-      phone: profileRow.driver.phone,
-      licenseNumber: profileRow.driver.licenseNumber ?? "",
-      notes: profileRow.driver.notes ?? "",
-    });
-    setEditError(null);
-    setEditing(true);
-  }
-
-  async function onEditDriver(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedId) return;
-    setEditError(null);
-    setEditSaving(true);
-    try {
-      await apiRequest(`/drivers/${selectedId}`, {
-        method: "PATCH",
-        body: {
-          fullName: editForm.fullName.trim(),
-          phone: editForm.phone.trim(),
-          licenseNumber: editForm.licenseNumber.trim(),
-          notes: editForm.notes.trim(),
-        },
-      });
-      await refreshAll();
-      setEditing(false);
-      setActionError(null);
-      setActionOk(t("driverUpdated"));
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : tc("error"));
-    } finally {
-      setEditSaving(false);
-    }
-  }
-
-  const data =
-    selectedId && profile.data?.driver.id === selectedId ? profile.data : null;
+  const data = profile.data;
 
   function handleExportDriversExcel() {
     const items = list.data?.items ?? [];
@@ -252,7 +174,7 @@ export default function DriversPage() {
       d.phone,
       d.licenseNumber ?? "—",
       d.status,
-      d.vehicle?.plateNumber ? formatUzPlate(d.vehicle.plateNumber) : "Biriktirilmagan",
+      d.vehicle?.plateNumber ?? "Biriktirilmagan",
       d.vehicle?.model ?? "—",
       d.month?.due ?? "0",
       d.month?.paid ?? "0",
@@ -266,7 +188,6 @@ export default function DriversPage() {
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
 
-      {!standaloneView && (
       <div className="card card-body mb-5">
         <h2 className="mb-4 text-sm font-bold text-slate-800">{t("addTitle")}</h2>
         <form onSubmit={onCreate} className="space-y-4">
@@ -330,7 +251,6 @@ export default function DriversPage() {
           </button>
         </form>
       </div>
-      )}
 
       {(actionError || actionOk) && (
         <div className="mb-5">
@@ -338,169 +258,37 @@ export default function DriversPage() {
         </div>
       )}
 
-      {profileModalOpen && !data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-          <div className="card card-body min-w-[240px]">
-            <Loading label={tc("loading")} />
-          </div>
-        </div>
-      )}
-
       {data && (
-        <div
-          className={
-            standaloneView
-              ? "card card-body mb-5"
-              : "fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-3 backdrop-blur-sm sm:p-6"
-          }
-          onClick={standaloneView ? undefined : () => setSelectedId(null)}
-          role={standaloneView ? undefined : "dialog"}
-          aria-modal={standaloneView ? undefined : true}
-          aria-label={data.driver.fullName}
-        >
-          <div
-            className={
-              standaloneView
-                ? undefined
-                : "card card-body mx-auto my-2 max-w-5xl shadow-2xl sm:my-6"
-            }
-            onClick={standaloneView ? undefined : (event) => event.stopPropagation()}
-          >
+        <div className="card card-body mb-5">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-3">
-              <DriverAvatar driver={data.driver} size="lg" />
+              <DriverAvatar driver={data.driver} />
               <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-900">{data.driver.fullName}</h2>
-                <StatusBadge status={data.driver.status} label={data.driver.status} />
-                {data.driver.telegram.linked && (
-                  <span className="badge bg-blue-50 text-blue-700">{t("telegramLinked")}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">{data.driver.fullName}</h2>
+                  <StatusBadge status={data.driver.status} label={data.driver.status} />
+                  {data.driver.telegram.linked && (
+                    <span className="badge bg-blue-50 text-blue-700">{t("telegramLinked")}</span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {data.driver.phone}
+                  {data.driver.licenseNumber ? ` · ${data.driver.licenseNumber}` : ""}
+                </p>
+                {data.driver.notes && (
+                  <p className="mt-1 text-xs text-slate-400">{data.driver.notes}</p>
                 )}
               </div>
-              <p className="mt-1 text-sm text-slate-500">
-                {formatUzPhone(data.driver.phone)}
-                {data.driver.licenseNumber ? ` · ${data.driver.licenseNumber}` : ""}
-              </p>
-              {data.driver.notes && (
-                <p className="mt-1 text-xs text-slate-400">{data.driver.notes}</p>
-              )}
-              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => startEditing(data)}
-                disabled={busy}
-              >
-                ✏️ {t("editDriver")}
-              </button>
+            <div className="flex gap-2">
               <button type="button" className="btn-secondary" onClick={() => onLink(data)} disabled={busy}>
                 {t("generateCode")}
               </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => {
-                  if (standaloneView) {
-                    window.close();
-                  } else {
-                    setSelectedId(null);
-                  }
-                }}
-              >
+              <button type="button" className="btn-ghost" onClick={() => setSelectedId(null)}>
                 {t("close")}
               </button>
             </div>
           </div>
-
-          {editing && (
-            <form
-              onSubmit={onEditDriver}
-              className="mb-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4"
-            >
-              <h3 className="text-sm font-bold text-slate-800">{t("editDriverTitle")}</h3>
-              {editError && <Alert tone="error">{editError}</Alert>}
-              <div className="form-grid">
-                <div>
-                  <label className="label" htmlFor="edit-driver-name">
-                    {t("fullName")}
-                  </label>
-                  <input
-                    id="edit-driver-name"
-                    className="input"
-                    value={editForm.fullName}
-                    onChange={(event) =>
-                      setEditForm((form) => ({ ...form, fullName: event.target.value }))
-                    }
-                    minLength={2}
-                    maxLength={160}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="label" htmlFor="edit-driver-phone">
-                    {t("phone")}
-                  </label>
-                  <input
-                    id="edit-driver-phone"
-                    className="input"
-                    value={editForm.phone}
-                    onChange={(event) =>
-                      setEditForm((form) => ({ ...form, phone: event.target.value }))
-                    }
-                    placeholder="+998901234567"
-                    pattern="^\+?\d{9,15}$"
-                    required
-                  />
-                  <p className="mt-1 text-[11px] text-slate-400">{t("editDriverPhoneHint")}</p>
-                </div>
-                <div>
-                  <label className="label" htmlFor="edit-driver-license">
-                    {t("license")}
-                  </label>
-                  <input
-                    id="edit-driver-license"
-                    className="input"
-                    maxLength={60}
-                    value={editForm.licenseNumber}
-                    onChange={(event) =>
-                      setEditForm((form) => ({ ...form, licenseNumber: event.target.value }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="label" htmlFor="edit-driver-notes">
-                    {t("notes")}
-                  </label>
-                  <input
-                    id="edit-driver-notes"
-                    className="input"
-                    maxLength={500}
-                    value={editForm.notes}
-                    onChange={(event) =>
-                      setEditForm((form) => ({ ...form, notes: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className="btn-primary" disabled={editSaving}>
-                  {editSaving ? tc("loading") : tc("save")}
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => {
-                    setEditing(false);
-                    setEditError(null);
-                  }}
-                >
-                  {tc("cancel")}
-                </button>
-              </div>
-            </form>
-          )}
 
           {linkCodes[data.driver.id] && (
             <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
@@ -555,7 +343,7 @@ export default function DriversPage() {
               {data.currentVehicle ? (
                 <div className="rounded-xl border border-slate-200 p-4">
                   <p className="font-mono text-base font-bold text-slate-900">
-                    {formatUzPlate(data.currentVehicle.plateNumber)}
+                    {data.currentVehicle.plateNumber}
                   </p>
                   <p className="text-sm text-slate-600">{data.currentVehicle.model}</p>
                   {data.currentVehicle.routeName && (
@@ -567,24 +355,14 @@ export default function DriversPage() {
                   <p className="text-xs text-slate-400">
                     {t("assignedSince")}: {formatDate(data.currentVehicle.assignedSince)}
                   </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <a
-                      href={`/api/proxy/registry/public-verify/${encodeURIComponent(
-                        data.currentVehicle.plateNumber,
-                      )}/pdf`}
-                      className="btn-secondary inline-flex text-xs"
-                    >
-                      {t("downloadPdf")}
-                    </a>
-                    <button
-                      type="button"
-                      className="btn-ghost text-xs text-red-600"
-                      onClick={onUnassign}
-                      disabled={busy}
-                    >
-                      {t("unassign")}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost mt-3 text-xs text-red-600"
+                    onClick={onUnassign}
+                    disabled={busy}
+                  >
+                    {t("unassign")}
+                  </button>
                 </div>
               ) : (
                 <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
@@ -612,7 +390,7 @@ export default function DriversPage() {
                       const currentDriver = vehicle.assignments[0]?.driver.fullName;
                       return (
                         <option key={vehicle.id} value={vehicle.id}>
-                          {formatUzPlate(vehicle.plateNumber)} · {vehicle.model}
+                          {vehicle.plateNumber} · {vehicle.model}
                           {currentDriver ? ` (${currentDriver})` : ""}
                         </option>
                       );
@@ -702,7 +480,6 @@ export default function DriversPage() {
                       <th>{tc("date")}</th>
                       <th>{t("currentVehicle")}</th>
                       <th>{tc("amount")}</th>
-                      <th>{t("paymentDays")}</th>
                       <th>{tc("status")}</th>
                       <th>{t("notes")}</th>
                     </tr>
@@ -711,17 +488,9 @@ export default function DriversPage() {
                     {data.payments.map((payment) => (
                       <tr key={payment.id}>
                         <td className="text-xs text-slate-600">{formatDateTime(payment.paidAt)}</td>
-                        <td className="font-mono text-xs">{formatUzPlate(payment.vehicle.plateNumber)}</td>
+                        <td className="font-mono text-xs">{payment.vehicle.plateNumber}</td>
                         <td className="font-semibold text-slate-900">
                           {formatMoney(payment.amount)}
-                        </td>
-                        <td className="text-xs text-slate-600">
-                          <p className="font-semibold">
-                            {t("paidDays", { count: payment.days })}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {formatDate(payment.coveredFrom)} — {formatDate(payment.coveredUntil)}
-                          </p>
                         </td>
                         <td>
                           <span className="badge bg-slate-100 text-slate-600">
@@ -736,11 +505,9 @@ export default function DriversPage() {
               </div>
             )}
           </div>
-          </div>
         </div>
       )}
 
-      {!standaloneView && (
       <div className="card">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -777,7 +544,6 @@ export default function DriversPage() {
                   <th>{t("fullName")}</th>
                   <th>{t("phone")}</th>
                   <th>{t("currentVehicle")}</th>
-                  <th>{t("workedToday")}</th>
                   <th>{t("monthDue")}</th>
                   <th>{t("monthPaid")}</th>
                   <th>{t("totalDebt")}</th>
@@ -789,44 +555,20 @@ export default function DriversPage() {
                 {list.data?.items.map((driver) => (
                   <tr key={driver.id}>
                     <td>
-                      <div className="flex items-center gap-3">
-                        <DriverAvatar driver={driver} size="sm" />
-                        <div>
-                          <p className="font-semibold text-slate-900">{driver.fullName}</p>
-                          <StatusBadge status={driver.status} label={driver.status} />
-                        </div>
-                      </div>
+                      <p className="font-semibold text-slate-900">{driver.fullName}</p>
+                      <StatusBadge status={driver.status} label={driver.status} />
                     </td>
-                    <td className="font-mono text-xs">{formatUzPhone(driver.phone)}</td>
+                    <td className="font-mono text-xs">{driver.phone}</td>
                     <td>
                       {driver.vehicle ? (
                         <>
                           <p className="font-mono text-xs font-semibold text-slate-800">
-                            {formatUzPlate(driver.vehicle.plateNumber)}
+                            {driver.vehicle.plateNumber}
                           </p>
                           <p className="text-[11px] text-slate-400">{driver.vehicle.model}</p>
                         </>
                       ) : (
                         <span className="text-xs text-slate-400">{t("noVehicle")}</span>
-                      )}
-                    </td>
-                    <td>
-                      {driver.workedToday ? (
-                        <div className="space-y-0.5">
-                          <span className="badge bg-emerald-50 text-emerald-700">
-                            ✅ {t("workedToday")}
-                          </span>
-                          <p className="text-[10px] text-slate-500">
-                            {t("paidDays", { count: driver.paidDays })}
-                            {driver.coveredUntil
-                              ? ` · ${formatDate(driver.coveredUntil)}`
-                              : ""}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="badge bg-slate-100 text-slate-500">
-                          {t("notPaidToday")}
-                        </span>
                       )}
                     </td>
                     <td>{formatMoney(driver.month.due)}</td>
@@ -869,7 +611,6 @@ export default function DriversPage() {
           </div>
         )}
       </div>
-      )}
     </>
   );
 }

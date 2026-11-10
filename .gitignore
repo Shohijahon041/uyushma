@@ -47,6 +47,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.cloud-attachments/
 
 # Python Collector Service runtime & secrets
 collector_service/profiles/
