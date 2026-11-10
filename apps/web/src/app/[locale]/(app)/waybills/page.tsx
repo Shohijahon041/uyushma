@@ -1152,7 +1152,7 @@ export default function WaybillsPage() {
                 {/* QR Code image */}
                 <div className="p-1 border border-slate-900 rounded bg-white">
                   <img
-                    src={`/api/v1/waybills/public-verify/${printTarget.publicToken}/qr`}
+                    src={`/api/proxy/waybills/public-verify/${printTarget.publicToken}/qr`}
                     alt="QR Tekshiruv"
                     width={80}
                     height={80}
