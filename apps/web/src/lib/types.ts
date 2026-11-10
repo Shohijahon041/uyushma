@@ -684,3 +684,75 @@ export interface PublicVehiclePassport {
   isVerified: boolean;
   verifiedAt: string;
 }
+
+export interface WaybillItem {
+  id: string;
+  number: string;
+  status: "ISSUED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  date: string;
+  validUntil: string;
+  driverId: string;
+  vehicleId: string;
+  routeId: string | null;
+
+  medicalPassed: boolean;
+  medicalDoctorName: string | null;
+  medicalCheckedAt: string | null;
+  medicalNotes: string | null;
+
+  technicalPassed: boolean;
+  mechanicName: string | null;
+  technicalCheckedAt: string | null;
+  technicalNotes: string | null;
+
+  startOdometer: number | null;
+  endOdometer: number | null;
+  departureTime: string | null;
+  returnTime: string | null;
+  distanceKm: number | null;
+
+  fuelType: string | null;
+  fuelBefore: string | null;
+  fuelGiven: string | null;
+  fuelAfter: string | null;
+
+  dispatcherName: string | null;
+  specialNotes: string | null;
+  publicToken: string;
+
+  createdAt: string;
+  updatedAt: string;
+
+  driver: {
+    id: string;
+    fullName: string;
+    phone: string;
+    licenseNumber: string | null;
+    licenseExpiresAt: string | null;
+  };
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    model: string;
+    capacity: number;
+  };
+  route: {
+    id: string;
+    name: string;
+    origin: string;
+    destination: string;
+    distanceKm: number | null;
+  } | null;
+  company?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
+export interface WaybillStats {
+  total: number;
+  active: number;
+  completedToday: number;
+  compliantChecksRate: number;
+}

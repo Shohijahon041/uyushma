@@ -82,8 +82,9 @@ const CONTACT_KEYBOARD = {
 const DRIVER_REPLY_KEYBOARD = {
   keyboard: [
     [{ text: "🚦 Smena (Chiqish / Yakun)" }, { text: "🪪 QR Yo'l Pasporti" }],
-    [{ text: "💰 Oylik plan va qarz" }, { text: "💳 Masofaviy to'lov" }],
-    [{ text: "🚨 SOS / Nosozlik" }, { text: "📋 Barcha xizmatlar" }],
+    [{ text: "📑 Yo'l varaqasi (Putyovka)" }, { text: "💰 Oylik plan va qarz" }],
+    [{ text: "💳 Masofaviy to'lov" }, { text: "🚨 SOS / Nosozlik" }],
+    [{ text: "📋 Barcha xizmatlar" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -140,15 +141,15 @@ function mainMenu(kind: "user" | "driver"): InlineKeyboard {
       inline_keyboard: [
         [
           { text: "🚦 Smena (Chiqish / Yakun)", callback_data: "d:shift" },
-          { text: "🚨 SOS / Nosozlik", callback_data: "d:sos" },
+          { text: "📑 Yo'l varaqasi", callback_data: "d:waybill" },
         ],
         [
           { text: "🪪 QR Yo'l Pasporti", callback_data: "d:passport" },
           { text: "💳 Masofaviy to'lov", callback_data: "d:pay" },
         ],
         [
+          { text: "🚨 SOS / Nosozlik", callback_data: "d:sos" },
           { text: "📄 Ijara shartnomasi", callback_data: "d:lease" },
-          { text: "📷 Hujjat rasmlari", callback_data: "d:photos" },
         ],
         [
           { text: "👤 Profil", callback_data: "d:profile" },
@@ -159,9 +160,10 @@ function mainMenu(kind: "user" | "driver"): InlineKeyboard {
           { text: "🧾 To'lovlarim", callback_data: "d:payments" },
         ],
         [
+          { text: "📷 Rasmlar", callback_data: "d:photos" },
           { text: "📑 Hujjatlarim", callback_data: "d:docs" },
-          { text: "🔄 Yangilash", callback_data: "d:refresh" },
         ],
+        [{ text: "🔄 Yangilash", callback_data: "d:refresh" }],
       ],
     };
   }
@@ -370,6 +372,84 @@ async function sendPassport(ctx: Context): Promise<void> {
       return;
     } catch (error) {
       console.error("QR yuborishda xatolik:", describeError(error));
+    }
+  }
+
+  await ctx.reply(caption, { parse_mode: "HTML", reply_markup: replyMarkup });
+}
+
+async function sendWaybill(ctx: Context): Promise<void> {
+  const chatId = chatIdOf(ctx);
+  const waybill = await api.currentWaybill(chatId).catch((err) => {
+    console.error("Waybill fetch error:", describeError(err));
+    return null;
+  });
+
+  if (!waybill) {
+    await ctx.reply(
+      "⚠️ <b>Bugungi kunga faol yo'l varaqasi (putyovka) topilmadi.</b>\n\n" +
+        "Iltimos, korxona dispetcheri yoki mexanigi bilan bog'lanib, yangi yo'l varaqasi ochtiring.",
+      { parse_mode: "HTML", reply_markup: mainMenu("driver") },
+    );
+    return;
+  }
+
+  const statusLabel =
+    waybill.status === "ACTIVE"
+      ? "🟢 FAOL (Yo'lda)"
+      : waybill.status === "ISSUED"
+        ? "🟡 CHIQARILGAN"
+        : waybill.status === "COMPLETED"
+          ? "⚪ YAKUNLANGAN"
+          : "🔴 BEKOR QILINGAN";
+
+  const webBase =
+    process.env.APP_ORIGIN ?? process.env.WEB_PUBLIC_URL ?? "https://uyushma.bmbrutto.uz";
+  const verifyUrl = `${webBase.replace(/\/$/, "")}/uz/verify/putyovka/${encodeURIComponent(waybill.publicToken)}`;
+
+  const caption =
+    `📑 <b>YO'L VARAQASI (PUTYOVKA)</b>\n` +
+    `№ <b>${escapeHtml(waybill.number)}</b>\n` +
+    `Holati: <b>${statusLabel}</b>\n\n` +
+    `🚘 <b>Avtomobil:</b> ${escapeHtml(waybill.vehicle.model)} (<code>${formatPlate(waybill.vehicle.plateNumber)}</code>)\n` +
+    (waybill.route ? `🛣 <b>Yo'nalish:</b> ${escapeHtml(waybill.route.name)}\n` : "") +
+    `📅 <b>Sana:</b> ${waybill.date.slice(0, 10)}\n` +
+    `⏳ <b>Amal qilish:</b> ${waybill.validUntil.slice(0, 10)}\n\n` +
+    `🩺 <b>Tibbiy ko'rik:</b> ${waybill.medicalPassed ? "✅ O'tgan" : "❌ O'tmagan"}` +
+    (waybill.medicalDoctorName ? ` (${escapeHtml(waybill.medicalDoctorName)})` : "") +
+    "\n" +
+    `🔧 <b>Texnik ko'rik:</b> ${waybill.technicalPassed ? "✅ O'tgan" : "❌ O'tmagan"}` +
+    (waybill.mechanicName ? ` (${escapeHtml(waybill.mechanicName)})` : "") +
+    "\n\n" +
+    (waybill.startOdometer !== null
+      ? `⚡ <b>Chiqish spidometri:</b> ${waybill.startOdometer} km\n`
+      : "") +
+    (waybill.endOdometer !== null
+      ? `🏁 <b>Qaytish spidometri:</b> ${waybill.endOdometer} km\n`
+      : "") +
+    (waybill.distanceKm !== null
+      ? `📏 <b>Bosib o'tilgan:</b> ${waybill.distanceKm} km\n`
+      : "") +
+    `\n<i>YPX yoki nazoratchilar tekshiruvi uchun ushbu QR-kodni taqdim etishingiz mumkin.</i>`;
+
+  const replyMarkup = {
+    inline_keyboard: [
+      [{ text: "🔍 Onlayn tekshirish", url: verifyUrl }],
+      [{ text: "🔄 Yangilash", callback_data: "d:waybill" }],
+      [{ text: "🏠 Asosiy menyu", callback_data: "d:refresh" }],
+    ],
+  };
+
+  const qr = await api.publicWaybillQr(waybill.publicToken).catch(() => null);
+  if (qr) {
+    try {
+      await ctx.replyWithPhoto(
+        { source: qr },
+        { caption, parse_mode: "HTML", reply_markup: replyMarkup },
+      );
+      return;
+    } catch (err) {
+      console.error("Waybill QR send error:", describeError(err));
     }
   }
 
@@ -842,6 +922,10 @@ async function handleReplyButton(ctx: Context, text: string): Promise<boolean> {
 
   const isShift = trimmed === "🚦 Smena (Chiqish / Yakun)" || lower.includes("smena");
   const isPassport = trimmed === "🪪 QR Yo'l Pasporti" || lower.includes("yo'l pasporti") || lower.includes("qr yo'l");
+  const isWaybill =
+    trimmed === "📑 Yo'l varaqasi (Putyovka)" ||
+    lower.includes("yo'l varaqasi") ||
+    lower.includes("putyovka");
   const isDebt = trimmed === "💰 Oylik plan va qarz" || lower.includes("oylik plan") || lower.includes("qarz");
   const isPay = trimmed === "💳 Masofaviy to'lov" || lower.includes("masofaviy to'lov");
   const isSos = trimmed === "🚨 SOS / Nosozlik" || lower.includes("sos") || lower.includes("nosozlik");
@@ -856,6 +940,7 @@ async function handleReplyButton(ctx: Context, text: string): Promise<boolean> {
   const matched =
     isShift ||
     isPassport ||
+    isWaybill ||
     isDebt ||
     isPay ||
     isSos ||
@@ -879,6 +964,10 @@ async function handleReplyButton(ctx: Context, text: string): Promise<boolean> {
     }
     if (isPassport) {
       await sendPassport(ctx);
+      return true;
+    }
+    if (isWaybill) {
+      await sendWaybill(ctx);
       return true;
     }
     if (isDebt) {
@@ -1139,6 +1228,14 @@ bot.command("hujjatlar", (ctx) =>
 
 bot.command("pasport", (ctx) =>
   driverOnly(ctx, () => sendPassport(ctx), "Pasport ma'lumotlarini olishda xatolik."),
+);
+
+bot.command("putyovka", (ctx) =>
+  driverOnly(ctx, () => sendWaybill(ctx), "Yo'l varaqasini olishda xatolik."),
+);
+
+bot.command("waybill", (ctx) =>
+  driverOnly(ctx, () => sendWaybill(ctx), "Yo'l varaqasini olishda xatolik."),
 );
 
 bot.command("ijara", (ctx) =>
@@ -1637,6 +1734,17 @@ bot.on("callback_query", async (ctx) => {
         }
         return;
       }
+      if (data === "d:waybill") {
+        try {
+          await sendWaybill(ctx);
+        } catch (err) {
+          console.error("Waybill error:", describeError(err));
+          await ctx.reply("Yo'l varaqasi ma'lumotlarini olishda xatolik yuz berdi.", {
+            reply_markup: mainMenu("driver"),
+          });
+        }
+        return;
+      }
       if (data === "d:lease") {
         try {
           await sendLeaseDocument(ctx);
@@ -1780,6 +1888,7 @@ function startPolling(attempt = 1): void {
           { command: "menu", description: "Tugmali menyu va klaviatura" },
           { command: "smena", description: "Smena holati (chiqish / yakun)" },
           { command: "pasport", description: "QR yo'l pasporti" },
+          { command: "putyovka", description: "Bugungi yo'l varaqasi (QR)" },
           { command: "qarz", description: "Oylik plan va qarz" },
           { command: "tolov", description: "Masofaviy to'lov (karta)" },
           { command: "sos", description: "Favqulodda hodisa / SOS" },

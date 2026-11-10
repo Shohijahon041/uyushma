@@ -123,6 +123,44 @@ export interface BotPublicPassport {
   verifiedAt: string;
 }
 
+export interface BotWaybill {
+  id: string;
+  number: string;
+  status: "ISSUED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  date: string;
+  validUntil: string;
+  medicalPassed: boolean;
+  medicalDoctorName: string | null;
+  medicalCheckedAt: string | null;
+  medicalNotes: string | null;
+  technicalPassed: boolean;
+  mechanicName: string | null;
+  technicalCheckedAt: string | null;
+  technicalNotes: string | null;
+  startOdometer: number | null;
+  endOdometer: number | null;
+  departureTime: string | null;
+  returnTime: string | null;
+  distanceKm: number | null;
+  fuelType: string | null;
+  fuelBefore: string | null;
+  fuelGiven: string | null;
+  fuelAfter: string | null;
+  publicToken: string;
+  vehicle: {
+    plateNumber: string;
+    model: string;
+  };
+  route?: {
+    name: string;
+    origin: string;
+    destination: string;
+  } | null;
+  company?: {
+    name: string;
+  } | null;
+}
+
 export type DocumentField =
   | "passportNumber"
   | "passportIssuedBy"
@@ -371,6 +409,23 @@ export class BotApiClient {
     const url = `${this.baseUrl}/api/v1/registry/public-verify/${encodeURIComponent(plate)}/pdf`;
     const response = await fetch(url, {
       signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return null;
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /** Haydovchining joriy/bugungi faol yo'l varaqasi (putyovka). */
+  currentWaybill(chatId: string) {
+    return this.request<BotWaybill | null>(
+      `/driver/waybill?chatId=${encodeURIComponent(chatId)}`,
+    );
+  }
+
+  /** Yo'l varaqasi QR kodini PNG sifatida oladi. */
+  async publicWaybillQr(token: string): Promise<Buffer | null> {
+    const url = `${this.baseUrl}/api/v1/waybills/public-verify/${encodeURIComponent(token)}/qr`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) return null;
     return Buffer.from(await response.arrayBuffer());

@@ -29,6 +29,7 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
     items: [
       { href: "/vehicles", labelKey: "vehicles", icon: "truck" },
       { href: "/drivers", labelKey: "drivers", icon: "users" },
+      { href: "/waybills", labelKey: "waybills", icon: "file" },
       { href: "/routes", labelKey: "routes", icon: "map" },
       { href: "/contracts", labelKey: "contracts", icon: "file" },
       { href: "/registry", labelKey: "registry", icon: "database" },

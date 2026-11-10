@@ -24,6 +24,7 @@ import {
   type DriverPhotoKind,
 } from "../drivers/documents";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
+import { WaybillsService } from "../waybills/waybills.service";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -44,6 +45,7 @@ export class IntegrationsService {
     private readonly drivers: DriversService,
     private readonly submissions: SubmissionsService,
     private readonly notifier: TelegramNotifier,
+    private readonly waybills: WaybillsService,
   ) {}
 
   async linkStatus(tenantId: string, userId: string) {
@@ -217,6 +219,11 @@ export class IntegrationsService {
   async botDriver(chatIdRaw: string) {
     const { tenantId, driverId } = await this.resolveDriverChat(chatIdRaw);
     return this.drivers.botDriverProfile(tenantId, driverId);
+  }
+
+  async botDriverWaybill(chatIdRaw: string) {
+    const { tenantId, driverId } = await this.resolveDriverChat(chatIdRaw);
+    return this.waybills.getDriverActiveWaybill(tenantId, driverId);
   }
 
   async linkPhone(

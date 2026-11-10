@@ -218,6 +218,7 @@ model Company {
   paymentSubmissions      PaymentSubmission[]
   driverShifts            DriverShift[]
   driverIncidents         DriverIncident[]
+  waybills                Waybill[]
 
   @@index([status])
 }
@@ -340,6 +341,7 @@ model Route {
   company  Company   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tariffs  Tariff[]
   vehicles Vehicle[]
+  waybills Waybill[]
 
   @@unique([tenantId, name])
   @@unique([id, tenantId])
@@ -370,6 +372,7 @@ model Vehicle {
   submissions      PaymentSubmission[]
   shifts           DriverShift[]
   incidents        DriverIncident[]
+  waybills         Waybill[]
 
   @@unique([tenantId, plateNumber])
   @@unique([id, tenantId])
@@ -416,6 +419,7 @@ model Driver {
   submissions  PaymentSubmission[]
   shifts       DriverShift[]
   incidents    DriverIncident[]
+  waybills     Waybill[]
 
   @@unique([tenantId, phone])
   @@unique([id, tenantId])
@@ -1095,4 +1099,74 @@ model DriverIncident {
   @@unique([id, tenantId])
   @@index([tenantId, status, reportedAt])
   @@index([tenantId, driverId])
+}
+
+// ---------------------------------------------------------------------------
+// Yo'l varaqalari (Putyovkalar).
+// Kunlik reyslar, tibbiy ko'rik, texnik ko'rik, yoqilg'i va spidometr hisobi.
+// ---------------------------------------------------------------------------
+
+enum WaybillStatus {
+  ISSUED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Waybill {
+  id                 String        @id @default(uuid()) @db.Uuid
+  tenantId           String        @db.Uuid
+  number             String        @db.VarChar(50)
+  status             WaybillStatus @default(ISSUED)
+  date               DateTime      @db.Date
+  validUntil         DateTime?
+
+  driverId           String        @db.Uuid
+  vehicleId          String        @db.Uuid
+  routeId            String?       @db.Uuid
+
+  // Tibbiy ko'rik (Medical check)
+  medicalPassed      Boolean       @default(true)
+  medicalDoctorName  String?       @db.VarChar(160)
+  medicalCheckedAt   DateTime?
+  medicalNotes       String?       @db.VarChar(300)
+
+  // Texnik ko'rik (Technical/Mechanic check)
+  technicalPassed    Boolean       @default(true)
+  mechanicName       String?       @db.VarChar(160)
+  technicalCheckedAt DateTime?
+  technicalNotes     String?       @db.VarChar(300)
+
+  // Harakat va spidometr (Odometer & Times)
+  startOdometer      Int?
+  endOdometer        Int?
+  distanceKm         Int?
+  departureTime      DateTime?
+  returnTime         DateTime?
+
+  // Yoqilg'i ma'lumotlari (Fuel / Gas)
+  fuelType           String?       @db.VarChar(50)
+  fuelBefore         Decimal?      @db.Decimal(10, 2)
+  fuelGiven          Decimal?      @db.Decimal(10, 2)
+  fuelAfter          Decimal?      @db.Decimal(10, 2)
+
+  // Mas'ul shaxslar va qo'shimcha ma'lumot
+  dispatcherName     String?       @db.VarChar(160)
+  specialNotes       String?       @db.VarChar(500)
+  publicToken        String        @unique @default(uuid()) @db.VarChar(64)
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  company            Company       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver             Driver        @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle            Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  route              Route?        @relation(fields: [routeId], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, number])
+  @@index([tenantId, status, date])
+  @@index([tenantId, driverId, date])
+  @@index([tenantId, vehicleId, date])
+  @@index([publicToken])
 }

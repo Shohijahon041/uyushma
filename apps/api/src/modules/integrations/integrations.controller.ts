@@ -103,6 +103,11 @@ export class TelegramBotController {
     return this.integrations.botDriver(chatId);
   }
 
+  @Get("driver/waybill")
+  driverWaybill(@Query("chatId") chatId: string) {
+    return this.integrations.botDriverWaybill(chatId);
+  }
+
   @Post("link-phone")
   @HttpCode(200)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })

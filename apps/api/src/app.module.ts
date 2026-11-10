@@ -31,6 +31,7 @@ import { DriversModule } from "./modules/drivers/drivers.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { SubmissionsModule } from "./modules/submissions/submissions.module";
 import { HealthModule } from "./modules/health/health.module";
+import { WaybillsModule } from "./modules/waybills/waybills.module";
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { HealthModule } from "./modules/health/health.module";
     PlatformModule,
     SubmissionsModule,
     HealthModule,
+    WaybillsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
