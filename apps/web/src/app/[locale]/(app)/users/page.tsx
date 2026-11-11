@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDateTime, useApi } from "@/lib/use-api";
@@ -36,6 +36,25 @@ export default function UsersPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedLogin | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return (data?.items ?? []).filter((u) => {
+      if (roleFilter && u.role !== roleFilter) return false;
+      if (statusFilter === "ACTIVE" && !u.isActive) return false;
+      if (statusFilter === "INACTIVE" && u.isActive) return false;
+      if (!q) return true;
+      return (
+        u.fullName.toLowerCase().includes(q) ||
+        (u.phone && u.phone.toLowerCase().includes(q))
+      );
+    });
+  }, [data?.items, searchQuery, roleFilter, statusFilter]);
 
   const roleOptions: Role[] =
     me.data?.role === "OWNER"
@@ -248,6 +267,56 @@ export default function UsersPage() {
         </form>
       </div>
 
+      {/* Search & Filter Toolbar */}
+      <div className="card p-3 mb-4 flex flex-col sm:flex-row items-center gap-3">
+        <div className="flex-1 w-full">
+          <input
+            type="text"
+            className="input w-full text-xs"
+            placeholder="Foydalanuvchi yoki egasini F.I.Sh / telefon raqami bo'yicha qidirish..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="w-full sm:w-44">
+          <select
+            className="select w-full text-xs"
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+          >
+            <option value="">Barcha rollar</option>
+            <option value="OWNER">Egasi (OWNER)</option>
+            <option value="ADMIN">Administrator</option>
+            <option value="ACCOUNTANT">Buxgalter</option>
+            <option value="MANAGER">Dispetcher / Menejer</option>
+          </select>
+        </div>
+        <div className="w-full sm:w-36">
+          <select
+            className="select w-full text-xs"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">Barcha holatlar</option>
+            <option value="ACTIVE">Faol</option>
+            <option value="INACTIVE">Faolsiz</option>
+          </select>
+        </div>
+        {(searchQuery || roleFilter || statusFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery("");
+              setRoleFilter("");
+              setStatusFilter("");
+            }}
+            className="text-xs text-slate-500 hover:text-slate-800 underline whitespace-nowrap"
+          >
+            Filtrni tozalash
+          </button>
+        )}
+      </div>
+
       <div className="card">
         {loading ? (
           <Loading label={tc("loading")} />
@@ -255,8 +324,8 @@ export default function UsersPage() {
           <div className="p-5">
             <Alert tone="error">{error}</Alert>
           </div>
-        ) : data?.items.length === 0 ? (
-          <EmptyState>{t("empty")}</EmptyState>
+        ) : filteredUsers.length === 0 ? (
+          <EmptyState>{searchQuery || roleFilter || statusFilter ? "Qidiruv bo'yicha hech qanday foydalanuvchi topilmadi" : t("empty")}</EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -271,7 +340,7 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {data?.items.map((user) => {
+                {filteredUsers.map((user) => {
                   const isSelf = user.id === me.data?.id;
                   const ownerLocked = user.role === "OWNER" && me.data?.role !== "OWNER";
                   return (

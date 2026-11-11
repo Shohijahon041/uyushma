@@ -51,21 +51,44 @@ export default function WaybillsPage() {
   // Form Fields
   const [formNumber, setFormNumber] = useState("");
   const [formDate, setFormDate] = useState(today());
+  const [formValidUntil, setFormValidUntil] = useState(today());
   const [formDepartureTime, setFormDepartureTime] = useState(nowTimeString());
   const [formDriverId, setFormDriverId] = useState("");
   const [formVehicleId, setFormVehicleId] = useState("");
   const [formRouteId, setFormRouteId] = useState("");
-  const [formStartOdometer, setFormStartOdometer] = useState<string>("");
-  const [formFuelType, setFormFuelType] = useState("METAN");
-  const [formFuelBefore, setFormFuelBefore] = useState("");
-  const [formFuelGiven, setFormFuelGiven] = useState("");
   const [formMedicalPassed, setFormMedicalPassed] = useState(true);
   const [formDoctorName, setFormDoctorName] = useState("");
   const [formTechnicalPassed, setFormTechnicalPassed] = useState(true);
   const [formMechanicName, setFormMechanicName] = useState("");
-  const [formDispatcherName, setFormDispatcherName] = useState("");
   const [formSpecialNotes, setFormSpecialNotes] = useState("");
   const [formAssignDriver, setFormAssignDriver] = useState<boolean>(true);
+
+  // Filters for Vehicle and Driver search in modal
+  const [driverFilter, setDriverFilter] = useState("");
+  const [vehicleFilter, setVehicleFilter] = useState("");
+
+  const filteredVehicles = useMemo(() => {
+    const q = vehicleFilter.trim().toLowerCase();
+    const items = vehiclesApi.data?.items ?? [];
+    if (!q) return items;
+    return items.filter(
+      (v) =>
+        v.plateNumber.toLowerCase().includes(q) ||
+        v.model.toLowerCase().includes(q) ||
+        (v.owner?.fullName && v.owner.fullName.toLowerCase().includes(q))
+    );
+  }, [vehiclesApi.data?.items, vehicleFilter]);
+
+  const filteredDrivers = useMemo(() => {
+    const q = driverFilter.trim().toLowerCase();
+    const items = driversApi.data?.items ?? [];
+    if (!q) return items;
+    return items.filter(
+      (d) =>
+        d.fullName.toLowerCase().includes(q) ||
+        (d.phone && d.phone.toLowerCase().includes(q))
+    );
+  }, [driversApi.data?.items, driverFilter]);
 
   // Close Waybill Modal State
   const [closeTarget, setCloseTarget] = useState<WaybillItem | null>(null);
@@ -84,8 +107,11 @@ export default function WaybillsPage() {
   async function handleOpenCreate() {
     setFormError(null);
     setFormDate(today());
+    setFormValidUntil(today());
     setFormDepartureTime(nowTimeString());
     setFormAssignDriver(true);
+    setDriverFilter("");
+    setVehicleFilter("");
     try {
       const res = await apiRequest<{ nextNumber: string }>("/waybills/next-number");
       setFormNumber(res.nextNumber);
@@ -148,20 +174,16 @@ export default function WaybillsPage() {
         body: {
           number: formNumber.trim() || undefined,
           date: formDate,
+          validUntil: formValidUntil || formDate,
           driverId: formDriverId,
           vehicleId: formVehicleId,
           routeId: formRouteId || undefined,
           assignDriver: formAssignDriver,
-          startOdometer: formStartOdometer ? parseInt(formStartOdometer, 10) : undefined,
           departureTime: departureDateTime,
-          fuelType: formFuelType || undefined,
-          fuelBefore: formFuelBefore ? parseFloat(formFuelBefore) : undefined,
-          fuelGiven: formFuelGiven ? parseFloat(formFuelGiven) : undefined,
           medicalPassed: formMedicalPassed,
           medicalDoctorName: formDoctorName.trim() || undefined,
           technicalPassed: formTechnicalPassed,
           mechanicName: formMechanicName.trim() || undefined,
-          dispatcherName: formDispatcherName.trim() || undefined,
           specialNotes: formSpecialNotes.trim() || undefined,
         },
       });
@@ -187,13 +209,9 @@ export default function WaybillsPage() {
   async function handleCloseWaybill(e: FormEvent) {
     e.preventDefault();
     if (!closeTarget) return;
-    const endKm = parseInt(closeOdometer, 10);
-    if (isNaN(endKm) || endKm < 0) {
+    const endKm = closeOdometer ? parseInt(closeOdometer, 10) : undefined;
+    if (endKm !== undefined && (isNaN(endKm) || endKm < 0)) {
       setCloseError("Qaytishdagi spidometr ko'rsatkichini to'g'ri kiriting");
-      return;
-    }
-    if (closeTarget.startOdometer !== null && endKm < closeTarget.startOdometer) {
-      setCloseError(`Qaytish spidometri chiqishdagidan (${closeTarget.startOdometer} km) kam bo'lishi mumkin emas`);
       return;
     }
 
@@ -440,36 +458,10 @@ export default function WaybillsPage() {
       </div>
     </div>
 
-    <table class="metrics-table" style="margin-top: 6px;">
-      <thead>
-        <tr>
-          <th>Ko'rsatkich</th>
-          <th>Chiqishda (Jo'nash)</th>
-          <th>Qaytishda (Garajga kirish)</th>
-          <th>Farq / Jami</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="font-weight: bold; text-align: left;">Vaqt</td>
-          <td style="font-family: monospace; font-weight: 600;">${depTime}</td>
-          <td style="font-family: monospace; font-weight: 600;">${retTime}</td>
-          <td>-</td>
-        </tr>
-        <tr>
-          <td style="font-weight: bold; text-align: left;">Spidometr (km)</td>
-          <td style="font-family: monospace; font-weight: 700;">${startOdo}</td>
-          <td style="font-family: monospace; font-weight: 700;">${endOdo}</td>
-          <td style="font-family: monospace; font-weight: 900;">${dist}</td>
-        </tr>
-        <tr>
-          <td style="font-weight: bold; text-align: left;">Yoqilg'i (${fuelType})</td>
-          <td style="font-family: monospace;">${fuelBefore}</td>
-          <td style="font-family: monospace;">${fuelAfter}</td>
-          <td style="font-weight: bold;">Berilgan: ${fuelGiven}</td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="box" style="margin-top: 6px; padding: 4px 8px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+      <div>Amal qilish muddati: <b style="font-size: 11px; text-decoration: underline;">${dateStr} dan ${validUntilStr} gacha</b></div>
+      <div>Chiqish vaqti: <b style="font-family: monospace;">${depTime}</b></div>
+    </div>
 
     <div class="grid-2" style="margin-top: 6px;">
       <div class="box" style="display: flex; flex-direction: column; justify-content: space-between; padding: 5px 6px;">
@@ -529,9 +521,8 @@ export default function WaybillsPage() {
 
     <div style="border-top: 2px solid #000; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
       <div style="font-size: 9px; line-height: 1.25; flex: 1;">
-        <div>
-          Reysga ruxsat bergan dispetcher: <b>${dispatcher}</b>
-          <span style="margin-left: 8px;">Imzo: ___________</span>
+        <div style="font-size: 9.5px;">
+          Mas&apos;ul shaxs imzosi: <span style="font-family: monospace;">_______________________</span>
         </div>
         <div style="font-size: 8px; color: #475569; margin-top: 2px;">
           Ushbu yo'l varaqasi transport vositasining qonuniy reysga chiqishiga asos bo'ladi. YPX (DYHXX) va Transport Nazorati inspektorlari o'ng tarafdagi QR kod orqali haqiqiylikni onlayn tekshirishi mumkin.
@@ -736,9 +727,8 @@ export default function WaybillsPage() {
                 <th>{t("driver")}</th>
                 <th>{t("vehicle")}</th>
                 <th>{t("route")}</th>
-                <th>{t("date")}</th>
+                <th>Amal qilish muddati</th>
                 <th>{t("checks")}</th>
-                <th>{t("odometer")}</th>
                 <th>{t("status")}</th>
                 <th className="text-right">{t("actions")}</th>
               </tr>
@@ -799,9 +789,17 @@ export default function WaybillsPage() {
                       )}
                     </td>
 
-                    {/* Date and Time */}
-                    <td>
-                      <div className="text-xs text-slate-700">
+                    {/* Date and Time / Validity range */}
+                    <td className="text-xs">
+                      <div className="font-semibold text-slate-900">
+                        {waybill.date ? waybill.date.slice(0, 10) : ""}
+                      </div>
+                      {waybill.validUntil && waybill.validUntil !== waybill.date && (
+                        <div className="text-[11px] text-emerald-700 font-medium">
+                          → {waybill.validUntil.slice(0, 10)} gacha
+                        </div>
+                      )}
+                      <div className="text-[11px] text-slate-500 mt-0.5">
                         Chiqish:{" "}
                         <span className="font-semibold">
                           {waybill.departureTime
@@ -812,17 +810,6 @@ export default function WaybillsPage() {
                             : "-"}
                         </span>
                       </div>
-                      {waybill.returnTime && (
-                        <div className="text-xs text-slate-500">
-                          Qaytish:{" "}
-                          <span className="font-semibold">
-                            {new Date(waybill.returnTime).toLocaleTimeString("uz-UZ", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                      )}
                     </td>
 
                     {/* Inspections */}
@@ -849,18 +836,7 @@ export default function WaybillsPage() {
                       </div>
                     </td>
 
-                    {/* Odometer */}
-                    <td>
-                      <div className="text-xs font-mono text-slate-700">
-                        {waybill.startOdometer !== null ? `${waybill.startOdometer} km` : "-"}
-                        {waybill.endOdometer !== null && ` → ${waybill.endOdometer} km`}
-                      </div>
-                      {waybill.distanceKm !== null && (
-                        <div className="text-xs font-bold text-emerald-600">
-                          {waybill.distanceKm} km bosib o&apos;tdi
-                        </div>
-                      )}
-                    </td>
+
 
                     {/* Status */}
                     <td>
@@ -957,8 +933,8 @@ export default function WaybillsPage() {
             {formError && <Alert tone="error">{formError}</Alert>}
 
             <form onSubmit={handleCreate} className="space-y-4">
-              {/* Row 1: Number and Date */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Row 1: Number, Date Range (Kundan Kungacha), and Departure Time */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Yo&apos;l varaqasi raqami
@@ -974,7 +950,7 @@ export default function WaybillsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t("date")}
+                    Boshlanish sanasi (Kundan)
                   </label>
                   <input
                     type="date"
@@ -982,6 +958,18 @@ export default function WaybillsPage() {
                     className="input w-full"
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tugash sanasi (Kungacha)
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    className="input w-full"
+                    value={formValidUntil}
+                    onChange={(e) => setFormValidUntil(e.target.value)}
                   />
                 </div>
                 <div>
@@ -998,12 +986,19 @@ export default function WaybillsPage() {
                 </div>
               </div>
 
-              {/* Row 2: Vehicle & Driver Selection */}
+              {/* Row 2: Vehicle & Driver Selection with Instant Search Filters */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     {t("selectVehicle")} *
                   </label>
+                  <input
+                    type="text"
+                    placeholder="🔍 Avtomobilni qidirish (davlat raqami yoki model)..."
+                    className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
+                    value={vehicleFilter}
+                    onChange={(e) => setVehicleFilter(e.target.value)}
+                  />
                   <select
                     required
                     className="input w-full"
@@ -1011,7 +1006,7 @@ export default function WaybillsPage() {
                     onChange={(e) => handleSelectVehicle(e.target.value)}
                   >
                     <option value="">Tanlang...</option>
-                    {vehiclesApi.data?.items.map((veh) => (
+                    {filteredVehicles.map((veh) => (
                       <option key={veh.id} value={veh.id}>
                         {formatUzPlate(veh.plateNumber)} — {veh.model} {veh.owner?.fullName ? `· Egasi: ${veh.owner.fullName}` : ""}
                       </option>
@@ -1023,6 +1018,13 @@ export default function WaybillsPage() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     {t("selectDriver")} *
                   </label>
+                  <input
+                    type="text"
+                    placeholder="🔍 Haydovchini qidirish (F.I.Sh yoki telefon)..."
+                    className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
+                    value={driverFilter}
+                    onChange={(e) => setDriverFilter(e.target.value)}
+                  />
                   <select
                     required
                     className="input w-full"
@@ -1030,7 +1032,7 @@ export default function WaybillsPage() {
                     onChange={(e) => handleSelectDriver(e.target.value)}
                   >
                     <option value="">Tanlang...</option>
-                    {driversApi.data?.items.map((d) => (
+                    {filteredDrivers.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.fullName} ({formatUzPhone(d.phone)})
                       </option>
@@ -1072,7 +1074,7 @@ export default function WaybillsPage() {
                 </div>
               )}
 
-              {/* Row 3: Route & Start Odometer */}
+              {/* Row 3: Route & Notes */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1091,18 +1093,16 @@ export default function WaybillsPage() {
                     ))}
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t("startKm")}
+                    {t("notes")} (Ixtiyoriy)
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    className="input w-full font-mono"
-                    placeholder="Masalan: 124500"
-                    value={formStartOdometer}
-                    onChange={(e) => setFormStartOdometer(e.target.value)}
+                    type="text"
+                    className="input w-full text-xs"
+                    placeholder="Alohida eslatmalar yoki qo'shimcha ma'lumot..."
+                    value={formSpecialNotes}
+                    onChange={(e) => setFormSpecialNotes(e.target.value)}
                   />
                 </div>
               </div>
@@ -1158,66 +1158,6 @@ export default function WaybillsPage() {
                     />
                   </div>
                 </div>
-              </div>
-
-              {/* Row 5: Fuel & Dispatcher */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t("fuelType")}
-                  </label>
-                  <select
-                    className="input w-full"
-                    value={formFuelType}
-                    onChange={(e) => setFormFuelType(e.target.value)}
-                  >
-                    <option value="METAN">METAN (m³)</option>
-                    <option value="PROPAN">PROPAN (L)</option>
-                    <option value="BENZIN_80">BENZIN AI-80 (L)</option>
-                    <option value="BENZIN_92">BENZIN AI-92 (L)</option>
-                    <option value="DIZEL">DIZEL (L)</option>
-                    <option value="ELEKTR">ELEKTR (kVt)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t("fuelBefore")}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    className="input w-full"
-                    placeholder="Qoldiq hajm"
-                    value={formFuelBefore}
-                    onChange={(e) => setFormFuelBefore(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t("dispatcherName")}
-                  </label>
-                  <input
-                    type="text"
-                    className="input w-full"
-                    placeholder="Mas'ul shaxs"
-                    value={formDispatcherName}
-                    onChange={(e) => setFormDispatcherName(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Special notes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {t("notes")}
-                </label>
-                <textarea
-                  className="input w-full h-16 text-xs"
-                  placeholder="Alohida ko'rsatmalar, yuk yoki yo'lovchilar bo'yicha eslatmalar..."
-                  value={formSpecialNotes}
-                  onChange={(e) => setFormSpecialNotes(e.target.value)}
-                />
               </div>
 
               {/* Modal Actions */}
@@ -1540,69 +1480,26 @@ export default function WaybillsPage() {
                 </div>
               </div>
 
-              {/* Departure and Return Metrics Table */}
-              <table className="w-full border-collapse border-2 border-black text-center text-[10.5px]">
-                <thead>
-                  <tr className="bg-slate-100 font-bold border-b-2 border-black text-black">
-                    <th className="border border-black p-1">Ko&apos;rsatkich</th>
-                    <th className="border border-black p-1">Chiqishda (Jo&apos;nash)</th>
-                    <th className="border border-black p-1">Qaytishda (Garajga kirish)</th>
-                    <th className="border border-black p-1">Farq / Jami</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border border-black p-1 font-bold text-left bg-slate-50/50 print:bg-transparent">
-                      Vaqt
-                    </td>
-                    <td className="border border-black p-1 font-mono font-semibold">
-                      {printTarget.departureTime
-                        ? new Date(printTarget.departureTime).toLocaleTimeString("uz-UZ", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "08:00"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-semibold">
-                      {printTarget.returnTime
-                        ? new Date(printTarget.returnTime).toLocaleTimeString("uz-UZ", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "-"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-semibold">-</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-black p-1 font-bold text-left bg-slate-50/50 print:bg-transparent">
-                      Spidometr (km)
-                    </td>
-                    <td className="border border-black p-1 font-mono font-bold">
-                      {printTarget.startOdometer !== null ? `${printTarget.startOdometer} km` : "-"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-bold">
-                      {printTarget.endOdometer !== null ? `${printTarget.endOdometer} km` : "-"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-black text-emerald-800 print:text-black">
-                      {printTarget.distanceKm !== null ? `${printTarget.distanceKm} km` : "-"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-black p-1 font-bold text-left bg-slate-50/50 print:bg-transparent">
-                      Yoqilg&apos;i ({printTarget.fuelType ?? "METAN"})
-                    </td>
-                    <td className="border border-black p-1 font-mono font-semibold">
-                      {printTarget.fuelBefore !== null ? `${printTarget.fuelBefore}` : "-"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-semibold">
-                      {printTarget.fuelAfter !== null ? `${printTarget.fuelAfter}` : "-"}
-                    </td>
-                    <td className="border border-black p-1 font-mono font-bold">
-                      Berilgan: {printTarget.fuelGiven ?? "0"}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              {/* Validity and Time card */}
+              <div className="border border-black rounded p-2 bg-slate-50/40 print:bg-white text-[10.5px] flex items-center justify-between">
+                <div>
+                  Amal qilish muddati:{" "}
+                  <span className="font-black text-black underline">
+                    {printTarget.date ? printTarget.date.slice(0, 10) : ""} dan {printTarget.validUntil ? printTarget.validUntil.slice(0, 10) : printTarget.date.slice(0, 10)} gacha
+                  </span>
+                </div>
+                <div>
+                  Chiqish vaqti:{" "}
+                  <span className="font-mono font-bold text-black">
+                    {printTarget.departureTime
+                      ? new Date(printTarget.departureTime).toLocaleTimeString("uz-UZ", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "08:00"}
+                  </span>
+                </div>
+              </div>
 
               {/* Stamps and Signatures (Medical & Technical Inspection with clear PECHAT borders) */}
               <div className="grid grid-cols-2 gap-2 pt-0.5">
@@ -1720,10 +1617,8 @@ export default function WaybillsPage() {
               {/* Bottom Verification Section with QR Code */}
               <div className="border-t-2 border-black pt-1.5 flex items-center justify-between gap-3">
                 <div className="space-y-0.5 text-[9.5px] flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span>Reysga ruxsat bergan dispetcher:</span>
-                    <b>{printTarget.dispatcherName ?? "Navbatchi dispetcher"}</b>
-                    <span className="ml-2">Imzo: ___________</span>
+                  <div>
+                    Mas&apos;ul shaxs imzosi: <span className="font-mono">_______________________</span>
                   </div>
                   <div className="text-[8.5px] text-slate-600 leading-tight">
                     Ushbu yo&apos;l varaqasi transport vositasining qonuniy reysga chiqishiga asos bo&apos;ladi. YPX (DYHXX) va Transport Nazorati inspektorlari o&apos;ng tarafdagi QR kod orqali haqiqiylikni onlayn tekshirishi mumkin.

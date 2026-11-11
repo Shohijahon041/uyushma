@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatMoney, useApi } from "@/lib/use-api";
-import type { RouteItem, Vehicle } from "@/lib/types";
+import type { DriverItem, RouteItem, Vehicle } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
 import { RoutePlanInput, normalizeMoneyInput } from "@/components/route-plan-input";
 import { formatUzPlate } from "@/lib/plate";
@@ -164,6 +164,80 @@ export default function VehiclesPage() {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Driver Assignment State
+  const [assignVehicle, setAssignVehicle] = useState<Vehicle | null>(null);
+  const [driverSearch, setDriverSearch] = useState("");
+  const [driverSearching, setDriverSearching] = useState(false);
+  const [searchedDrivers, setSearchedDrivers] = useState<DriverItem[]>([]);
+  const [selectedDriver, setSelectedDriver] = useState<DriverItem | null>(null);
+  const [assignDate, setAssignDate] = useState(new Date().toISOString().slice(0, 10));
+  const [assignAmount, setAssignAmount] = useState("");
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  async function searchDrivers(query: string) {
+    setDriverSearching(true);
+    try {
+      const q = query.trim();
+      const res = await apiRequest<{ items: DriverItem[] }>(
+        q ? `/drivers?q=${encodeURIComponent(q)}` : "/drivers",
+      );
+      setSearchedDrivers(res.items || []);
+    } catch {
+      setSearchedDrivers([]);
+    } finally {
+      setDriverSearching(false);
+    }
+  }
+
+  function openAssignModal(vehicle: Vehicle) {
+    setAssignVehicle(vehicle);
+    setSelectedDriver(null);
+    setDriverSearch("");
+    setAssignDate(new Date().toISOString().slice(0, 10));
+    setAssignAmount(vehicle.monthlyFee || "");
+    setAssignError(null);
+    void searchDrivers("");
+  }
+
+  function triggerDriverSearch() {
+    void searchDrivers(driverSearch);
+  }
+
+  useEffect(() => {
+    if (!assignVehicle) return;
+    const timer = setTimeout(() => {
+      void searchDrivers(driverSearch);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [driverSearch, assignVehicle]);
+
+  async function handleAssignSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!assignVehicle || !selectedDriver) return;
+    setAssignSaving(true);
+    setAssignError(null);
+    try {
+      await apiRequest(`/drivers/${selectedDriver.id}/assign`, {
+        method: "POST",
+        body: {
+          vehicleId: assignVehicle.id,
+          startDate: assignDate || new Date().toISOString().slice(0, 10),
+          ...(assignAmount.trim() ? { monthlyAmount: assignAmount.trim() } : {}),
+        },
+      });
+      setNotice(
+        `${selectedDriver.fullName} muvaffaqiyatli ${formatUzPlate(assignVehicle.plateNumber)} avtomobiliga biriktirildi!`,
+      );
+      setAssignVehicle(null);
+      await reload();
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setAssignSaving(false);
+    }
+  }
+
   useEffect(() => {
     if (!ownerId && owners.data?.items[0]) {
       setOwnerId(owners.data.items[0].id);
@@ -310,9 +384,25 @@ export default function VehiclesPage() {
               <p className="font-mono text-[11px] text-slate-400">
                 {formatUzPhone(vehicle.assignments[0].driver.phone)}
               </p>
+              <button
+                type="button"
+                onClick={() => openAssignModal(vehicle)}
+                className="mt-1 text-[10.5px] text-blue-600 hover:text-blue-800 underline font-medium block"
+              >
+                ⇄ Almashtirish
+              </button>
             </>
           ) : (
-            <span className="text-slate-400">{t("noDriver")}</span>
+            <>
+              <span className="text-slate-400 block">{t("noDriver")}</span>
+              <button
+                type="button"
+                onClick={() => openAssignModal(vehicle)}
+                className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition"
+              >
+                🔗 Haydovchi biriktirish
+              </button>
+            </>
           )}
         </td>
         <td>
@@ -606,6 +696,201 @@ export default function VehiclesPage() {
           </div>
         )}
       </div>
+
+      {/* Avtomobil biriktirish / Haydovchini qidirish Modal */}
+      {assignVehicle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="card w-full max-w-lg p-5 bg-white shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Avtomobil biriktirish</h3>
+                <p className="text-xs text-slate-500">
+                  Transportga amaldagi haydovchini qidirish va rasman biriktirish
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAssignVehicle(null);
+                  setSelectedDriver(null);
+                  setDriverSearch("");
+                }}
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Target Vehicle info */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-sm text-slate-900">
+                  🇺🇿 {formatUzPlate(assignVehicle.plateNumber)}
+                </span>
+                <span className="font-semibold text-slate-700">{assignVehicle.model}</span>
+              </div>
+              <div className="mt-1.5 pt-1.5 border-t border-slate-200/70 text-slate-600 flex flex-wrap justify-between gap-2">
+                <span>Egasi: <b>{assignVehicle.owner.fullName}</b></span>
+                <span>
+                  Hozirgi haydovchi:{" "}
+                  <b>{assignVehicle.assignments[0]?.driver.fullName ?? "Biriktirilmagan"}</b>
+                </span>
+              </div>
+            </div>
+
+            {/* Driver Search Section */}
+            <div className="mb-4">
+              <label className="label font-bold text-xs text-slate-800 mb-1 flex items-center justify-between">
+                <span>Haydovchini qidirish</span>
+                {selectedDriver && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDriver(null)}
+                    className="text-xs text-blue-600 hover:underline font-normal"
+                  >
+                    Boshqa haydovchi qidirish
+                  </button>
+                )}
+              </label>
+
+              {selectedDriver ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-sm text-emerald-950">
+                      ✅ {selectedDriver.fullName}
+                    </div>
+                    <div className="text-xs text-emerald-800 font-mono mt-0.5">
+                      📞 {formatUzPhone(selectedDriver.phone)}{" "}
+                      {selectedDriver.licenseNumber ? `· Guvohnoma: ${selectedDriver.licenseNumber}` : ""}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDriver(null)}
+                    className="btn-ghost text-xs text-slate-700 border border-emerald-300 bg-white"
+                  >
+                    O&apos;zgartirish
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="input flex-1 text-xs"
+                      placeholder="F.I.Sh yoki telefon raqami bo'yicha qidirish..."
+                      value={driverSearch}
+                      onChange={(e) => setDriverSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          triggerDriverSearch();
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={triggerDriverSearch}
+                      className="btn-secondary px-3 py-1.5 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shadow-sm"
+                    >
+                      🔍 Qidirish
+                    </button>
+                  </div>
+
+                  {/* Driver search results list */}
+                  <div className="border border-slate-200 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-100 bg-white shadow-inner">
+                    {driverSearching ? (
+                      <div className="p-4 text-center text-xs text-slate-500">Qidirilmoqda...</div>
+                    ) : searchedDrivers.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        {driverSearch
+                          ? "Mos keluvchi haydovchi topilmadi"
+                          : "Haydovchini topish uchun ism yoki telefon kiriting"}
+                      </div>
+                    ) : (
+                      searchedDrivers.map((d) => (
+                        <div
+                          key={d.id}
+                          className="p-2.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer"
+                          onClick={() => setSelectedDriver(d)}
+                        >
+                          <div>
+                            <p className="font-semibold text-xs text-slate-900">{d.fullName}</p>
+                            <p className="font-mono text-[11px] text-slate-500">
+                              {formatUzPhone(d.phone)}{" "}
+                              {d.vehicle
+                                ? `· Hozirgi: ${formatUzPlate(d.vehicle.plateNumber)} (${d.vehicle.model})`
+                                : "· Mashina biriktirilmagan"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs px-2.5 py-1 text-emerald-700 hover:bg-emerald-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDriver(d);
+                            }}
+                          >
+                            Tanlash
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Date & Amount */}
+            <form onSubmit={handleAssignSubmit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label text-xs">Biriktirilgan sana</label>
+                  <input
+                    type="date"
+                    className="input text-xs"
+                    value={assignDate}
+                    onChange={(e) => setAssignDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Oylik plan (so&apos;m)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="input text-xs"
+                    value={assignAmount}
+                    onChange={(e) => setAssignAmount(e.target.value)}
+                    placeholder={assignVehicle.monthlyFee || "1500000"}
+                  />
+                </div>
+              </div>
+
+              {assignError && <Alert tone="error">{assignError}</Alert>}
+
+              <div className="flex justify-end gap-2 pt-3 border-t mt-4">
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  onClick={() => setAssignVehicle(null)}
+                  disabled={assignSaving}
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs"
+                  disabled={assignSaving || !selectedDriver}
+                >
+                  {assignSaving ? "Biriktirilmoqda..." : "✅ Biriktirish"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

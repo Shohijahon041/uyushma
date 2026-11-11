@@ -9,6 +9,8 @@ import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/component
 import { todayTashkent } from "@/lib/tashkent";
 import { DriverAvatar, DriverDocuments } from "@/components/driver-documents";
 import { exportToExcelTable } from "@/lib/export-excel";
+import { formatUzPlate } from "@/lib/plate";
+import { formatUzPhone } from "@/lib/phone";
 
 export default function DriversPage() {
   const t = useTranslations("drivers");
@@ -41,12 +43,27 @@ export default function DriversPage() {
   const [assignVehicleId, setAssignVehicleId] = useState("");
   const [assignDate, setAssignDate] = useState(todayTashkent());
   const [assignAmount, setAssignAmount] = useState("");
+  const [assignVehFilter, setAssignVehFilter] = useState("");
   const [linkCodes, setLinkCodes] = useState<
     Record<string, { code: string; expiresAt: string }>
   >({});
 
+  // Dedicated "Avtomobil biriktirish" with Driver Search modal state
+  const [globalAssignOpen, setGlobalAssignOpen] = useState(false);
+  const [modalDriverSearch, setModalDriverSearch] = useState("");
+  const [modalDriverSearching, setModalDriverSearching] = useState(false);
+  const [modalSearchedDrivers, setModalSearchedDrivers] = useState<DriverItem[]>([]);
+  const [modalSelectedDriver, setModalSelectedDriver] = useState<DriverItem | null>(null);
+  const [modalVehicleId, setModalVehicleId] = useState("");
+  const [modalVehFilter, setModalVehFilter] = useState("");
+  const [modalDate, setModalDate] = useState(todayTashkent());
+  const [modalAmount, setModalAmount] = useState("");
+  const [modalSaving, setModalSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
   useEffect(() => {
     setAssignVehicleId("");
+    setAssignVehFilter("");
     setAssignDate(todayTashkent());
     setAssignAmount("");
     setActionError(null);
@@ -57,6 +74,111 @@ export default function DriversPage() {
     () => (vehicles.data?.items ?? []).filter((vehicle) => vehicle.status !== "INACTIVE"),
     [vehicles.data],
   );
+
+  const filteredActiveVehicles = useMemo(() => {
+    const q = assignVehFilter.trim().toLowerCase();
+    if (!q) return activeVehicles;
+    return activeVehicles.filter(
+      (v) =>
+        v.plateNumber.toLowerCase().includes(q) ||
+        v.model.toLowerCase().includes(q) ||
+        (v.assignments[0]?.driver.fullName &&
+          v.assignments[0].driver.fullName.toLowerCase().includes(q)),
+    );
+  }, [activeVehicles, assignVehFilter]);
+
+  const modalFilteredVehicles = useMemo(() => {
+    const q = modalVehFilter.trim().toLowerCase();
+    if (!q) return activeVehicles;
+    return activeVehicles.filter(
+      (v) =>
+        v.plateNumber.toLowerCase().includes(q) ||
+        v.model.toLowerCase().includes(q) ||
+        (v.assignments[0]?.driver.fullName &&
+          v.assignments[0].driver.fullName.toLowerCase().includes(q)),
+    );
+  }, [activeVehicles, modalVehFilter]);
+
+  async function searchModalDrivers(q: string) {
+    setModalDriverSearching(true);
+    try {
+      const query = q.trim();
+      const res = await apiRequest<{ items: DriverItem[] }>(
+        query ? `/drivers?q=${encodeURIComponent(query)}` : "/drivers",
+      );
+      setModalSearchedDrivers(res.items || []);
+    } catch {
+      setModalSearchedDrivers([]);
+    } finally {
+      setModalDriverSearching(false);
+    }
+  }
+
+  function triggerModalDriverSearch() {
+    void searchModalDrivers(modalDriverSearch);
+  }
+
+  function openGlobalAssign(driver?: DriverItem | { id: string; fullName: string; phone: string; vehicle?: any }) {
+    if (driver) {
+      setModalSelectedDriver({
+        id: driver.id,
+        fullName: driver.fullName,
+        phone: driver.phone,
+        licenseNumber: (driver as any).licenseNumber ?? null,
+        status: "ACTIVE",
+        notes: null,
+        telegram: { linked: false, username: null, linkedAt: null, hasPhoto: false },
+        vehicle: (driver as any).vehicle ?? null,
+        month: { period: "", due: "0", paid: "0", debt: "0", surplus: "0" },
+        totalDebt: "0",
+        workedToday: false,
+        paidDays: 0,
+        coveredUntil: null,
+      });
+    } else {
+      setModalSelectedDriver(null);
+    }
+    setModalDriverSearch("");
+    setModalVehicleId("");
+    setModalVehFilter("");
+    setModalDate(todayTashkent());
+    setModalAmount("");
+    setModalError(null);
+    setGlobalAssignOpen(true);
+    void searchModalDrivers("");
+  }
+
+  useEffect(() => {
+    if (!globalAssignOpen) return;
+    const timer = setTimeout(() => {
+      void searchModalDrivers(modalDriverSearch);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [modalDriverSearch, globalAssignOpen]);
+
+  async function handleModalAssignSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!modalSelectedDriver || !modalVehicleId) return;
+    setModalSaving(true);
+    setModalError(null);
+    try {
+      await apiRequest(`/drivers/${modalSelectedDriver.id}/assign`, {
+        method: "POST",
+        body: {
+          vehicleId: modalVehicleId,
+          startDate: modalDate || todayTashkent(),
+          ...(modalAmount.trim() ? { monthlyAmount: modalAmount.trim() } : {}),
+        },
+      });
+      setActionOk(`${modalSelectedDriver.fullName} ga avtomobil muvaffaqiyatli biriktirildi!`);
+      setGlobalAssignOpen(false);
+      await refreshAll();
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : tc("error"));
+    } finally {
+      setModalSaving(false);
+    }
+  }
 
   async function refreshAll() {
     await Promise.all([list.reload(), profile.reload(), vehicles.reload()]);
@@ -372,12 +494,28 @@ export default function DriversPage() {
             </div>
 
             <div>
-              <h3 className="mb-2 text-sm font-bold text-slate-800">{t("assignTitle")}</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold text-slate-800">{t("assignTitle")}</h3>
+                <button
+                  type="button"
+                  onClick={() => openGlobalAssign(data.driver)}
+                  className="btn-secondary text-xs flex items-center gap-1.5"
+                >
+                  🔍 Haydovchini qidirish va almashtirish
+                </button>
+              </div>
               <form onSubmit={onAssign} className="space-y-3 rounded-xl border border-slate-200 p-4">
                 <div>
                   <label className="label" htmlFor="assign-vehicle">
                     {t("selectVehicle")}
                   </label>
+                  <input
+                    type="text"
+                    className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
+                    placeholder="🔍 Avtomobilni qidirish (davlat raqami yoki model)..."
+                    value={assignVehFilter}
+                    onChange={(e) => setAssignVehFilter(e.target.value)}
+                  />
                   <select
                     id="assign-vehicle"
                     className="select"
@@ -386,7 +524,7 @@ export default function DriversPage() {
                     required
                   >
                     <option value="">—</option>
-                    {activeVehicles.map((vehicle) => {
+                    {filteredActiveVehicles.map((vehicle) => {
                       const currentDriver = vehicle.assignments[0]?.driver.fullName;
                       return (
                         <option key={vehicle.id} value={vehicle.id}>
@@ -510,8 +648,16 @@ export default function DriversPage() {
 
       <div className="card">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-slate-800">{t("title")}</h2>
+            <button
+              type="button"
+              onClick={() => openGlobalAssign()}
+              className="btn-primary flex items-center gap-1 px-3 py-1 text-xs font-semibold shadow-sm"
+            >
+              <span>🔗</span>
+              <span>Avtomobil biriktirish</span>
+            </button>
             <button
               type="button"
               onClick={handleExportDriversExcel}
@@ -589,6 +735,13 @@ export default function DriversPage() {
                       <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"
+                          className="btn-ghost text-xs text-emerald-700 font-semibold"
+                          onClick={() => openGlobalAssign(driver)}
+                        >
+                          🔗 Biriktirish
+                        </button>
+                        <button
+                          type="button"
                           className="btn-ghost text-xs"
                           onClick={() => setSelectedId(driver.id)}
                         >
@@ -611,6 +764,213 @@ export default function DriversPage() {
           </div>
         )}
       </div>
+
+      {/* Avtomobil biriktirish (Driver Search + Vehicle Search) Modal */}
+      {globalAssignOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="card w-full max-w-lg p-5 bg-white shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Avtomobil biriktirish</h3>
+                <p className="text-xs text-slate-500">
+                  Haydovchini qidirish va unga avtomobil biriktirish
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGlobalAssignOpen(false)}
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Step 1: Driver Search & Selection */}
+            <div className="mb-4">
+              <label className="label font-bold text-xs text-slate-800 mb-1 flex items-center justify-between">
+                <span>1. Haydovchini tanlang</span>
+                {modalSelectedDriver && (
+                  <button
+                    type="button"
+                    onClick={() => setModalSelectedDriver(null)}
+                    className="text-xs text-blue-600 hover:underline font-normal"
+                  >
+                    Boshqa haydovchi qidirish
+                  </button>
+                )}
+              </label>
+
+              {modalSelectedDriver ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-sm text-emerald-950">
+                      ✅ {modalSelectedDriver.fullName}
+                    </div>
+                    <div className="text-xs text-emerald-800 font-mono mt-0.5">
+                      📞 {formatUzPhone(modalSelectedDriver.phone)}{" "}
+                      {modalSelectedDriver.vehicle
+                        ? `· Hozirgi: ${formatUzPlate(modalSelectedDriver.vehicle.plateNumber)} (${modalSelectedDriver.vehicle.model})`
+                        : "· Avtomobil biriktirilmagan"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalSelectedDriver(null)}
+                    className="btn-ghost text-xs text-slate-700 border border-emerald-300 bg-white"
+                  >
+                    O&apos;zgartirish
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="input flex-1 text-xs"
+                      placeholder="Haydovchi F.I.Sh yoki telefon raqamini kiriting..."
+                      value={modalDriverSearch}
+                      onChange={(e) => setModalDriverSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          triggerModalDriverSearch();
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={triggerModalDriverSearch}
+                      className="btn-secondary px-3 py-1.5 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shadow-sm"
+                    >
+                      🔍 Qidirish
+                    </button>
+                  </div>
+
+                  {/* Driver search results list */}
+                  <div className="border border-slate-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-slate-100 bg-white shadow-inner">
+                    {modalDriverSearching ? (
+                      <div className="p-4 text-center text-xs text-slate-500">Qidirilmoqda...</div>
+                    ) : modalSearchedDrivers.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        {modalDriverSearch
+                          ? "Mos keluvchi haydovchi topilmadi"
+                          : "Haydovchini topish uchun ism yoki telefon kiriting"}
+                      </div>
+                    ) : (
+                      modalSearchedDrivers.map((d) => (
+                        <div
+                          key={d.id}
+                          className="p-2.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer"
+                          onClick={() => setModalSelectedDriver(d)}
+                        >
+                          <div>
+                            <p className="font-semibold text-xs text-slate-900">{d.fullName}</p>
+                            <p className="font-mono text-[11px] text-slate-500">
+                              {formatUzPhone(d.phone)}{" "}
+                              {d.vehicle
+                                ? `· Hozirgi: ${formatUzPlate(d.vehicle.plateNumber)} (${d.vehicle.model})`
+                                : "· Mashinasiz"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs px-2.5 py-1 text-emerald-700 hover:bg-emerald-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setModalSelectedDriver(d);
+                            }}
+                          >
+                            Tanlash
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Step 2: Vehicle Selection with search */}
+            <form onSubmit={handleModalAssignSubmit} className="space-y-3">
+              <div>
+                <label className="label font-bold text-xs text-slate-800 mb-1">
+                  2. Avtomobilni tanlang
+                </label>
+                <input
+                  type="text"
+                  className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
+                  placeholder="🔍 Avtomobilni qidirish (davlat raqami yoki model)..."
+                  value={modalVehFilter}
+                  onChange={(e) => setModalVehFilter(e.target.value)}
+                />
+                <select
+                  className="select w-full text-xs"
+                  value={modalVehicleId}
+                  onChange={(e) => setModalVehicleId(e.target.value)}
+                  required
+                >
+                  <option value="">— Avtomobilni tanlang —</option>
+                  {modalFilteredVehicles.map((vehicle) => {
+                    const currentDriver = vehicle.assignments[0]?.driver.fullName;
+                    return (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {formatUzPlate(vehicle.plateNumber)} · {vehicle.model}
+                        {currentDriver ? ` (Hozirgi haydovchi: ${currentDriver})` : " (Bo'sh)"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Step 3: Date & Monthly Fee */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label text-xs">Biriktirilgan sana</label>
+                  <input
+                    type="date"
+                    className="input text-xs"
+                    value={modalDate}
+                    onChange={(e) => setModalDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label text-xs">Oylik plan (so&apos;m)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="input text-xs"
+                    placeholder="1500000"
+                    value={modalAmount}
+                    onChange={(e) => setModalAmount(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {modalError && <Alert tone="error">{modalError}</Alert>}
+
+              <div className="flex justify-end gap-2 pt-3 border-t mt-4">
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  onClick={() => setGlobalAssignOpen(false)}
+                  disabled={modalSaving}
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs"
+                  disabled={modalSaving || !modalSelectedDriver || !modalVehicleId}
+                >
+                  {modalSaving ? "Biriktirilmoqda..." : "✅ Biriktirish"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

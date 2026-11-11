@@ -364,54 +364,6 @@ export default async function PublicWaybillVerifyPage({
           </div>
         </section>
 
-        {/* Speedometer & Fuel */}
-        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 print:bg-transparent print:border-black">
-          <div className="text-xs text-slate-400 uppercase font-semibold border-b border-slate-800 pb-2 print:border-black/20">
-            Reys ko&apos;rsatkichlari (Spidometr va Yoqilg&apos;i)
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 print:bg-transparent print:border-black">
-              <span className="text-[11px] text-slate-400 block">Chiqish spidometri:</span>
-              <span className="text-base font-bold text-slate-100 font-mono print:text-black">
-                {data.startOdometer !== null ? `${data.startOdometer} km` : "-"}
-              </span>
-            </div>
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 print:bg-transparent print:border-black">
-              <span className="text-[11px] text-slate-400 block">Qaytish spidometri:</span>
-              <span className="text-base font-bold text-slate-100 font-mono print:text-black">
-                {data.endOdometer !== null ? `${data.endOdometer} km` : "-"}
-              </span>
-            </div>
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 print:bg-transparent print:border-black">
-              <span className="text-[11px] text-slate-400 block">Bosib o&apos;tilgan:</span>
-              <span className="text-base font-bold text-emerald-400 font-mono print:text-black">
-                {data.distanceKm !== null ? `${data.distanceKm} km` : "-"}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 text-center pt-1 text-xs">
-            <div>
-              <span className="text-slate-400 block">Yoqilg&apos;i turi:</span>
-              <span className="font-semibold text-slate-200 print:text-black">
-                {data.fuelType ?? "METAN"}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-400 block">Chiqishdagi hajm:</span>
-              <span className="font-semibold text-slate-200 print:text-black">
-                {data.fuelBefore !== null ? `${data.fuelBefore}` : "-"}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-400 block">Qaytishdagi qoldiq:</span>
-              <span className="font-semibold text-slate-200 print:text-black">
-                {data.fuelAfter !== null ? `${data.fuelAfter}` : "-"}
-              </span>
-            </div>
-          </div>
-        </section>
-
         {/* QR Code and Verification footer */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-5 print:bg-transparent print:border-black">
           {qrDataUrl && (
