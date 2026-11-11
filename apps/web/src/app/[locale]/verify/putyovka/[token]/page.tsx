@@ -108,9 +108,29 @@ export default async function PublicWaybillVerifyPage({
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start p-4 sm:p-6 print:bg-white print:text-black">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start p-4 sm:p-6 print:bg-white print:text-black print:p-0 print:block">
+      {/* Print Page Setup */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 10mm 12mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                color: #000000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+            }
+          `,
+        }}
+      />
+
       {/* Top Header */}
-      <header className="w-full max-w-xl flex items-center justify-between pb-6 border-b border-slate-800 print:border-black">
+      <header className="w-full max-w-xl print:max-w-none flex items-center justify-between pb-6 border-b border-slate-800 print:border-black print:pb-3">
         <div className="flex items-center gap-3">
           <img
             src="/brand/bm-brutto-mark.webp"
@@ -134,7 +154,7 @@ export default async function PublicWaybillVerifyPage({
       </header>
 
       {/* Main Container */}
-      <main className="w-full max-w-xl py-6 space-y-5">
+      <main className="w-full max-w-xl print:max-w-none py-6 print:py-3 space-y-5 print:space-y-3.5">
         {/* Status Hero Card */}
         <div
           className={`rounded-2xl p-5 border text-center transition-all ${
@@ -410,3 +430,4 @@ export default async function PublicWaybillVerifyPage({
     </div>
   );
 }
+

@@ -934,18 +934,75 @@ export default function WaybillsPage() {
       {/* MODAL 3: RASMIY YO'L VARAQASI (CHOP ETISH UCHUN BLANKA A4/A5)          */}
       {/* ===================================================================== */}
       {printTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full p-4 sm:p-8 space-y-6 my-6 max-h-[95vh] overflow-y-auto print:max-w-none print:w-full print:p-0 print:m-0 print:shadow-none">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static print:overflow-visible">
+          {/* Print isolation & page margin styles */}
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
+                @media print {
+                  @page {
+                    size: A4 portrait;
+                    margin: 8mm 10mm;
+                  }
+                  html, body {
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    width: 100% !important;
+                    height: auto !important;
+                    overflow: visible !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                  /* Hide app layout, headers, navigation and backdrops */
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  /* Show only the printable waybill container */
+                  #printable-waybill-sheet,
+                  #printable-waybill-sheet * {
+                    visibility: visible !important;
+                  }
+                  #printable-waybill-sheet {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 6mm 8mm !important;
+                    box-sizing: border-box !important;
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                    border: 2px solid #000000 !important;
+                    border-radius: 0 !important;
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
+                  }
+                  .print\\:hidden, .no-print {
+                    display: none !important;
+                  }
+                }
+              `,
+            }}
+          />
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full p-4 sm:p-8 space-y-6 my-6 max-h-[95vh] overflow-y-auto print:max-w-none print:w-full print:p-0 print:m-0 print:shadow-none print:border-none print:overflow-visible">
             {/* Modal action bar (hidden during print) */}
             <div className="flex items-center justify-between border-b pb-3 print:hidden">
-              <div className="text-sm font-bold text-slate-700">
-                Yo&apos;l varaqasi &bull; {printTarget.number}
+              <div>
+                <div className="text-sm font-bold text-slate-800">
+                  Yo&apos;l varaqasi &bull; <span className="font-mono text-emerald-700">{printTarget.number}</span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  A4 formatda chop etishga to&apos;liq moslashtirilgan
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="btn btn-primary text-xs flex items-center gap-1.5"
+                  className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
                 >
                   🖨️ Chop etish (Print)
                 </button>
@@ -960,67 +1017,72 @@ export default function WaybillsPage() {
             </div>
 
             {/* Printable Document Sheet (Standard Uzbekistan Waybill Form) */}
-            <div className="border border-slate-900 p-5 space-y-4 text-slate-900 bg-white font-sans text-xs">
+            <div
+              id="printable-waybill-sheet"
+              className="border-2 border-black p-5 sm:p-6 space-y-3.5 text-black bg-white font-sans text-xs print:p-4 print:border-2 print:border-black"
+            >
               {/* Header: Title and Reg Number */}
-              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3">
+              <div className="flex justify-between items-start border-b-2 border-black pb-3">
                 <div>
-                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                  <div className="text-[10px] uppercase font-bold tracking-widest text-slate-700">
                     O&apos;zbekiston Respublikasi Transport Vazirligi
                   </div>
-                  <h2 className="text-lg font-extrabold uppercase tracking-tight mt-0.5">
+                  <h2 className="text-lg font-black uppercase tracking-tight text-black mt-0.5">
                     YO&apos;L VARAQASI (ПУТЕВОЙ ЛИСТ)
                   </h2>
-                  <div className="font-mono font-bold text-base text-slate-800">
+                  <div className="font-mono font-black text-base text-black mt-0.5">
                     № {printTarget.number}
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs font-semibold text-slate-600">
-                    Tashkilot:
+                  <div className="text-xs font-semibold text-slate-700">
+                    Tashkilot (Tashuvchi):
                   </div>
-                  <div className="text-sm font-bold">
+                  <div className="text-sm font-black text-black">
                     {printTarget.company?.name ?? "Transport Korxonasi"}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
+                  <div className="text-[11px] text-slate-700 mt-1">
                     Sana: <b>{printTarget.date.slice(0, 10)}</b> &bull; Amal qiladi: <b>{printTarget.validUntil.slice(0, 10)}</b>
                   </div>
                 </div>
               </div>
 
               {/* Vehicle and Driver info grid */}
-              <div className="grid grid-cols-2 gap-3 border-b pb-3">
-                <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-3 border border-black rounded p-3 bg-slate-50/40 print:bg-white">
+                <div className="space-y-1.5">
                   <div>
-                    Avtomobil: <span className="font-bold">{printTarget.vehicle.model}</span>
+                    Avtomobil rusumi: <span className="font-black text-black">{printTarget.vehicle.model}</span>
                   </div>
-                  <div>
-                    Davlat raqami:{" "}
-                    <span className="font-mono font-bold px-1.5 py-0.5 border border-black rounded">
-                      {formatUzPlate(printTarget.vehicle.plateNumber)}
+                  <div className="flex items-center gap-1.5">
+                    <span>Davlat raqami:</span>
+                    <span className="font-mono font-black text-sm px-2 py-0.5 border-2 border-black rounded tracking-widest bg-white">
+                      🇺🇿 {formatUzPlate(printTarget.vehicle.plateNumber)}
                     </span>
                   </div>
                   <div>
                     Yo&apos;nalish:{" "}
-                    <span className="font-semibold">
-                      {printTarget.route ? `${printTarget.route.name} (${printTarget.route.origin} → ${printTarget.route.destination})` : "Erkin reys"}
+                    <span className="font-bold text-black">
+                      {printTarget.route
+                        ? `${printTarget.route.name} (${printTarget.route.origin} → ${printTarget.route.destination})`
+                        : "Erkin yo'nalish (shahar bo'ylab)"}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div>
-                    Haydovchi: <span className="font-bold">{printTarget.driver.fullName}</span>
+                    Haydovchi: <span className="font-black text-black">{printTarget.driver.fullName}</span>
                   </div>
                   <div>
-                    Guvohnoma:{" "}
-                    <span className="font-mono">
+                    Guvohnoma (Prava):{" "}
+                    <span className="font-mono font-bold text-black">
                       {printTarget.driver.licenseNumber ?? "Mavjud"}
                     </span>
                   </div>
                   <div>
                     Aloqa telefoni:{" "}
-                    <span className="font-mono">
+                    <span className="font-mono font-semibold text-black">
                       {formatUzPhone(printTarget.driver.phone)}
                     </span>
                   </div>
@@ -1028,19 +1090,21 @@ export default function WaybillsPage() {
               </div>
 
               {/* Departure and Return Metrics Table */}
-              <table className="w-full border-collapse border border-slate-900 text-center text-xs">
+              <table className="w-full border-collapse border-2 border-black text-center text-xs">
                 <thead>
-                  <tr className="bg-slate-100 font-bold border-b border-slate-900">
-                    <th className="border border-slate-900 p-1.5">Ko&apos;rsatkich</th>
-                    <th className="border border-slate-900 p-1.5">Chiqishda (Jo&apos;nash)</th>
-                    <th className="border border-slate-900 p-1.5">Qaytishda (Garajga kirish)</th>
-                    <th className="border border-slate-900 p-1.5">Farq / Jami</th>
+                  <tr className="bg-slate-100 font-bold border-b-2 border-black text-black">
+                    <th className="border border-black p-1.5">Ko&apos;rsatkich</th>
+                    <th className="border border-black p-1.5">Chiqishda (Jo&apos;nash)</th>
+                    <th className="border border-black p-1.5">Qaytishda (Garajga kirish)</th>
+                    <th className="border border-black p-1.5">Farq / Jami</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border border-slate-900 p-1.5 font-semibold text-left">Vaqt</td>
-                    <td className="border border-slate-900 p-1.5 font-mono">
+                    <td className="border border-black p-1.5 font-bold text-left bg-slate-50/50 print:bg-transparent">
+                      Vaqt
+                    </td>
+                    <td className="border border-black p-1.5 font-mono font-semibold">
                       {printTarget.departureTime
                         ? new Date(printTarget.departureTime).toLocaleTimeString("uz-UZ", {
                             hour: "2-digit",
@@ -1048,7 +1112,7 @@ export default function WaybillsPage() {
                           })
                         : "08:00"}
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono">
+                    <td className="border border-black p-1.5 font-mono font-semibold">
                       {printTarget.returnTime
                         ? new Date(printTarget.returnTime).toLocaleTimeString("uz-UZ", {
                             hour: "2-digit",
@@ -1056,108 +1120,182 @@ export default function WaybillsPage() {
                           })
                         : "-"}
                     </td>
-                    <td className="border border-slate-900 p-1.5">-</td>
+                    <td className="border border-black p-1.5 font-mono font-semibold">-</td>
                   </tr>
                   <tr>
-                    <td className="border border-slate-900 p-1.5 font-semibold text-left">
+                    <td className="border border-black p-1.5 font-bold text-left bg-slate-50/50 print:bg-transparent">
                       Spidometr (km)
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono font-bold">
-                      {printTarget.startOdometer !== null ? printTarget.startOdometer : "-"}
+                    <td className="border border-black p-1.5 font-mono font-bold">
+                      {printTarget.startOdometer !== null ? `${printTarget.startOdometer} km` : "-"}
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono font-bold">
-                      {printTarget.endOdometer !== null ? printTarget.endOdometer : "-"}
+                    <td className="border border-black p-1.5 font-mono font-bold">
+                      {printTarget.endOdometer !== null ? `${printTarget.endOdometer} km` : "-"}
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono font-bold text-emerald-800">
+                    <td className="border border-black p-1.5 font-mono font-black text-emerald-800 print:text-black">
                       {printTarget.distanceKm !== null ? `${printTarget.distanceKm} km` : "-"}
                     </td>
                   </tr>
                   <tr>
-                    <td className="border border-slate-900 p-1.5 font-semibold text-left">
+                    <td className="border border-black p-1.5 font-bold text-left bg-slate-50/50 print:bg-transparent">
                       Yoqilg&apos;i ({printTarget.fuelType ?? "METAN"})
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono">
-                      {printTarget.fuelBefore ?? "-"}
+                    <td className="border border-black p-1.5 font-mono font-semibold">
+                      {printTarget.fuelBefore !== null ? `${printTarget.fuelBefore}` : "-"}
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono">
-                      {printTarget.fuelAfter ?? "-"}
+                    <td className="border border-black p-1.5 font-mono font-semibold">
+                      {printTarget.fuelAfter !== null ? `${printTarget.fuelAfter}` : "-"}
                     </td>
-                    <td className="border border-slate-900 p-1.5 font-mono">
+                    <td className="border border-black p-1.5 font-mono font-bold">
                       Berilgan: {printTarget.fuelGiven ?? "0"}
                     </td>
                   </tr>
                 </tbody>
               </table>
 
-              {/* Stamps and Signatures (Medical & Technical Inspection) */}
-              <div className="grid grid-cols-2 gap-4 pt-2">
+              {/* Stamps and Signatures (Medical & Technical Inspection with proper PECHAT borders) */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 {/* Medical Stamp Block */}
-                <div className="border border-slate-900 p-3 rounded space-y-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-center border-b pb-1">
-                    Tibbiy Ko&apos;rik Xulosasi
-                  </div>
-                  <div className="text-[11px] leading-tight">
-                    Haydovchi safar oldi tibbiy ko&apos;rigidan o&apos;tkazildi. Spirtli ichimliklar va giyohvand moddalar ta&apos;siri aniqlanmadi.
-                  </div>
-                  <div className="pt-2 flex items-center justify-between text-[11px]">
-                    <div>
-                      Holati: <b>{printTarget.medicalPassed ? "✅ Sog'lom / Ruxsat" : "❌ Ruxsat berilmadi"}</b>
-                      <div className="text-[10px] text-slate-600">
-                        Shifokor: {printTarget.medicalDoctorName ?? "Tibbiyot xodimi"}
+                <div className="border-2 border-black p-3 rounded space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-wider text-center border-b border-black pb-1 text-black">
+                      Tibbiy Ko&apos;rik (Safar oldi)
+                    </div>
+                    <div className="text-[10px] leading-tight text-slate-800 mt-1.5">
+                      Haydovchi safar oldi tibbiy ko&apos;rigidan o&apos;tkazildi. Spirtli ichimlik va giyohvand moddalar ta&apos;siri aniqlanmadi.
+                    </div>
+                    <div className="mt-2 text-[11px] space-y-0.5">
+                      <div>
+                        Holati:{" "}
+                        <b className={printTarget.medicalPassed ? "text-emerald-800 print:text-black" : "text-red-700 print:text-black"}>
+                          {printTarget.medicalPassed ? "✅ Sog'lom / Ruxsat berildi" : "❌ Ruxsat berilmadi"}
+                        </b>
+                      </div>
+                      <div>
+                        Shifokor: <b>{printTarget.medicalDoctorName ?? "Tibbiyot xodimi"}</b>
+                      </div>
+                      <div>
+                        Vaqti:{" "}
+                        <b>
+                          {printTarget.medicalCheckedAt
+                            ? new Date(printTarget.medicalCheckedAt).toLocaleTimeString("uz-UZ", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : (printTarget.departureTime
+                                ? new Date(printTarget.departureTime).toLocaleTimeString("uz-UZ", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "07:45")}
+                        </b>
                       </div>
                     </div>
-                    <div className="w-16 h-12 border border-dashed border-slate-400 flex items-center justify-center text-[9px] text-slate-400 uppercase">
-                      [Muhr/Imzo]
+                  </div>
+
+                  {/* Muhr / Pechat chegarasi */}
+                  <div className="mt-2 pt-2 border-t border-slate-300 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-800 font-medium">
+                      Shifokor imzosi:<br />
+                      <span className="font-mono">________________</span>
+                    </div>
+                    <div className="w-28 h-16 border-2 border-dashed border-black rounded flex flex-col items-center justify-center text-center p-1 bg-slate-50/40 print:bg-white flex-shrink-0">
+                      <span className="text-[9px] font-black tracking-wider uppercase text-black">
+                        M.O&apos;. / ПЕЧАТЬ
+                      </span>
+                      <span className="text-[8px] text-slate-600">
+                        (Tibbiy muhr)
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Technical Stamp Block */}
-                <div className="border border-slate-900 p-3 rounded space-y-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-center border-b pb-1">
-                    Texnik Ko&apos;rik Xulosasi
-                  </div>
-                  <div className="text-[11px] leading-tight">
-                    Avtomobilning tormoz, rul boshqaruvi, chiroqlar va xavfsizlik tizimlari tekshirildi, texnik soz holatda.
-                  </div>
-                  <div className="pt-2 flex items-center justify-between text-[11px]">
-                    <div>
-                      Holati: <b>{printTarget.technicalPassed ? "✅ Soz / Chiqishga ruxsat" : "❌ Nosoz"}</b>
-                      <div className="text-[10px] text-slate-600">
-                        Mexanik: {printTarget.mechanicName ?? "Mas'ul mexanik"}
+                <div className="border-2 border-black p-3 rounded space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-wider text-center border-b border-black pb-1 text-black">
+                      Texnik Ko&apos;rik (Safar oldi)
+                    </div>
+                    <div className="text-[10px] leading-tight text-slate-800 mt-1.5">
+                      Avtomobilning tormoz, rul boshqaruvi, shinalar, chiroqlar va xavfsizlik tizimlari tekshirildi, texnik soz holatda.
+                    </div>
+                    <div className="mt-2 text-[11px] space-y-0.5">
+                      <div>
+                        Holati:{" "}
+                        <b className={printTarget.technicalPassed ? "text-emerald-800 print:text-black" : "text-red-700 print:text-black"}>
+                          {printTarget.technicalPassed ? "✅ Texnik soz / Ruxsat berildi" : "❌ Nosoz"}
+                        </b>
+                      </div>
+                      <div>
+                        Mexanik: <b>{printTarget.mechanicName ?? "Mas'ul mexanik"}</b>
+                      </div>
+                      <div>
+                        Vaqti:{" "}
+                        <b>
+                          {printTarget.technicalCheckedAt
+                            ? new Date(printTarget.technicalCheckedAt).toLocaleTimeString("uz-UZ", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : (printTarget.departureTime
+                                ? new Date(printTarget.departureTime).toLocaleTimeString("uz-UZ", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "07:50")}
+                        </b>
                       </div>
                     </div>
-                    <div className="w-16 h-12 border border-dashed border-slate-400 flex items-center justify-center text-[9px] text-slate-400 uppercase">
-                      [Muhr/Imzo]
+                  </div>
+
+                  {/* Muhr / Pechat chegarasi */}
+                  <div className="mt-2 pt-2 border-t border-slate-300 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-800 font-medium">
+                      Mexanik imzosi:<br />
+                      <span className="font-mono">________________</span>
+                    </div>
+                    <div className="w-28 h-16 border-2 border-dashed border-black rounded flex flex-col items-center justify-center text-center p-1 bg-slate-50/40 print:bg-white flex-shrink-0">
+                      <span className="text-[9px] font-black tracking-wider uppercase text-black">
+                        M.O&apos;. / ПЕЧАТЬ
+                      </span>
+                      <span className="text-[8px] text-slate-600">
+                        (Texnik muhr)
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Bottom Verification Section with QR Code */}
-              <div className="border-t-2 border-slate-900 pt-3 flex items-center justify-between">
-                <div className="space-y-1 text-[11px]">
-                  <div>
-                    Dispetcher (Mas&apos;ul shaxs):{" "}
-                    <b>{printTarget.dispatcherName ?? "Navbatchi dispetcher"}</b> (imzo: _________)
+              <div className="border-t-2 border-black pt-2.5 flex items-center justify-between gap-4">
+                <div className="space-y-1 text-[11px] flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>Reysga ruxsat bergan dispetcher:</span>
+                    <b>{printTarget.dispatcherName ?? "Navbatchi dispetcher"}</b>
+                    <span className="ml-2">Imzo: ________________</span>
                   </div>
-                  <div className="text-[10px] text-slate-500">
-                    Elektron tekshiruv: YPX va Transport Nazorati inspektorlari o&apos;ng tarafdagi QR kod orqali haqiqiylikni tekshirishi shart.
+                  <div className="text-[10px] text-slate-600 leading-tight">
+                    Ushbu yo&apos;l varaqasi transport vositasining qonuniy reysga chiqishiga asos bo&apos;ladi. YPX (DYHXX) va Transport Nazorati inspektorlari o&apos;ng tarafdagi QR kod orqali haqiqiylikni onlayn tekshirishi mumkin.
                   </div>
-                  <div className="text-[9px] font-mono text-slate-400">
-                    Token: {printTarget.publicToken}
+                  <div className="text-[9px] font-mono text-slate-500">
+                    Hujjat ID: {printTarget.publicToken}
                   </div>
                 </div>
 
-                {/* QR Code image */}
-                <div className="p-1 border border-slate-900 rounded bg-white">
-                  <img
-                    src={`/api/proxy/waybills/public-verify/${printTarget.publicToken}/qr`}
-                    alt="QR Tekshiruv"
-                    width={80}
-                    height={80}
-                    className="w-20 h-20"
-                  />
+                {/* QR Code with crisp border */}
+                <div className="flex flex-col items-center flex-shrink-0">
+                  <div className="p-1 border-2 border-black rounded bg-white">
+                    <img
+                      src={`/api/proxy/waybills/public-verify/${printTarget.publicToken}/qr`}
+                      alt="QR Tekshiruv"
+                      width={75}
+                      height={75}
+                      className="w-[75px] h-[75px]"
+                    />
+                  </div>
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-700 mt-0.5">
+                    YPX QR Tekshiruv
+                  </span>
                 </div>
               </div>
             </div>
