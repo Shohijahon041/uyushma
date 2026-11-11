@@ -72,6 +72,13 @@ export class WaybillsService {
                 id: true,
                 plateNumber: true,
                 model: true,
+                owner: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    phone: true,
+                  },
+                },
               },
             },
             route: {
@@ -174,6 +181,13 @@ export class WaybillsService {
               plateNumber: true,
               model: true,
               capacity: true,
+              owner: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  phone: true,
+                },
+              },
             },
           },
           route: {
@@ -235,6 +249,45 @@ export class WaybillsService {
 
       const departureTime = dto.departureTime ? new Date(dto.departureTime) : new Date();
 
+      // Transport egasiga / transportga amaldagi boshqaruvchi haydovchini biriktirish
+      if (dto.assignDriver !== false) {
+        const activeAssignment = await tx.vehicleAssignment.findFirst({
+          where: {
+            vehicleId: dto.vehicleId,
+            endDate: null,
+          },
+        });
+        if (!activeAssignment || activeAssignment.driverId !== dto.driverId) {
+          if (activeAssignment) {
+            await tx.vehicleAssignment.update({
+              where: { id: activeAssignment.id },
+              data: { endDate: date },
+            });
+          }
+          const driverPrev = await tx.vehicleAssignment.findFirst({
+            where: {
+              driverId: dto.driverId,
+              endDate: null,
+            },
+          });
+          if (driverPrev && driverPrev.id !== activeAssignment?.id) {
+            await tx.vehicleAssignment.update({
+              where: { id: driverPrev.id },
+              data: { endDate: date },
+            });
+          }
+          await tx.vehicleAssignment.create({
+            data: {
+              tenantId,
+              vehicleId: dto.vehicleId,
+              driverId: dto.driverId,
+              startDate: date,
+              createdById: actor.userId,
+            },
+          });
+        }
+      }
+
       const waybill = await tx.waybill.create({
         data: {
           tenantId,
@@ -269,7 +322,17 @@ export class WaybillsService {
         },
         include: {
           driver: true,
-          vehicle: true,
+          vehicle: {
+            include: {
+              owner: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  phone: true,
+                },
+              },
+            },
+          },
           route: true,
         },
       });
@@ -469,7 +532,17 @@ export class WaybillsService {
           status: { in: [WaybillStatus.ACTIVE, WaybillStatus.ISSUED] },
         },
         include: {
-          vehicle: true,
+          vehicle: {
+            include: {
+              owner: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  phone: true,
+                },
+              },
+            },
+          },
           route: true,
           company: true,
         },

@@ -98,6 +98,10 @@ export class CreateWaybillDto {
   fuelGiven?: number;
 
   @IsOptional()
+  @IsBoolean()
+  assignDriver?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(160)
   dispatcherName?: string;

@@ -734,7 +734,12 @@ export interface WaybillItem {
     id: string;
     plateNumber: string;
     model: string;
-    capacity: number;
+    capacity?: number;
+    owner?: {
+      id: string;
+      fullName: string;
+      phone?: string | null;
+    } | null;
   };
   route: {
     id: string;

@@ -10,7 +10,7 @@ if ($env:UYUSHMA_BASE_URL) { $BaseUrl = $env:UYUSHMA_BASE_URL.TrimEnd("/") }
 $SettingsUrl = "$BaseUrl/uz/settings"
 $GuideUrl = "$BaseUrl/uyushma-ulagich-yoriqnoma.html"
 
-$Version = "18"
+$Version = "19"
 $Mutex = $null
 $LogPath = $null
 $script:ProtocolFailed = $false
@@ -309,15 +309,26 @@ function Send-Cdp($wsUrl, $json, $expectValue) {
 
     $buffer = New-Object byte[] 131072
     $segR = New-Object System.ArraySegment[byte] -ArgumentList @(, $buffer)
-    $ms = New-Object System.IO.MemoryStream
-    do {
-      $res = $ws.ReceiveAsync($segR, $ct).Result
-      if ($res.Count -gt 0) { $ms.Write($buffer, 0, $res.Count) }
-    } while (-not $res.EndOfMessage)
-    $text = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
-    if (-not $expectValue) { return $null }
-    $obj = $text | ConvertFrom-Json
-    return $obj.result.result.value
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+      $ms = New-Object System.IO.MemoryStream
+      do {
+        $res = $ws.ReceiveAsync($segR, $ct).Result
+        if ($res.Count -gt 0) { $ms.Write($buffer, 0, $res.Count) }
+      } while (-not $res.EndOfMessage)
+      $text = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+      if (-not $text) { continue }
+      try {
+        $obj = $text | ConvertFrom-Json
+        if ($obj.id -eq 1 -or $obj.result) {
+          if (-not $expectValue) { return $null }
+          if ($obj.error) { return $null }
+          return $obj.result.result.value
+        }
+      } catch { }
+    }
+    return $null
+  } catch {
+    return $null
   } finally {
     try { $ws.Dispose() } catch { }
   }
@@ -872,48 +883,130 @@ Write-Host "Kutish muddati: 10 daqiqa." -ForegroundColor DarkGray
 
 $tokenExpression = @'
 (function () {
-  var re = /eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/;
-  function grab(s) {
+  var jwtRegex = /eyJ[a-zA-Z0-9_-]+.[a-zA-Z0-9_-]+.[a-zA-Z0-9_-]+/;
+  function grabJwt(s) {
     if (typeof s !== "string") return null;
-    var m = s.match(re);
+    var m = s.match(jwtRegex);
     return m ? m[0] : null;
   }
+  function cleanToken(s) {
+    if (typeof s !== "string") return null;
+    var str = s.replace(/^Bearer\s+/i, "").replace(/["'`]/g, "").trim();
+    if (str.length < 20) return null;
+    return str;
+  }
+
   var stores = [];
-  try { stores.push(window.localStorage); } catch (e) {}
-  try { stores.push(window.sessionStorage); } catch (e) {}
+  try { if (window.localStorage) stores.push(window.localStorage); } catch (e) {}
+  try { if (window.sessionStorage) stores.push(window.sessionStorage); } catch (e) {}
+
   var token = null;
-  var preferred = ["access_token", "token", "auth_token", "jwt"];
+  var refreshToken = null;
+
+  var preferred = [
+    "access_token", "token", "auth_token", "jwt", "kc-token",
+    "keycloak-token", "authToken", "accessToken", "state"
+  ];
+
   for (var p = 0; p < preferred.length && !token; p++) {
     for (var s = 0; s < stores.length && !token; s++) {
-      try { token = grab(stores[s].getItem(preferred[p])); } catch (e) {}
+      try {
+        var rawVal = stores[s].getItem(preferred[p]);
+        if (!rawVal) continue;
+        var jwt = grabJwt(rawVal);
+        if (jwt) { token = jwt; break; }
+        if (rawVal.charCodeAt(0) === 123) {
+          try {
+            var parsed = JSON.parse(rawVal);
+            if (parsed) {
+              var inner = parsed.token || parsed.access_token || parsed.accessToken || (parsed.auth && (parsed.auth.token || parsed.auth.accessToken));
+              if (inner && typeof inner === "string") {
+                var innerJwt = grabJwt(inner) || cleanToken(inner);
+                if (innerJwt) { token = innerJwt; break; }
+              }
+            }
+          } catch (e) {}
+        }
+        var clean = cleanToken(rawVal);
+        if (clean && !clean.startsWith("{") && !clean.startsWith("[")) {
+          token = clean;
+          break;
+        }
+      } catch (e) {}
     }
   }
-  for (var s2 = 0; s2 < stores.length && !token; s2++) {
-    var st = stores[s2];
-    for (var i = 0; i < st.length; i++) {
-      var key = st.key(i);
-      var value = null;
-      try { value = st.getItem(key); } catch (e) { continue; }
-      var found = grab(value);
-      if (found) { token = found; break; }
-      if (/token|jwt|auth/i.test(key) && typeof value === "string" && value.length > 30) {
-        token = value.replace(/^Bearer\s+/i, "").replace(/["'`]/g, "").trim();
-        break;
+
+  if (!token) {
+    for (var s2 = 0; s2 < stores.length && !token; s2++) {
+      var st = stores[s2];
+      try {
+        for (var i = 0; i < st.length && !token; i++) {
+          var k = st.key(i);
+          var v = null;
+          try { v = st.getItem(k); } catch (e) { continue; }
+          if (!v) continue;
+          var foundJwt = grabJwt(v);
+          if (foundJwt) { token = foundJwt; break; }
+          if (k === "persist:root" || k === "state" || k === "vuex" || k === "auth") {
+            try {
+              var root = JSON.parse(v);
+              for (var rk in root) {
+                var rval = root[rk];
+                if (typeof rval === "string" && rval.charCodeAt(0) === 123) {
+                  try { rval = JSON.parse(rval); } catch (e) {}
+                }
+                if (rval && typeof rval === "object") {
+                  var sub = rval.token || rval.access_token || rval.accessToken || rval.jwt;
+                  if (sub && typeof sub === "string") {
+                    var subJwt = grabJwt(sub) || cleanToken(sub);
+                    if (subJwt) { token = subJwt; break; }
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+          if (/token|jwt|auth/i.test(k) && typeof v === "string") {
+            var candidate = cleanToken(v);
+            if (candidate && !candidate.startsWith("{") && !candidate.startsWith("[")) {
+              token = candidate;
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (!token) {
+    try {
+      var cookieMatch = document.cookie.match(/(?:access_token|token|auth_token|jwt)=([^;]+)/i);
+      if (cookieMatch && cookieMatch[1]) {
+        var cVal = decodeURIComponent(cookieMatch[1].trim());
+        var cJwt = grabJwt(cVal) || cleanToken(cVal);
+        if (cJwt) token = cJwt;
       }
-    }
+    } catch (e) {}
   }
+
+  try {
+    var rawRt = window.localStorage.getItem("refresh_token") || window.localStorage.getItem("refreshToken");
+    if (rawRt) {
+      refreshToken = grabJwt(rawRt) || cleanToken(rawRt);
+    }
+  } catch (e) {}
+
   var profiles = [];
   try {
-    var raw = window.localStorage.getItem("profiles");
-    if (raw) {
-      var list = JSON.parse(raw);
+    var rawProfiles = window.localStorage.getItem("profiles");
+    if (rawProfiles) {
+      var list = JSON.parse(rawProfiles);
       if (Array.isArray(list)) {
         for (var j = 0; j < list.length; j++) {
           var item = list[j] || {};
-          var id = item.id || item.profileId;
-          if (!id) continue;
+          var pid = item.id || item.profileId;
+          if (!pid) continue;
           profiles.push({
-            id: String(id),
+            id: String(pid),
             organizationName: item.organizationName ? String(item.organizationName) : null,
             companyName: item.companyName ? String(item.companyName) : null,
             fullName: item.fullName ? String(item.fullName) : null,
@@ -923,16 +1016,22 @@ $tokenExpression = @'
       }
     }
   } catch (e) {}
-  var selectedProfile = null;
-  try { selectedProfile = window.localStorage.getItem("selectedProfile"); } catch (e) {}
-  var refreshToken = null;
-  try { refreshToken = window.localStorage.getItem("refresh_token") || window.localStorage.getItem("refreshToken"); } catch (e) {}
+
+  var hasSelectedProfile = false;
+  try {
+    var sp = window.localStorage.getItem("selectedProfile");
+    if (sp && sp !== "null" && sp !== "undefined" && sp.trim().length > 2) {
+      hasSelectedProfile = true;
+    }
+  } catch (e) {}
+
   return JSON.stringify({
     token: token,
     refreshToken: refreshToken,
     profiles: profiles,
-    selectedProfile: selectedProfile ? true : false,
-    path: window.location.pathname
+    selectedProfile: hasSelectedProfile,
+    path: window.location.pathname,
+    url: window.location.href
   });
 })()
 '@
@@ -947,7 +1046,7 @@ $windowClosed = $false
 $misses = 0
 $selectionHint = $false
 $portalHost = ([Uri]$portalUrl).Host.ToLower()
-$authHosts = @("sso.egov.uz", "id.egov.uz", "my.soliq.uz", "soliq.uz", "e-imzo.uz")
+$authHosts = @("sso.egov.uz", "id.egov.uz", "my.soliq.uz", "soliq.uz", "e-imzo.uz", "dtransport.uz", "uztrans.uz")
 
 while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 2
@@ -957,7 +1056,6 @@ while ((Get-Date) -lt $deadline) {
     $misses = 0
   } catch {
     $misses++
-    # Brauzer yopilgan bo'lsa, 10 soniyadan keyin kutishni to'xtatamiz.
     if ($misses -ge 5) { $windowClosed = $true; break }
     continue
   }
@@ -973,11 +1071,14 @@ while ((Get-Date) -lt $deadline) {
       if ($info) {
         $pagePath = [string]$info.path
         $profileList = @($info.profiles)
-        $authPath = $pagePath -match "^/(log-in|sign-in|login)"
-        $profilePath = $pagePath -match "^/sign-in/profiles"
-        # Korxona tanlash oynasi ochiq turganda token olmaymiz: aks holda
-        # hisobning standart (masalan, boshqa) korxonasi saqlanib qoladi.
-        if ($profileList.Count -gt 1 -and ($authPath -or $profilePath)) {
+        $hasToken = -not [string]::IsNullOrWhiteSpace($info.token)
+        $hasSelectedProfile = [bool]$info.selectedProfile
+        $isProfilePicker = ($pagePath -match "^/sign-in/profiles")
+
+        # Faqat bir nechta korxona chiqsa, foydalanuvchi hali tanlamagan bo'lsa va
+        # ayni paytda profil tanlash sahifasida turgan bo'lsa kutamiz.
+        # Profil tanlangan yoki token mavjud bo'lsa - darhol qabul qilamiz!
+        if ($profileList.Count -gt 1 -and -not $hasSelectedProfile -and $isProfilePicker -and -not $hasToken) {
           if (-not $selectionHint) {
             Write-Host ""
             Write-Host "Diqqat: hisobingizda bir nechta korxona bor." -ForegroundColor Yellow
@@ -987,7 +1088,8 @@ while ((Get-Date) -lt $deadline) {
           }
           continue
         }
-        if ($info.token) {
+
+        if ($hasToken) {
           $token = [string]$info.token
           if ($info.refreshToken) { $refreshToken = [string]$info.refreshToken }
           $profiles = $profileList
@@ -1033,17 +1135,22 @@ try {
 
 Write-Log "Capture OK provider=$provider account=$($result.account)"
 Write-Host ""
-Write-Host "MUVAFFAQIYAT: $provider ulandi." -ForegroundColor Green
+Write-Host "MUVAFFAQIYAT: $provider muvaffaqiyatli ulandi." -ForegroundColor Green
 if ($result.account) { Write-Host "Hisob: $($result.account)" -ForegroundColor Green }
 
 try {
   $version = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/version" -TimeoutSec 3
   if ($version.webSocketDebuggerUrl) {
-    Send-Cdp -wsUrl $version.webSocketDebuggerUrl -json '{"id":9,"method":"Browser.close"}' -expectValue $false | Out-Null
+    Send-Cdp -wsUrl $version.webSocketDebuggerUrl -json '{"id":99,"method":"Browser.close"}' -expectValue $false | Out-Null
   }
 } catch { }
-Start-Sleep -Seconds 2
-try { if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force } } catch { }
+
+Start-Sleep -Milliseconds 800
+$remainingProcs = @(Get-ConnectorProcesses $profileDir)
+foreach ($rp in $remainingProcs) {
+  try { Stop-Process -Id $rp.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
+}
+try { if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } } catch { }
 
 Write-Host "Brauzer oynasi yopildi. Saytga qaytib, malumotlar sinxronlanishini kuzating." -ForegroundColor Green
 Write-Host ""

@@ -17,6 +17,8 @@ interface PublicWaybillData {
   licenseNumber?: string | null;
   plateNumber: string;
   vehicleModel: string;
+  ownerName?: string | null;
+  ownerPhone?: string | null;
   routeName?: string | null;
   routeNumber?: string | null;
   medicalPassed: boolean;
@@ -234,6 +236,20 @@ export default async function PublicWaybillVerifyPage({
               </span>
             </div>
           </div>
+
+          {data.ownerName && (
+            <div className="flex items-center justify-between border-t border-slate-800/60 pt-2.5 print:border-black/20">
+              <span className="text-xs text-slate-400">Transport haqiqiy egasi (mulkdor):</span>
+              <span className="text-sm font-bold text-slate-100 print:text-black">
+                {data.ownerName}
+                {data.ownerPhone && (
+                  <span className="text-xs text-slate-400 font-normal ml-1">
+                    ({formatUzPhone(data.ownerPhone)})
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4 pt-2">
             <div>
