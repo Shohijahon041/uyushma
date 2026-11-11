@@ -234,6 +234,367 @@ export default function WaybillsPage() {
     }
   }
 
+  // Pure standalone A4 Printable HTML generator (Guaranteed strict 1 single page)
+  function escapeHtml(str: string | null | undefined): string {
+    if (!str) return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function generatePrintableWaybillHtml(target: WaybillItem): string {
+    const number = escapeHtml(target.number);
+    const companyName = escapeHtml(target.company?.name ?? "Transport Korxonasi");
+    const dateStr = escapeHtml(target.date ? target.date.slice(0, 10) : "");
+    const validUntilStr = escapeHtml(target.validUntil ? target.validUntil.slice(0, 10) : "");
+    const vehicleModel = escapeHtml(target.vehicle.model);
+    const plateNumber = escapeHtml(formatUzPlate(target.vehicle.plateNumber));
+    const ownerName = escapeHtml(target.vehicle.owner?.fullName ?? target.company?.name ?? "Transport Korxonasi");
+    const ownerPhone = target.vehicle.owner?.phone ? `(${escapeHtml(formatUzPhone(target.vehicle.owner.phone))})` : "";
+    const driverName = escapeHtml(target.driver.fullName);
+    const driverPhone = escapeHtml(formatUzPhone(target.driver.phone));
+    const driverLicense = escapeHtml(target.driver.licenseNumber ?? "Mavjud");
+    const routeName = escapeHtml(
+      target.route
+        ? `${target.route.name} (${target.route.origin} → ${target.route.destination})`
+        : "Erkin yo'nalish (shahar bo'ylab)"
+    );
+    const depTime = escapeHtml(
+      target.departureTime
+        ? new Date(target.departureTime).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+        : "08:00"
+    );
+    const retTime = escapeHtml(
+      target.returnTime
+        ? new Date(target.returnTime).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+        : "-"
+    );
+    const startOdo = target.startOdometer !== null ? `${target.startOdometer} km` : "-";
+    const endOdo = target.endOdometer !== null ? `${target.endOdometer} km` : "-";
+    const dist = target.distanceKm !== null ? `${target.distanceKm} km` : "-";
+    const fuelType = escapeHtml(target.fuelType ?? "METAN");
+    const fuelBefore = target.fuelBefore !== null ? `${target.fuelBefore}` : "-";
+    const fuelAfter = target.fuelAfter !== null ? `${target.fuelAfter}` : "-";
+    const fuelGiven = target.fuelGiven !== null ? `${target.fuelGiven}` : "0";
+    const medDoctor = escapeHtml(target.medicalDoctorName ?? "Tibbiyot xodimi");
+    const medTime = escapeHtml(
+      target.medicalCheckedAt
+        ? new Date(target.medicalCheckedAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+        : (target.departureTime
+            ? new Date(target.departureTime).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+            : "07:45")
+    );
+    const techMechanic = escapeHtml(target.mechanicName ?? "Mas'ul mexanik");
+    const techTime = escapeHtml(
+      target.technicalCheckedAt
+        ? new Date(target.technicalCheckedAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+        : (target.departureTime
+            ? new Date(target.departureTime).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+            : "07:50")
+    );
+    const dispatcher = escapeHtml(target.dispatcherName ?? "Navbatchi dispetcher");
+    const token = escapeHtml(target.publicToken);
+    const qrUrl = `/api/proxy/waybills/public-verify/${token}/qr`;
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Yo'l varaqasi № ${number}</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 4mm 6mm !important;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.25;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+  .sheet {
+    width: 100%;
+    max-height: 278mm;
+    margin: 0 auto;
+    padding: 3mm 4mm;
+    border: 1.5px solid #000000;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: hidden !important;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #000;
+    padding-bottom: 4px;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .box {
+    border: 1px solid #000;
+    border-radius: 4px;
+    padding: 5px 6px;
+    background: #fcfcfc;
+  }
+  .metrics-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1.5px solid #000;
+    text-align: center;
+    font-size: 10px;
+  }
+  .metrics-table th, .metrics-table td {
+    border: 1px solid #000;
+    padding: 3px 4px;
+  }
+  .metrics-table th {
+    background: #f1f5f9;
+    font-weight: bold;
+  }
+  .stamp-box {
+    width: 88px;
+    height: 48px;
+    border: 1.5px dashed #000;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2px;
+    background: #ffffff;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header">
+      <div>
+        <div style="font-size: 8.5px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; color: #475569;">
+          O'zbekiston Respublikasi Transport Vazirligi
+        </div>
+        <div style="font-size: 14px; font-weight: 900; text-transform: uppercase; margin-top: 2px;">
+          YO'L VARAQASI (ПУТЕВОЙ ЛИСТ)
+        </div>
+        <div style="font-family: monospace; font-size: 13px; font-weight: 900;">
+          № ${number}
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 9.5px; color: #475569;">Tashkilot (Tashuvchi):</div>
+        <div style="font-size: 12px; font-weight: 900;">${companyName}</div>
+        <div style="font-size: 9px; color: #475569; margin-top: 2px;">
+          Sana: <b>${dateStr}</b> &bull; Amal qiladi: <b>${validUntilStr}</b>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2 box" style="margin-top: 6px; font-size: 10px;">
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div>Avtomobil: <b>${vehicleModel}</b></div>
+        <div>
+          Davlat raqami:
+          <span style="font-family: monospace; font-weight: 900; border: 1px solid #000; padding: 1px 4px; border-radius: 3px; background: #fff;">
+            🇺🇿 ${plateNumber}
+          </span>
+        </div>
+        <div>
+          Transport haqiqiy egasi (mulkdor):<br>
+          <span style="font-weight: 900; text-decoration: underline;">${ownerName}</span>
+          <span style="font-family: monospace; color: #475569; margin-left: 4px;">${ownerPhone}</span>
+        </div>
+        <div style="font-size: 9.5px;">
+          Yo'nalish: <b>${routeName}</b>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div>
+          Amaldagi haydovchi (boshqaruvchi):<br>
+          <span style="font-weight: 900; text-decoration: underline;">${driverName}</span>
+        </div>
+        <div>Guvohnoma (Prava): <span style="font-family: monospace; font-weight: bold;">${driverLicense}</span></div>
+        <div>Aloqa telefoni: <span style="font-family: monospace; font-weight: bold;">${driverPhone}</span></div>
+        <div style="font-size: 9.5px; color: #166534;">Holati: <b>Transportga rasman biriktirilgan</b></div>
+      </div>
+    </div>
+
+    <table class="metrics-table" style="margin-top: 6px;">
+      <thead>
+        <tr>
+          <th>Ko'rsatkich</th>
+          <th>Chiqishda (Jo'nash)</th>
+          <th>Qaytishda (Garajga kirish)</th>
+          <th>Farq / Jami</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight: bold; text-align: left;">Vaqt</td>
+          <td style="font-family: monospace; font-weight: 600;">${depTime}</td>
+          <td style="font-family: monospace; font-weight: 600;">${retTime}</td>
+          <td>-</td>
+        </tr>
+        <tr>
+          <td style="font-weight: bold; text-align: left;">Spidometr (km)</td>
+          <td style="font-family: monospace; font-weight: 700;">${startOdo}</td>
+          <td style="font-family: monospace; font-weight: 700;">${endOdo}</td>
+          <td style="font-family: monospace; font-weight: 900;">${dist}</td>
+        </tr>
+        <tr>
+          <td style="font-weight: bold; text-align: left;">Yoqilg'i (${fuelType})</td>
+          <td style="font-family: monospace;">${fuelBefore}</td>
+          <td style="font-family: monospace;">${fuelAfter}</td>
+          <td style="font-weight: bold;">Berilgan: ${fuelGiven}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2" style="margin-top: 6px;">
+      <div class="box" style="display: flex; flex-direction: column; justify-content: space-between; padding: 5px 6px;">
+        <div>
+          <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase; text-align: center; border-bottom: 1px solid #000; padding-bottom: 2px;">
+            Tibbiy Ko'rik (Safar oldi)
+          </div>
+          <div style="font-size: 8px; color: #334155; margin-top: 3px; line-height: 1.2;">
+            Haydovchi safar oldi tibbiy ko'rigidan o'tkazildi. Spirtli ichimlik va giyohvand moddalar ta'siri aniqlanmadi.
+          </div>
+          <div style="font-size: 9px; margin-top: 3px; line-height: 1.3;">
+            <div>Holati: <b style="color: ${target.medicalPassed ? "#166534" : "#b91c1c"};">
+              ${target.medicalPassed ? "✅ Sog'lom / Ruxsat berildi" : "❌ Ruxsat berilmadi"}
+            </b></div>
+            <div>Shifokor: <b>${medDoctor}</b></div>
+            <div>Vaqti: <b>${medTime}</b></div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #cbd5e1; margin-top: 4px; padding-top: 3px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 8.5px;">
+            Shifokor imzosi:<br><span style="font-family: monospace;">____________</span>
+          </div>
+          <div class="stamp-box">
+            <span style="font-size: 7.5px; font-weight: 900; text-transform: uppercase;">M.O'. / ПЕЧАТЬ</span>
+            <span style="font-size: 7px; color: #475569;">(Tibbiy muhr)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="box" style="display: flex; flex-direction: column; justify-content: space-between; padding: 5px 6px;">
+        <div>
+          <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase; text-align: center; border-bottom: 1px solid #000; padding-bottom: 2px;">
+            Texnik Ko'rik (Safar oldi)
+          </div>
+          <div style="font-size: 8px; color: #334155; margin-top: 3px; line-height: 1.2;">
+            Avtomobilning tormoz, rul boshqaruvi, shinalar, chiroqlar va xavfsizlik tizimlari tekshirildi, texnik soz holatda.
+          </div>
+          <div style="font-size: 9px; margin-top: 3px; line-height: 1.3;">
+            <div>Holati: <b style="color: ${target.technicalPassed ? "#166534" : "#b91c1c"};">
+              ${target.technicalPassed ? "✅ Texnik soz / Ruxsat berildi" : "❌ Nosoz"}
+            </b></div>
+            <div>Mexanik: <b>${techMechanic}</b></div>
+            <div>Vaqti: <b>${techTime}</b></div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #cbd5e1; margin-top: 4px; padding-top: 3px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 8.5px;">
+            Mexanik imzosi:<br><span style="font-family: monospace;">____________</span>
+          </div>
+          <div class="stamp-box">
+            <span style="font-size: 7.5px; font-weight: 900; text-transform: uppercase;">M.O'. / ПЕЧАТЬ</span>
+            <span style="font-size: 7px; color: #475569;">(Texnik muhr)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="border-top: 2px solid #000; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+      <div style="font-size: 9px; line-height: 1.25; flex: 1;">
+        <div>
+          Reysga ruxsat bergan dispetcher: <b>${dispatcher}</b>
+          <span style="margin-left: 8px;">Imzo: ___________</span>
+        </div>
+        <div style="font-size: 8px; color: #475569; margin-top: 2px;">
+          Ushbu yo'l varaqasi transport vositasining qonuniy reysga chiqishiga asos bo'ladi. YPX (DYHXX) va Transport Nazorati inspektorlari o'ng tarafdagi QR kod orqali haqiqiylikni onlayn tekshirishi mumkin.
+        </div>
+        <div style="font-family: monospace; font-size: 7.5px; color: #64748b; margin-top: 2px;">
+          Hujjat ID: ${token}
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; flex-shrink: 0;">
+        <div style="width: 54px; height: 54px; border: 1px solid #000; padding: 1px; background: #fff;">
+          <img src="${qrUrl}" alt="QR" width="50" height="50" style="width: 50px; height: 50px; display: block;" />
+        </div>
+        <span style="font-size: 6.5px; font-weight: bold; text-transform: uppercase; margin-top: 1px; color: #334155;">YPX QR</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  function handlePrintWaybill(target: WaybillItem) {
+    try {
+      const existing = document.getElementById("waybill-print-frame");
+      if (existing) existing.remove();
+
+      const iframe = document.createElement("iframe");
+      iframe.id = "waybill-print-frame";
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "none";
+      iframe.style.opacity = "0";
+      iframe.style.pointerEvents = "none";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) {
+        window.print();
+        return;
+      }
+
+      const html = generatePrintableWaybillHtml(target);
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      const doPrint = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.print();
+        }
+      };
+
+      setTimeout(doPrint, 250);
+    } catch {
+      window.print();
+    }
+  }
+
   const items = data?.items ?? [];
   const stats = statsApi.data ?? {
     total: 0,
@@ -524,8 +885,16 @@ export default function WaybillsPage() {
                         <button
                           type="button"
                           onClick={() => setPrintTarget(waybill)}
-                          title={t("print")}
+                          title="Ko'rish va chop etish"
                           className="px-2.5 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                        >
+                          👁️ Ko&apos;rish
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePrintWaybill(waybill)}
+                          title="Qat'iy 1 ta varaqda darhol chop etish"
+                          className="px-2.5 py-1 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition flex items-center gap-1 shadow-sm"
                         >
                           🖨️ Chop etish
                         </button>
@@ -1066,7 +1435,7 @@ export default function WaybillsPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => handlePrintWaybill(printTarget)}
                   className="btn btn-primary text-xs flex items-center gap-1.5 shadow-sm"
                 >
                   🖨️ Chop etish (1 ta varaq)
