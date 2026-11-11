@@ -122,7 +122,7 @@ function NavLinks({
 
   if (platform) {
     return (
-      <nav className={horizontal ? "flex gap-1" : "space-y-0.5"}>
+      <nav className={horizontal ? "flex shrink-0 gap-1" : "space-y-0.5"}>
         {PLATFORM_SECTION.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -157,13 +157,13 @@ function NavLinks({
         );
         if (items.length === 0) return null;
         return (
-          <div key={section.titleKey ?? `section-${index}`} className={horizontal ? "flex items-center gap-1" : "mb-5"}>
+          <div key={section.titleKey ?? `section-${index}`} className={horizontal ? "flex shrink-0 items-center gap-1" : "mb-5"}>
             {!horizontal && section.titleKey && (
               <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
                 {t(section.titleKey)}
               </p>
             )}
-            <nav className={horizontal ? "flex gap-1" : "space-y-0.5"}>
+            <nav className={horizontal ? "flex shrink-0 gap-1" : "space-y-0.5"}>
               {items.map((item) => {
                 const active =
                   pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -303,8 +303,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="md:pl-64">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <div className="md:hidden">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 sm:gap-3 sm:px-6">
+            <div className="min-w-0 md:hidden">
               <Brand />
             </div>
             <div className="hidden md:block">
@@ -315,7 +315,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {isPlatform ? "Barcha korxonalar nazorati" : me.company.name}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
               {!isPlatform &&
                 (["OWNER", "ADMIN", "ACCOUNTANT"] as const).some((role) => role === me.role) && (
                   <QuickPayButton />
@@ -338,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
           </div>
-          <div className="overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
+          <div className="flex items-center gap-1 overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
             <NavLinks role={me.role} isSuperAdmin={me.isSuperAdmin} platform={isPlatform} horizontal />
           </div>
         </header>

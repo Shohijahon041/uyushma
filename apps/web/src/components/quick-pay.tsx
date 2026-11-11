@@ -9,6 +9,7 @@ import type { DailyBoard, DailyBoardItem } from "@/lib/types";
 import { formatUzPlate } from "@/lib/plate";
 import { formatUzPhone } from "@/lib/phone";
 import { normalizeMoneyInput } from "./route-plan-input";
+import { Icon } from "./icons";
 
 const MONEY = /^\d{1,16}(\.\d{1,2})?$/;
 
@@ -35,11 +36,13 @@ export function QuickPayButton() {
     <>
       <button
         type="button"
-        className="btn-primary px-3 py-1.5 text-xs"
+        className="btn-primary px-2.5 py-1.5 text-xs sm:px-3"
         onClick={() => setOpen(true)}
         title={`${t("title")} (F2)`}
+        aria-label={t("button")}
       >
-        ⚡ {t("button")}
+        <Icon name="wallet" className="h-4 w-4" />
+        <span className="hidden sm:inline">{t("button")}</span>
       </button>
       {open && <QuickPayDialog onClose={() => setOpen(false)} />}
     </>

@@ -1,19 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest, getCachedApiData } from "./client-api";
+import { apiRequest, getCachedApiData, getMemoryCachedApiData } from "./client-api";
 
 export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(() => {
-    return path ? getCachedApiData<T>(path) ?? null : null;
+    return path ? getMemoryCachedApiData<T>(path) ?? null : null;
   });
   const [loading, setLoading] = useState<boolean>(() => {
     if (!path) return false;
-    return getCachedApiData<T>(path) === undefined;
+    return getMemoryCachedApiData<T>(path) === undefined;
   });
   const [error, setError] = useState<string | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
+  const pathRef = useRef(path);
+  pathRef.current = path;
 
   const load = useCallback(
     async (bypassCache = false) => {
@@ -30,11 +32,14 @@ export function useApi<T>(path: string | null) {
       setError(null);
       try {
         const result = await apiRequest<T>(path, { bypassCache });
+        // So'rov davomida path o'zgargan bo'lsa (profil yopilgan bo'lsa), eski javobni tashlaymiz.
+        if (pathRef.current !== path) return;
         setData(result);
       } catch (err) {
+        if (pathRef.current !== path) return;
         setError(err instanceof Error ? err.message : "Xatolik");
       } finally {
-        setLoading(false);
+        if (pathRef.current === path) setLoading(false);
       }
     },
     [path],
@@ -43,12 +48,17 @@ export function useApi<T>(path: string | null) {
   const reload = useCallback(() => load(true), [load]);
 
   useEffect(() => {
-    if (path) {
-      const cached = getCachedApiData<T>(path);
-      if (cached !== undefined) {
-        setData(cached);
-        setLoading(false);
-      }
+    if (!path) {
+      // path null bo'lsa (masalan, profil yopilganda) eski ma'lumot qolib ketmasligi kerak.
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const cached = getCachedApiData<T>(path);
+    if (cached !== undefined) {
+      setData(cached);
+      setLoading(false);
     }
     void load();
   }, [load, path]);

@@ -21,7 +21,13 @@ export type IconName =
   | "moon"
   | "alert"
   | "clock"
-  | "ban";
+  | "ban"
+  | "search"
+  | "download"
+  | "link"
+  | "phone"
+  | "x"
+  | "chevron-right";
 
 const paths: Record<IconName, React.ReactNode> = {
   sun: (
@@ -136,6 +142,35 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="m5.6 5.6 12.8 12.8" />
     </>
   ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M4 20h16" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11 4.93" />
+      <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L13 19.07" />
+    </>
+  ),
+  phone: (
+    <path d="M6.5 3h2.4l1.6 4-2 1.4a12 12 0 0 0 5.6 5.6l1.4-2 4 1.6v2.4A2.5 2.5 0 0 1 16.9 18C10.3 17.5 6.5 13.7 6 7.1A2.5 2.5 0 0 1 6.5 3z" />
+  ),
+  x: (
+    <>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </>
+  ),
+  "chevron-right": <path d="m9 5 7 7-7 7" />,
 };
 
 export function Icon({

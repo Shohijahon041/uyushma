@@ -33,6 +33,17 @@ const inFlightGets = new Map<string, Promise<unknown>>();
 const getCache = new Map<string, { data: unknown; expiresAt: number }>();
 const CACHE_TTL_MS = 30_000; // 30 soniyalik xotira keshi — sahifalar o'rtasida takroriy so'rovlarni va kutishni oldini oladi
 
+// Hydration paytida faqat xotiradagi kesh ishlatiladi: sessionStorage'dagi
+// ma'lumot server render qilgan HTML bilan mos kelmay, hydration xatosini beradi.
+export function getMemoryCachedApiData<T>(path: string): T | undefined {
+  const cleanPath = path.replace(/^\//, "");
+  const cached = getCache.get(cleanPath);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data as T;
+  }
+  return undefined;
+}
+
 export function getCachedApiData<T>(path: string): T | undefined {
   const cleanPath = path.replace(/^\//, "");
   const cached = getCache.get(cleanPath);

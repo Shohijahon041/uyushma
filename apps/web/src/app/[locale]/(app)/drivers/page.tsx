@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslations } from "next-intl";
 import { apiRequest } from "@/lib/client-api";
 import { formatDate, formatDateTime, formatMoney, useApi } from "@/lib/use-api";
 import type { DriverItem, DriverProfile, Vehicle } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
+import { Icon } from "@/components/icons";
 import { todayTashkent } from "@/lib/tashkent";
 import { DriverAvatar, DriverDocuments } from "@/components/driver-documents";
 import { exportToExcelTable } from "@/lib/export-excel";
@@ -33,6 +34,7 @@ export default function DriversPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const profile = useApi<DriverProfile>(selectedId ? `/drivers/${selectedId}` : null);
@@ -60,6 +62,8 @@ export default function DriversPage() {
   const [modalAmount, setModalAmount] = useState("");
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const profileRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setAssignVehicleId("");
@@ -156,6 +160,43 @@ export default function DriversPage() {
     return () => clearTimeout(timer);
   }, [modalDriverSearch, globalAssignOpen]);
 
+  useEffect(() => {
+    if (!globalAssignOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusable = () =>
+      dialog
+        ? Array.from(
+            dialog.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((element) => element.offsetParent !== null)
+        : [];
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setGlobalAssignOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [globalAssignOpen]);
+
   async function handleModalAssignSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!modalSelectedDriver || !modalVehicleId) return;
@@ -202,6 +243,7 @@ export default function DriversPage() {
       setPhone("");
       setLicenseNumber("");
       setNotes("");
+      setAddOpen(false);
       await list.reload();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : tc("error"));
@@ -265,7 +307,7 @@ export default function DriversPage() {
     });
   }
 
-  function onToggleStatus(driver: DriverItem) {
+  function onToggleStatus(driver: { id: string; status: "ACTIVE" | "INACTIVE" }) {
     void runAction(async () => {
       await apiRequest(`/drivers/${driver.id}`, {
         method: "PATCH",
@@ -275,6 +317,17 @@ export default function DriversPage() {
   }
 
   const data = profile.data;
+
+  useEffect(() => {
+    if (!data?.driver.id || !profileRef.current) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    profileRef.current.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
+    // selectedId ham kerak: keshdan qaytgan bir xil haydovchi qayta ochilganda
+    // faqat driver.id o'zgarmay, profil ko'rinmay qoladi.
+  }, [selectedId, data?.driver.id]);
 
   function handleExportDriversExcel() {
     const items = list.data?.items ?? [];
@@ -310,68 +363,86 @@ export default function DriversPage() {
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
 
-      <div className="card card-body mb-5">
-        <h2 className="mb-4 text-sm font-bold text-slate-800">{t("addTitle")}</h2>
-        <form onSubmit={onCreate} className="space-y-4">
-          {formError && <Alert tone="error">{formError}</Alert>}
-          <div className="form-grid">
-            <div>
-              <label className="label" htmlFor="driver-name">
-                {t("fullName")}
-              </label>
-              <input
-                id="driver-name"
-                className="input"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                minLength={2}
-                maxLength={160}
-                required
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="driver-phone">
-                {t("phone")}
-              </label>
-              <input
-                id="driver-phone"
-                className="input"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="+998901234567"
-                pattern="^\+?\d{9,15}$"
-                required
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="driver-license">
-                {t("license")}
-              </label>
-              <input
-                id="driver-license"
-                className="input"
-                maxLength={60}
-                value={licenseNumber}
-                onChange={(event) => setLicenseNumber(event.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="driver-notes">
-                {t("notes")}
-              </label>
-              <input
-                id="driver-notes"
-                className="input"
-                maxLength={500}
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-              />
-            </div>
-          </div>
-          <button type="submit" className="btn-primary" disabled={saving}>
-            {saving ? t("creating") : t("create")}
+      <div className="card mb-5">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <h2 className="text-sm font-bold text-slate-800">{t("addTitle")}</h2>
+          <button
+            type="button"
+            className={addOpen ? "btn-ghost" : "btn-secondary"}
+            onClick={() => setAddOpen((open) => !open)}
+            aria-expanded={addOpen}
+            aria-controls="driver-add-form"
+          >
+            <Icon name={addOpen ? "x" : "plus"} className="h-4 w-4" />
+            {addOpen ? t("close") : t("create")}
           </button>
-        </form>
+        </div>
+        {addOpen && (
+          <div id="driver-add-form" className="card-body border-t border-slate-100 pt-4 sm:pt-5">
+            <form onSubmit={onCreate} className="space-y-4">
+              {formError && <Alert tone="error">{formError}</Alert>}
+              <div className="form-grid">
+                <div>
+                  <label className="label" htmlFor="driver-name">
+                    {t("fullName")}
+                  </label>
+                  <input
+                    id="driver-name"
+                    className="input"
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    minLength={2}
+                    maxLength={160}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="driver-phone">
+                    {t("phone")}
+                  </label>
+                  <input
+                    id="driver-phone"
+                    className="input"
+                    type="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    placeholder="+998901234567"
+                    pattern="^\+?\d{9,15}$"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="driver-license">
+                    {t("license")}
+                  </label>
+                  <input
+                    id="driver-license"
+                    className="input"
+                    maxLength={60}
+                    value={licenseNumber}
+                    onChange={(event) => setLicenseNumber(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="driver-notes">
+                    {t("notes")}
+                  </label>
+                  <input
+                    id="driver-notes"
+                    className="input"
+                    maxLength={500}
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                  />
+                </div>
+              </div>
+              <button type="submit" className="btn-primary" disabled={saving}>
+                {saving ? t("creating") : t("create")}
+              </button>
+            </form>
+          </div>
+        )}
       </div>
 
       {(actionError || actionOk) && (
@@ -381,32 +452,43 @@ export default function DriversPage() {
       )}
 
       {data && (
-        <div className="card card-body mb-5">
+        <div ref={profileRef} className="card card-body mb-5 scroll-mt-36 md:scroll-mt-20">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-3">
               <DriverAvatar driver={data.driver} />
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-900">{data.driver.fullName}</h2>
-                  <StatusBadge status={data.driver.status} label={data.driver.status} />
+                  <StatusBadge status={data.driver.status} label={t(data.driver.status)} />
                   {data.driver.telegram.linked && (
                     <span className="badge bg-blue-50 text-blue-700">{t("telegramLinked")}</span>
                   )}
                 </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {data.driver.phone}
+                <p className="mt-1 font-mono text-sm text-slate-600">
+                  {formatUzPhone(data.driver.phone)}
                   {data.driver.licenseNumber ? ` · ${data.driver.licenseNumber}` : ""}
                 </p>
                 {data.driver.notes && (
-                  <p className="mt-1 text-xs text-slate-400">{data.driver.notes}</p>
+                  <p className="mt-1 text-xs text-slate-500">{data.driver.notes}</p>
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-secondary" onClick={() => onLink(data)} disabled={busy}>
+                <Icon name="link" className="h-4 w-4" />
                 {t("generateCode")}
               </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => onToggleStatus(data.driver)}
+                disabled={busy}
+              >
+                <Icon name={data.driver.status === "ACTIVE" ? "ban" : "check"} className="h-4 w-4" />
+                {data.driver.status === "ACTIVE" ? t("deactivate") : t("activate")}
+              </button>
               <button type="button" className="btn-ghost" onClick={() => setSelectedId(null)}>
+                <Icon name="x" className="h-4 w-4" />
                 {t("close")}
               </button>
             </div>
@@ -426,34 +508,34 @@ export default function DriversPage() {
 
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {t("monthDue")}
               </p>
-              <p className="mt-1 text-sm font-bold text-slate-900">
+              <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">
                 {formatMoney(data.currentMonth.due)}
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {t("monthPaid")}
               </p>
-              <p className="mt-1 text-sm font-bold text-emerald-700">
+              <p className="mt-1 text-sm font-bold tabular-nums text-emerald-700">
                 {formatMoney(data.currentMonth.paid)}
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {t("monthDebt")}
               </p>
-              <p className="mt-1 text-sm font-bold text-red-600">
+              <p className="mt-1 text-sm font-bold tabular-nums text-red-700">
                 {formatMoney(data.currentMonth.debt)}
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {t("totalDebt")}
               </p>
-              <p className="mt-1 text-sm font-bold text-red-600">
+              <p className="mt-1 text-sm font-bold tabular-nums text-red-700">
                 {formatMoney(data.totalDebt)}
               </p>
             </div>
@@ -469,17 +551,20 @@ export default function DriversPage() {
                   </p>
                   <p className="text-sm text-slate-600">{data.currentVehicle.model}</p>
                   {data.currentVehicle.routeName && (
-                    <p className="text-xs text-sky-700">🛣 {data.currentVehicle.routeName}</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-sky-700">
+                      <Icon name="map" className="h-3.5 w-3.5" />
+                      {data.currentVehicle.routeName}
+                    </p>
                   )}
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-600">
                     {t("monthlyPlan")}: {formatMoney(data.currentVehicle.monthlyFee)}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {t("assignedSince")}: {formatDate(data.currentVehicle.assignedSince)}
                   </p>
                   <button
                     type="button"
-                    className="btn-ghost mt-3 text-xs text-red-600"
+                    className="btn-danger mt-3 text-xs"
                     onClick={onUnassign}
                     disabled={busy}
                   >
@@ -499,9 +584,10 @@ export default function DriversPage() {
                 <button
                   type="button"
                   onClick={() => openGlobalAssign(data.driver)}
-                  className="btn-secondary text-xs flex items-center gap-1.5"
+                  className="btn-secondary flex items-center gap-1.5 text-xs"
                 >
-                  🔍 Haydovchini qidirish va almashtirish
+                  <Icon name="search" className="h-3.5 w-3.5" />
+                  Haydovchini almashtirish
                 </button>
               </div>
               <form onSubmit={onAssign} className="space-y-3 rounded-xl border border-slate-200 p-4">
@@ -511,8 +597,9 @@ export default function DriversPage() {
                   </label>
                   <input
                     type="text"
-                    className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
-                    placeholder="🔍 Avtomobilni qidirish (davlat raqami yoki model)..."
+                    className="input mb-1.5 w-full bg-slate-50 text-xs focus:bg-white"
+                    placeholder="Avtomobilni qidirish (davlat raqami yoki model)..."
+                    aria-label="Avtomobilni qidirish"
                     value={assignVehFilter}
                     onChange={(e) => setAssignVehFilter(e.target.value)}
                   />
@@ -596,7 +683,7 @@ export default function DriversPage() {
                       <td className="font-mono text-xs">{row.month}</td>
                       <td>{formatMoney(row.due)}</td>
                       <td className="text-emerald-700">{formatMoney(row.paid)}</td>
-                      <td className={Number(row.debt) > 0 ? "font-semibold text-red-600" : ""}>
+                      <td className={Number(row.debt) > 0 ? "font-semibold text-red-700" : ""}>
                         {formatMoney(row.debt)}
                       </td>
                     </tr>
@@ -647,32 +734,52 @@ export default function DriversPage() {
       )}
 
       <div className="card">
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold text-slate-800">{t("title")}</h2>
-            <button
-              type="button"
-              onClick={() => openGlobalAssign()}
-              className="btn-primary flex items-center gap-1 px-3 py-1 text-xs font-semibold shadow-sm"
-            >
-              <span>🔗</span>
-              <span>Avtomobil biriktirish</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportDriversExcel}
-              className="btn-secondary flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-            >
-              <span>📊</span>
-              <span>Excelga yuklash</span>
-            </button>
+            {list.data && list.data.items.length > 0 && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600">
+                {list.data.items.length}
+              </span>
+            )}
           </div>
-          <input
-            className="input sm:max-w-sm"
-            placeholder={t("searchPlaceholder")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openGlobalAssign()}
+                className="btn-secondary text-xs"
+              >
+                <Icon name="link" className="h-4 w-4" />
+                {t("assign")}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportDriversExcel}
+                className="btn-secondary text-xs"
+              >
+                <Icon name="download" className="h-4 w-4" />
+                {t("exportExcel")}
+              </button>
+            </div>
+            <div className="relative sm:w-72">
+              <label htmlFor="driver-search" className="sr-only">
+                {t("searchPlaceholder")}
+              </label>
+              <Icon
+                name="search"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                id="driver-search"
+                type="search"
+                className="input pl-9"
+                placeholder={t("searchPlaceholder")}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          </div>
         </div>
         {list.loading ? (
           <Loading label={tc("loading")} />
@@ -681,97 +788,227 @@ export default function DriversPage() {
             <Alert tone="error">{list.error}</Alert>
           </div>
         ) : list.data?.items.length === 0 ? (
-          <EmptyState>{t("empty")}</EmptyState>
+          <EmptyState>{debounced ? t("searchEmpty") : t("empty")}</EmptyState>
         ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t("fullName")}</th>
-                  <th>{t("phone")}</th>
-                  <th>{t("currentVehicle")}</th>
-                  <th>{t("monthDue")}</th>
-                  <th>{t("monthPaid")}</th>
-                  <th>{t("totalDebt")}</th>
-                  <th>{t("telegram")}</th>
-                  <th>{tc("actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.data?.items.map((driver) => (
-                  <tr key={driver.id}>
-                    <td>
-                      <p className="font-semibold text-slate-900">{driver.fullName}</p>
-                      <StatusBadge status={driver.status} label={driver.status} />
-                    </td>
-                    <td className="font-mono text-xs">{driver.phone}</td>
-                    <td>
-                      {driver.vehicle ? (
-                        <>
-                          <p className="font-mono text-xs font-semibold text-slate-800">
-                            {driver.vehicle.plateNumber}
-                          </p>
-                          <p className="text-[11px] text-slate-400">{driver.vehicle.model}</p>
-                        </>
-                      ) : (
-                        <span className="text-xs text-slate-400">{t("noVehicle")}</span>
-                      )}
-                    </td>
-                    <td>{formatMoney(driver.month.due)}</td>
-                    <td className="text-emerald-700">{formatMoney(driver.month.paid)}</td>
-                    <td className="font-semibold text-red-600">
-                      {formatMoney(driver.totalDebt)}
-                    </td>
-                    <td className="text-xs">
-                      {driver.telegram.linked ? (
-                        <span className="badge bg-blue-50 text-blue-700">
-                          {t("telegramLinked")}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">{t("telegramNotLinked")}</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          className="btn-ghost text-xs text-emerald-700 font-semibold"
-                          onClick={() => openGlobalAssign(driver)}
-                        >
-                          🔗 Biriktirish
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost text-xs"
-                          onClick={() => setSelectedId(driver.id)}
-                        >
-                          {t("profile")}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost text-xs text-slate-500"
-                          onClick={() => onToggleStatus(driver)}
-                          disabled={busy}
-                        >
-                          {driver.status === "ACTIVE" ? "Faolsizlantirish" : "Faollashtirish"}
-                        </button>
+          <>
+            <ul className="divide-y divide-slate-100 xl:hidden">
+              {list.data?.items.map((driver) => (
+                <li key={driver.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedId(driver.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedId(driver.id);
+                      }
+                    }}
+                    className="flex w-full cursor-pointer items-start gap-3 px-4 py-4 text-left transition hover:bg-slate-50/70 active:bg-slate-100 focus:outline-none focus-visible:bg-brand-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500"
+                    aria-label={`${driver.fullName} — ${t("profile")}`}
+                  >
+                    <DriverAvatar driver={driver} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="font-semibold text-slate-900">{driver.fullName}</p>
+                        <StatusBadge status={driver.status} label={t(driver.status)} />
+                        {driver.telegram.linked && (
+                          <span className="badge bg-blue-50 text-blue-700">
+                            {t("telegramLinked")}
+                          </span>
+                        )}
                       </div>
-                    </td>
+                      <p className="mt-0.5 font-mono text-xs text-slate-500">
+                        {formatUzPhone(driver.phone)}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        {driver.vehicle ? (
+                          <span className="font-mono text-xs font-semibold text-slate-800">
+                            {formatUzPlate(driver.vehicle.plateNumber)}
+                            <span className="ml-2 font-sans font-normal text-slate-500">
+                              {driver.vehicle.model}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">{t("noVehicle")}</span>
+                        )}
+                        {driver.workedToday ? (
+                          <span className="badge gap-1 bg-emerald-50 text-emerald-700">
+                            <Icon name="check" className="h-3.5 w-3.5" />
+                            {t("workedToday")}
+                          </span>
+                        ) : (
+                          <span className="badge bg-slate-100 text-slate-600">
+                            {t("notPaidToday")}
+                          </span>
+                        )}
+                      </div>
+                      <dl className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-slate-500">{t("due")}</dt>
+                          <dd className="font-semibold tabular-nums text-slate-800">
+                            {formatMoney(driver.month.due)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-slate-500">{t("paid")}</dt>
+                          <dd className="font-semibold tabular-nums text-emerald-700">
+                            {formatMoney(driver.month.paid)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-slate-500">{t("totalDebt")}</dt>
+                          <dd className="font-semibold tabular-nums text-red-700">
+                            {formatMoney(driver.totalDebt)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <Icon
+                      name="chevron-right"
+                      className="mt-1 h-4 w-4 shrink-0 text-slate-400"
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="table-wrap hidden xl:block">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t("fullName")}</th>
+                    <th>{t("currentVehicle")}</th>
+                    <th>{t("workedToday")}</th>
+                    <th>{t("monthSummary")}</th>
+                    <th>{t("telegram")}</th>
+                    <th className="w-14">
+                      <span className="sr-only">{tc("actions")}</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {list.data?.items.map((driver) => (
+                    <tr
+                      key={driver.id}
+                      onClick={() => setSelectedId(driver.id)}
+                      title={t("profile")}
+                      className="cursor-pointer"
+                    >
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <DriverAvatar driver={driver} size="sm" />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">{driver.fullName}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                              <StatusBadge status={driver.status} label={t(driver.status)} />
+                              <span className="font-mono text-xs text-slate-500">
+                                {formatUzPhone(driver.phone)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {driver.vehicle ? (
+                          <>
+                            <p className="font-mono text-xs font-semibold text-slate-800">
+                              {formatUzPlate(driver.vehicle.plateNumber)}
+                            </p>
+                            <p className="text-xs text-slate-500">{driver.vehicle.model}</p>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-500">{t("noVehicle")}</span>
+                        )}
+                      </td>
+                      <td>
+                        {driver.workedToday ? (
+                          <div className="space-y-0.5">
+                            <span className="badge gap-1 bg-emerald-50 text-emerald-700">
+                              <Icon name="check" className="h-3.5 w-3.5" />
+                              {t("workedToday")}
+                            </span>
+                            <p className="text-xs text-slate-500">
+                              {t("paidDays", { count: driver.paidDays })}
+                              {driver.coveredUntil
+                                ? ` · ${formatDate(driver.coveredUntil)}`
+                                : ""}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="badge bg-slate-100 text-slate-600">
+                            {t("notPaidToday")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <div className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs">
+                          <span className="text-slate-500">{t("due")}</span>
+                          <span className="text-right font-semibold tabular-nums text-slate-800">
+                            {formatMoney(driver.month.due)}
+                          </span>
+                          <span className="text-slate-500">{t("paid")}</span>
+                          <span className="text-right font-semibold tabular-nums text-emerald-700">
+                            {formatMoney(driver.month.paid)}
+                          </span>
+                          <span className="text-slate-500">{t("totalDebt")}</span>
+                          <span className="text-right font-semibold tabular-nums text-red-700">
+                            {formatMoney(driver.totalDebt)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="text-xs">
+                        {driver.telegram.linked ? (
+                          <span className="badge bg-blue-50 text-blue-700">
+                            {t("telegramLinked")}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">{t("telegramNotLinked")}</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedId(driver.id);
+                          }}
+                          aria-label={`${driver.fullName} — ${t("profile")}`}
+                          className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                        >
+                          <Icon name="chevron-right" className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
       {/* Avtomobil biriktirish (Driver Search + Vehicle Search) Modal */}
       {globalAssignOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fadeIn">
-          <div className="card w-full max-w-lg p-5 bg-white shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3 mb-4">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm animate-fadeIn sm:items-center"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setGlobalAssignOpen(false);
+          }}
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assign-modal-title"
+            className="card w-full max-w-lg p-5 bg-white shadow-2xl rounded-2xl max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-h-[90vh]"
+          >
+            <div className="flex items-start justify-between gap-3 border-b pb-3 mb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Avtomobil biriktirish</h3>
+                <h3 id="assign-modal-title" className="text-base font-bold text-slate-900">
+                  Avtomobil biriktirish
+                </h3>
                 <p className="text-xs text-slate-500">
                   Haydovchini qidirish va unga avtomobil biriktirish
                 </p>
@@ -779,9 +1016,10 @@ export default function DriversPage() {
               <button
                 type="button"
                 onClick={() => setGlobalAssignOpen(false)}
-                className="text-slate-400 hover:text-slate-700 text-lg font-bold p-1 rounded-lg"
+                aria-label={tc("close")}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
               >
-                ✕
+                <Icon name="x" className="h-5 w-5" />
               </button>
             </div>
 
@@ -801,22 +1039,26 @@ export default function DriversPage() {
               </label>
 
               {modalSelectedDriver ? (
-                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-sm text-emerald-950">
-                      ✅ {modalSelectedDriver.fullName}
-                    </div>
-                    <div className="text-xs text-emerald-800 font-mono mt-0.5">
-                      📞 {formatUzPhone(modalSelectedDriver.phone)}{" "}
-                      {modalSelectedDriver.vehicle
-                        ? `· Hozirgi: ${formatUzPlate(modalSelectedDriver.vehicle.plateNumber)} (${modalSelectedDriver.vehicle.model})`
-                        : "· Avtomobil biriktirilmagan"}
-                    </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-bold text-emerald-950">
+                      <Icon name="check" className="h-4 w-4 shrink-0" />
+                      {modalSelectedDriver.fullName}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-emerald-800">
+                      <Icon name="phone" className="h-3.5 w-3.5 shrink-0" />
+                      <span className="min-w-0 truncate">
+                        {formatUzPhone(modalSelectedDriver.phone)}
+                        {modalSelectedDriver.vehicle
+                          ? ` · Hozirgi: ${formatUzPlate(modalSelectedDriver.vehicle.plateNumber)} (${modalSelectedDriver.vehicle.model})`
+                          : " · Avtomobil biriktirilmagan"}
+                      </span>
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setModalSelectedDriver(null)}
-                    className="btn-ghost text-xs text-slate-700 border border-emerald-300 bg-white"
+                    className="btn-secondary shrink-0 text-xs"
                   >
                     O&apos;zgartirish
                   </button>
@@ -828,6 +1070,7 @@ export default function DriversPage() {
                       type="text"
                       className="input flex-1 text-xs"
                       placeholder="Haydovchi F.I.Sh yoki telefon raqamini kiriting..."
+                      aria-label="Haydovchini qidirish"
                       value={modalDriverSearch}
                       onChange={(e) => setModalDriverSearch(e.target.value)}
                       onKeyDown={(e) => {
@@ -841,9 +1084,10 @@ export default function DriversPage() {
                     <button
                       type="button"
                       onClick={triggerModalDriverSearch}
-                      className="btn-secondary px-3 py-1.5 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shadow-sm"
+                      className="btn-secondary shrink-0 text-xs"
                     >
-                      🔍 Qidirish
+                      <Icon name="search" className="h-4 w-4" />
+                      Qidirish
                     </button>
                   </div>
 
@@ -852,38 +1096,34 @@ export default function DriversPage() {
                     {modalDriverSearching ? (
                       <div className="p-4 text-center text-xs text-slate-500">Qidirilmoqda...</div>
                     ) : modalSearchedDrivers.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-slate-400">
+                      <div className="p-4 text-center text-xs text-slate-500">
                         {modalDriverSearch
                           ? "Mos keluvchi haydovchi topilmadi"
                           : "Haydovchini topish uchun ism yoki telefon kiriting"}
                       </div>
                     ) : (
                       modalSearchedDrivers.map((d) => (
-                        <div
+                        <button
                           key={d.id}
-                          className="p-2.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer"
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 p-3 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:bg-brand-50"
                           onClick={() => setModalSelectedDriver(d)}
                         >
-                          <div>
-                            <p className="font-semibold text-xs text-slate-900">{d.fullName}</p>
-                            <p className="font-mono text-[11px] text-slate-500">
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-slate-900">
+                              {d.fullName}
+                            </span>
+                            <span className="block font-mono text-xs text-slate-500">
                               {formatUzPhone(d.phone)}{" "}
                               {d.vehicle
                                 ? `· Hozirgi: ${formatUzPlate(d.vehicle.plateNumber)} (${d.vehicle.model})`
                                 : "· Mashinasiz"}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn-secondary text-xs px-2.5 py-1 text-emerald-700 hover:bg-emerald-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setModalSelectedDriver(d);
-                            }}
-                          >
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-xs font-semibold text-emerald-700">
                             Tanlash
-                          </button>
-                        </div>
+                          </span>
+                        </button>
                       ))
                     )}
                   </div>
@@ -899,8 +1139,9 @@ export default function DriversPage() {
                 </label>
                 <input
                   type="text"
-                  className="input text-xs mb-1.5 w-full bg-slate-50 focus:bg-white"
-                  placeholder="🔍 Avtomobilni qidirish (davlat raqami yoki model)..."
+                  className="input mb-1.5 w-full bg-slate-50 text-xs focus:bg-white"
+                  placeholder="Avtomobilni qidirish (davlat raqami yoki model)..."
+                  aria-label="Avtomobilni qidirish"
                   value={modalVehFilter}
                   onChange={(e) => setModalVehFilter(e.target.value)}
                 />
@@ -964,7 +1205,12 @@ export default function DriversPage() {
                   className="btn-primary text-xs"
                   disabled={modalSaving || !modalSelectedDriver || !modalVehicleId}
                 >
-                  {modalSaving ? "Biriktirilmoqda..." : "✅ Biriktirish"}
+                  {modalSaving ? "Biriktirilmoqda..." : (
+                    <>
+                      <Icon name="check" className="h-4 w-4" />
+                      Biriktirish
+                    </>
+                  )}
                 </button>
               </div>
             </form>
