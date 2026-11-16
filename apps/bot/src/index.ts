@@ -81,15 +81,16 @@ const CONTACT_KEYBOARD = {
 
 const DRIVER_REPLY_KEYBOARD = {
   keyboard: [
-    [{ text: "🚦 Smena (Chiqish / Yakun)" }, { text: "🪪 QR Yo'l Pasporti" }],
-    [{ text: "📑 Yo'l varaqasi (Putyovka)" }, { text: "💰 Oylik plan va qarz" }],
-    [{ text: "💳 Masofaviy to'lov" }, { text: "🚨 SOS / Nosozlik" }],
-    [{ text: "📋 Barcha xizmatlar" }],
+    [{ text: "🔑 Mobil ilova kodi (/kod)" }, { text: "🚦 Smena (Chiqish / Yakun)" }],
+    [{ text: "🪪 QR Yo'l Pasporti" }, { text: "📑 Yo'l varaqasi (Putyovka)" }],
+    [{ text: "💰 Oylik plan va qarz" }, { text: "💳 Masofaviy to'lov" }],
+    [{ text: "🚨 SOS / Nosozlik" }, { text: "📋 Barcha xizmatlar" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
   input_field_placeholder: "Kerakli bo'limni tanlang...",
 };
+
 
 const USER_REPLY_KEYBOARD = {
   keyboard: [
@@ -1172,7 +1173,54 @@ bot.command("menu", async (ctx) => {
   }
 });
 
+async function handleDriverLoginCode(ctx: Context) {
+  try {
+    const who = await api.whoami(chatIdOf(ctx));
+    let phone: string | null = null;
+    if (who.kind === "driver") {
+      const driver = await api.driver(chatIdOf(ctx));
+      phone = driver.phone;
+    }
+    if (!phone) {
+      await ctx.reply(
+        "Telefon raqamingiz topilmadi. Iltimos, pastdagi <b>📱 Telefon raqamni yuborish</b> tugmasi orqali avval ro'yxatdan o'ting.",
+        { parse_mode: "HTML", reply_markup: CONTACT_KEYBOARD },
+      );
+      return;
+    }
+
+    const code = String(Math.floor(10000 + Math.random() * 90000));
+    try {
+      await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, channel: "telegram" }),
+      });
+    } catch (_) {}
+
+    await ctx.reply(
+      `🚖 <b>UYUSHMA FLEET — BIR MARTALIK KIRISH KODI</b>\n\n` +
+      `Hurmatli haydovchi, sizning mobil ilovaga kirish kodingiz:\n\n` +
+      `🔑 <code>${code}</code>\n\n` +
+      `⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n` +
+      `⚠️ Ushbu kodni mobil ilovadagi tasdiqlash maydoniga kiriting.`,
+      { parse_mode: "HTML" },
+    );
+  } catch (error) {
+    if (isUnlinked(error)) {
+      await sendUnlinked(ctx);
+      return;
+    }
+    console.error("handleDriverLoginCode error:", error);
+    await ctx.reply("Kirish kodini olishda xatolik yuz berdi.");
+  }
+}
+
+bot.command(["kod", "login"], handleDriverLoginCode);
+bot.hears("🔑 Mobil ilova kodi (/kod)", handleDriverLoginCode);
+
 bot.command("profil", async (ctx) => {
+
   try {
     const who = await api.whoami(chatIdOf(ctx));
     if (who.kind === "driver") {

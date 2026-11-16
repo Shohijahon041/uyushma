@@ -74,6 +74,10 @@ JWT_EXPIRATION_DAYS = 30
 ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "")
 ESKIZ_PASSWORD = os.getenv("ESKIZ_PASSWORD", "")
 
+# Telegram Bot sozlamalari (OTP va Telegram profili orqali kirish)
+TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN", "9234982190:AAFVINsJhZRNtiJalATRo6JLLzDlTZNBiN4")
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "uyushma_saas_bot")
+
 # Click & Payme to'lov sozlamalari
 CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "12345")
 CLICK_SECRET_KEY = os.getenv("CLICK_SECRET_KEY", "click_secret_key_demo")
@@ -89,11 +93,19 @@ redis_client: Optional[aioredis.Redis] = None
 # =============================================================================
 class RequestOtpRequest(BaseModel):
     phone: str = Field(..., example="+998901112233")
+    channel: Optional[str] = Field("auto", example="telegram")  # "auto", "telegram", "sms"
 
 
 class VerifyOtpRequest(BaseModel):
     phone: str = Field(..., example="+998901112233")
     code: str = Field(..., example="12345")
+
+
+class TelegramLinkRequest(BaseModel):
+    phone: str
+    chat_id: str
+    username: Optional[str] = None
+
 
 
 class SyncExternalDataRequest(BaseModel):
@@ -270,7 +282,23 @@ async def lifespan(app: FastAPI):
         max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "200")),
     )
     cron_task = asyncio.create_task(cron_nightly_checker())
+    
+    # Telegram ustunlarini users jadvaliga avtomatik qo'shish
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(50);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username VARCHAR(100);
+                CREATE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id);
+                """
+            )
+            logger.info("Foydalanuvchilar jadvali Telegram ustunlari tayyorlandi.")
+    except Exception as e:
+        logger.debug("Users telegram columns check: %s", e)
+
     logger.info("AsyncPG pool (min=20, max=100) va Redis muvaffaqiyatli ishga tushdi.")
+
     yield
     cron_task.cancel()
     if db_pool:
@@ -353,7 +381,77 @@ async def send_eskiz_sms(phone: str, code: str):
     return True
 
 
-@app.post("/api/v1/auth/request-otp", summary="5 xonali SMS kodini so'rash")
+async def send_telegram_otp(phone: str, code: str) -> bool:
+    """
+    5 xonali tasdiqlash kodini haydovchining Telegram hisobiga (uyushma_saas_bot orqali) yuborish.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return False
+
+    chat_id = None
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                # 1. users jadvalida telegram_chat_id tekshirish
+                row = await conn.fetchrow(
+                    "SELECT telegram_chat_id FROM users WHERE phone = $1 AND telegram_chat_id IS NOT NULL LIMIT 1",
+                    phone,
+                )
+                if row and row["telegram_chat_id"]:
+                    chat_id = row["telegram_chat_id"]
+                else:
+                    # 2. Prisma Driver jadvalidan telegramChatId tekshirish (agar mavjud bo'lsa)
+                    try:
+                        d_row = await conn.fetchrow(
+                            'SELECT "telegramChatId" FROM "Driver" WHERE phone = $1 AND "telegramChatId" IS NOT NULL LIMIT 1',
+                            phone,
+                        )
+                        if d_row and d_row["telegramChatId"]:
+                            chat_id = str(d_row["telegramChatId"])
+                            await conn.execute(
+                                "UPDATE users SET telegram_chat_id = $1 WHERE phone = $2",
+                                chat_id,
+                                phone,
+                            )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("Telegram chat_id izlashda xato: %s", e)
+
+    if not chat_id:
+        logger.info("[TG-OTP] %s uchun Telegram chat_id topilmadi", phone)
+        return False
+
+    message_text = (
+        "🚖 <b>UYUSHMA FLEET — TASDIQLASH KODI</b>\n\n"
+        "Hurmatli haydovchi, mobil ilovaga kirish uchun bir martalik kodingiz:\n\n"
+        f"🔑 <code>{code}</code>\n\n"
+        "⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n"
+        "⚠️ <i>Xavfsizlik maqsadida ushbu kodni begona shaxslarga bermang!</i>"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            tg_res = await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": message_text,
+                    "parse_mode": "HTML",
+                },
+            )
+            if tg_res.status_code == 200:
+                logger.info("[TG-OTP] Kod Telegram bot orqali yuborildi: %s (chat_id: %s)", phone, chat_id)
+                return True
+            else:
+                logger.warning("[TG-OTP-FAIL] Telegram xatosi: %s", tg_res.text)
+                return False
+    except Exception as ex:
+        logger.error("[TG-OTP-ERR] Telegram botga ulanish xatosi: %s", ex)
+        return False
+
+
+@app.post("/api/v1/auth/request-otp", summary="5 xonali tasdiqlash kodini so'rash (SMS / Telegram)")
 async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks):
     phone = req.phone.strip()
     if not phone.startswith("+998") or len(phone) < 13:
@@ -379,14 +477,85 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
     if redis_client:
         await redis_client.set(f"otp:{phone}", code, ex=120)
 
-    # Fon vazifasi orqali SMS yuborish
-    background_tasks.add_task(send_eskiz_sms, phone, code)
+    preferred_channel = req.channel.lower() if req.channel else "auto"
+    telegram_sent = False
+
+    # 1. Telegram orqali yuborishga urinish
+    if preferred_channel in ("telegram", "auto"):
+        telegram_sent = await send_telegram_otp(phone, code)
+
+    # 2. Agar Telegramga ulanmagan bo'lsa yoki preferred_channel 'sms' bo'lsa, SMS yuborish
+    if not telegram_sent:
+        background_tasks.add_task(send_eskiz_sms, phone, code)
+
+    used_channel = "telegram" if telegram_sent else "sms"
+    msg = (
+        "5 xonali tasdiqlash kodi Telegram botingizga yuborildi"
+        if telegram_sent
+        else "5 xonali tasdiqlash kodi SMS orqali yuborildi"
+    )
 
     return {
         "success": True,
-        "message": "5 xonali tasdiqlash kodi SMS orqali yuborildi",
+        "channel": used_channel,
+        "telegram_linked": telegram_sent,
+        "bot_username": TELEGRAM_BOT_USERNAME,
+        "bot_url": f"https://t.me/{TELEGRAM_BOT_USERNAME}",
+        "message": msg,
         "expires_in_seconds": 120,
     }
+
+
+@app.get("/api/v1/auth/telegram-info", summary="Telegram bot ma'lumotlari va ulanish holati")
+async def get_telegram_info(phone: Optional[str] = Query(None)):
+    is_linked = False
+    if phone and db_pool:
+        clean_phone = phone.strip()
+        try:
+            async with db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT telegram_chat_id FROM users WHERE phone = $1 AND telegram_chat_id IS NOT NULL",
+                    clean_phone,
+                )
+                if row and row["telegram_chat_id"]:
+                    is_linked = True
+                else:
+                    try:
+                        d_row = await conn.fetchrow(
+                            'SELECT "telegramChatId" FROM "Driver" WHERE phone = $1 AND "telegramChatId" IS NOT NULL',
+                            clean_phone,
+                        )
+                        if d_row and d_row["telegramChatId"]:
+                            is_linked = True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return {
+        "bot_username": TELEGRAM_BOT_USERNAME,
+        "bot_url": f"https://t.me/{TELEGRAM_BOT_USERNAME}",
+        "is_linked": is_linked,
+    }
+
+
+@app.post("/api/v1/auth/telegram-link", summary="Telefon raqamni Telegram chat ID bilan bog'lash")
+async def link_telegram_account(req: TelegramLinkRequest):
+    phone = req.phone.strip()
+    chat_id = req.chat_id.strip()
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE users
+            SET telegram_chat_id = $1, telegram_username = $2, updated_at = NOW()
+            WHERE phone = $3
+            """,
+            chat_id,
+            req.username,
+            phone,
+        )
+    return {"success": True, "message": "Telegram hisobi muvaffaqiyatli bog'landi"}
+
 
 
 @app.post("/api/v1/auth/verify-otp", summary="SMS kodini tekshirish va kirish")

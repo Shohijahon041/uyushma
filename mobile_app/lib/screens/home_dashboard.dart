@@ -440,16 +440,35 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(
-              tenant?['name'] ?? 'UYUSHMA TRANSPORT',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/images/logo.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.directions_car, color: Color(0xFF38BDF8), size: 24),
+              ),
             ),
-            Text(
-              driver?['full_name'] ?? 'Haydovchi',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tenant?['name'] ?? 'UYUSHMACHILAR',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    driver?['full_name'] ?? 'Haydovchi',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ],
         ),

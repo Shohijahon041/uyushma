@@ -50,23 +50,40 @@ class ApiService {
   }
 
   // ---------------------------------------------------------------------------
-  // AUTH (SMS OTP ESKIZ.UZ)
+  // AUTH (SMS / TELEGRAM OTP)
   // ---------------------------------------------------------------------------
-  Future<Map<String, dynamic>> requestOtp(String phone) async {
+  Future<Map<String, dynamic>> requestOtp(String phone, {String channel = 'auto'}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/request-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phone': phone}),
+      body: jsonEncode({'phone': phone, 'channel': channel}),
     );
 
     final data = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await logEvent('otp_requested', {'phone': phone});
+      await logEvent('otp_requested', {'phone': phone, 'channel': channel});
       return data;
     } else {
-      throw Exception(data['detail'] ?? 'SMS kod so\'rashda xatolik yuz berdi');
+      throw Exception(data['detail'] ?? 'Kod so\'rashda xatolik yuz berdi');
     }
   }
+
+  Future<Map<String, dynamic>> getTelegramInfo(String phone) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/auth/telegram-info?phone=${Uri.encodeComponent(phone)}'),
+      ).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+    } catch (_) {}
+    return {
+      'bot_username': 'uyushma_saas_bot',
+      'bot_url': 'https://t.me/uyushma_saas_bot',
+      'is_linked': false,
+    };
+  }
+
 
   String _generateDevToken(String phone) {
     String base64UrlClean(String str) =>
