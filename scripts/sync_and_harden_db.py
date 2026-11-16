@@ -43,8 +43,9 @@ async def main():
     # 1.5. Sync companies into tenants table to satisfy foreign keys
     print("\n[STEP 1.5] Syncing Company into tenants table...")
     await conn.execute("""
-        INSERT INTO tenants (id, name, created_at, updated_at)
-        SELECT id, name, "createdAt", "updatedAt" FROM "Company"
+        INSERT INTO tenants (id, name, inn, contact_phone, created_at, updated_at)
+        SELECT id, name, COALESCE(slug, '300123456'), '+998901234567', "createdAt", "updatedAt"
+        FROM "Company"
         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
     """)
     print("✓ Tenants synchronized from Company.")
