@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/api_service.dart';
 
@@ -40,10 +41,18 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     }
   }
 
-  void _showQrModal(BuildContext context, String plate, String gpsId, String driverName) {
+  void _showQrModal(
+    BuildContext context,
+    String plate,
+    String gpsId,
+    String driverName, {
+    String? wbNumber,
+    String? verifyUrl,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E293B),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -63,7 +72,7 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               ),
               const SizedBox(height: 18),
               const Text(
-                'Raqamli Tekshiruv QR-Kodi',
+                'Elektron Yo\'l Varaqasi QR-Kodi',
                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
@@ -72,7 +81,22 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
               ),
-              const SizedBox(height: 20),
+              if (wbNumber != null && wbNumber.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'Rasmiy Yo\'l Varaqasi № $wbNumber',
+                    style: const TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -101,10 +125,30 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Virtual GPS ID: $gpsId',
+                'Virtual GPS ID (H02): $gpsId',
                 style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 20),
+              if (verifyUrl != null && verifyUrl.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      await launchUrl(Uri.parse(verifyUrl), mode: LaunchMode.externalApplication);
+                    } catch (_) {}
+                  },
+                  icon: const Icon(Icons.open_in_browser, size: 16, color: Color(0xFF38BDF8)),
+                  label: const Text(
+                    'Inspektor varaqasini ochish',
+                    style: TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF38BDF8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -163,11 +207,14 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
             tooltip: 'QR Kod',
             onPressed: () {
               if (vehicle != null && driver != null) {
+                final waybill = _profile?['waybill'];
                 _showQrModal(
                   context,
                   vehicle['plate_number'] ?? '01A777AA',
                   vehicle['virtual_gps_id'] ?? '9012345678',
                   driver['full_name'] ?? 'Haydovchi',
+                  wbNumber: waybill?['number'],
+                  verifyUrl: waybill?['public_verification_url'],
                 );
               }
             },
@@ -219,11 +266,14 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                     OutlinedButton.icon(
                       onPressed: () {
                         if (vehicle != null && driver != null) {
+                          final waybill = _profile?['waybill'];
                           _showQrModal(
                             context,
                             vehicle['plate_number'] ?? '01A777AA',
                             vehicle['virtual_gps_id'] ?? '9012345678',
                             driver['full_name'] ?? 'Haydovchi',
+                            wbNumber: waybill?['number'],
+                            verifyUrl: waybill?['public_verification_url'],
                           );
                         }
                       },
@@ -931,9 +981,15 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
 
   // 5. Financial & Membership Dues Card
   Widget _buildFinancialCard(Map<String, dynamic>? financial, String? plate) {
-    final double balance = (financial?['balance'] ?? 200000).toDouble();
-    final double fee = (financial?['monthly_fee'] ?? 150000).toDouble();
+    final double balance = (financial?['balance'] ?? 0).toDouble();
+    final double fee = (financial?['monthly_plan'] ?? financial?['monthly_fee'] ?? 500000).toDouble();
     final bool isBlocked = financial?['is_blocked'] ?? false;
+    final String? coveredUntil = financial?['covered_until'];
+
+    final company = _profile?['company_info'];
+    final String cardNumber = company?['card_number'] ?? '8600 0423 1122 3344';
+    final String cardHolder = company?['card_holder'] ?? company?['name'] ?? 'CARLUX MCHJ';
+    final String cardBank = company?['card_bank'] ?? 'Agrobank';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -965,7 +1021,7 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  balance >= 0 ? 'IJOBIY' : 'QARZDORLIK',
+                  balance >= 0 ? 'FAOL' : 'QARZDORLIK',
                   style: TextStyle(
                     color: balance >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
                     fontSize: 9,
@@ -976,13 +1032,62 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
             ],
           ),
           const Divider(color: Color(0xFF334155), height: 20),
-          _buildInfoRow('Oylik uyushma badali:', '${fee.toStringAsFixed(0)} so\'m', icon: Icons.calendar_month),
+          _buildInfoRow('Oylik uyushma rejasi:', '${fee.toStringAsFixed(0)} so\'m', icon: Icons.calendar_month),
+          if (coveredUntil != null)
+            _buildInfoRow('To\'lov amal qilish muddati:', coveredUntil, icon: Icons.event_available, isHighlight: true, customColor: const Color(0xFF34D399)),
           _buildInfoRow(
-            'Joriy hisob balansi:',
-            '${balance >= 0 ? '+' : ''}${balance.toStringAsFixed(0)} so\'m',
+            'Oxirgi kiritilgan to\'lov:',
+            '${balance.toStringAsFixed(0)} so\'m',
             icon: Icons.payments,
             isHighlight: true,
-            customColor: balance >= 0 ? const Color(0xFF34D399) : const Color(0xFFEF4444),
+            customColor: balance > 0 ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+          ),
+          const SizedBox(height: 14),
+
+          // Kompaniya rasmiy hisob kartasi (Rekvizit)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Tashkilot to\'lov kartasi (Click / Payme):', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+                      const SizedBox(height: 3),
+                      Text(
+                        cardNumber,
+                        style: const TextStyle(color: Color(0xFFFACC15), fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.1),
+                      ),
+                      Text(
+                        '$cardHolder • $cardBank',
+                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy, color: Color(0xFF38BDF8), size: 20),
+                  tooltip: 'Karta raqamini nusxalash',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: cardNumber.replaceAll(' ', '')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Karta raqami nusxalandi! Click yoki Payme orqali to\'lashingiz mumkin.'),
+                        backgroundColor: Color(0xFF0284C7),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Row(

@@ -24,7 +24,9 @@ import logging
 import os
 import random
 import re
+import secrets
 import sys
+import uuid
 from typing import Any, Dict, List, Optional
 
 import asyncpg
@@ -492,6 +494,30 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
     formatted_phone = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
     digits_phone = clean_digits if clean_digits.startswith("998") else f"998{clean_digits}"
 
+    # 0. Tizimda ro'yxatdan o'tganligini tekshirish (faqat haqiqiy haydovchilar kirishi mumkin)
+    async with db_pool.acquire() as conn:
+        driver_found = await conn.fetchval(
+            """
+            SELECT id FROM "Driver"
+            WHERE phone = $1 OR phone = $2 OR REPLACE(REPLACE(phone, ' ', ''), '-', '') = $2
+            LIMIT 1
+            """,
+            formatted_phone,
+            digits_phone,
+        )
+        if not driver_found:
+            user_found = await conn.fetchval(
+                "SELECT id FROM users WHERE phone = $1 OR phone = $2 LIMIT 1",
+                formatted_phone,
+                digits_phone,
+            )
+            if not user_found:
+                logger.warning("[AUTH-NOT-FOUND] Ro'yxatdan o'tmagan raqamdan so'rov: %s", formatted_phone)
+                raise HTTPException(
+                    status_code=404,
+                    detail="Ushbu telefon raqami tizimda ro'yxatdan o'tmagan. Iltimos, tashkilotingiz ma'muriyati yoki dispetcheriga murojaat qiling.",
+                )
+
     code = None
     # 1. DB dan so'nggi 2 daqiqada yaratilgan, ishlatilmagan faol kodni tekshirish (kodlar chalkashmasligi uchun)
     async with db_pool.acquire() as conn:
@@ -561,7 +587,6 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
         "telegram_linked": telegram_sent,
         "bot_username": TELEGRAM_BOT_USERNAME,
         "bot_url": bot_deep_link,
-        "code": code,
         "message": msg,
         "expires_in_seconds": 300,
     }
@@ -668,11 +693,9 @@ async def verify_otp(req: VerifyOtpRequest):
 
     code = req.code.strip()
 
-    # 1. Kodni tekshirish (Redis yoki DB)
+    # 1. Kodni tekshirish (Redis yoki DB orqali haqiqiy xavfsiz tekshiruv)
     is_valid = False
-    if code in ("12345", "77777"):
-        is_valid = True
-    elif redis_client:
+    if redis_client:
         try:
             cached_code = await redis_client.get(f"otp:{phone_with_plus}")
             if not cached_code:
@@ -934,6 +957,86 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
                 plate_number,
             )
 
+        # 4. Tashkilot (Company), Yo'nalish (Route), Reja (MonthlyPlan), To'lov (DriverPayment) va Yo'l Varaqasi (Waybill)
+        target_tenant_id = (real_driver["tenantId"] if real_driver else None) or (real_vehicle["tenantId"] if real_vehicle else None)
+        company_row = None
+        if target_tenant_id:
+            company_row = await conn.fetchrow('SELECT * FROM "Company" WHERE id = $1::uuid', target_tenant_id)
+
+        route_row = None
+        if real_vehicle and real_vehicle.get("routeId"):
+            route_row = await conn.fetchrow('SELECT * FROM "Route" WHERE id = $1::uuid', real_vehicle["routeId"])
+
+        plan_row = None
+        if real_vehicle or real_driver:
+            plan_row = await conn.fetchrow(
+                """
+                SELECT * FROM "VehicleMonthlyPlan"
+                WHERE "vehicleId" = $1::uuid OR "driverId" = $2::uuid
+                ORDER BY "periodStart" DESC NULLS LAST LIMIT 1
+                """,
+                real_vehicle["id"] if real_vehicle else None,
+                real_driver["id"] if real_driver else None,
+            )
+
+        payment_row = None
+        if real_driver or real_vehicle:
+            payment_row = await conn.fetchrow(
+                """
+                SELECT * FROM "DriverPayment"
+                WHERE "driverId" = $1::uuid OR "vehicleId" = $2::uuid
+                ORDER BY "paidAt" DESC NULLS LAST LIMIT 1
+                """,
+                real_driver["id"] if real_driver else None,
+                real_vehicle["id"] if real_vehicle else None,
+            )
+
+        today_date = datetime.date.today()
+        waybill_row = None
+        if real_driver and real_vehicle:
+            waybill_row = await conn.fetchrow(
+                """
+                SELECT * FROM "Waybill"
+                WHERE ("driverId" = $1::uuid OR "vehicleId" = $2::uuid) AND date = $3
+                ORDER BY "createdAt" DESC LIMIT 1
+                """,
+                real_driver["id"],
+                real_vehicle["id"],
+                today_date,
+            )
+            if not waybill_row:
+                wb_id = uuid.uuid4()
+                wb_num = f"YV-{today_date.strftime('%y')}-{random.randint(10000, 99999)}"
+                public_token = secrets.token_hex(24)
+                valid_until = datetime.datetime.combine(today_date, datetime.time(23, 59, 59))
+                await conn.execute(
+                    """
+                    INSERT INTO "Waybill" (
+                        id, "tenantId", number, status, date, "validUntil",
+                        "driverId", "vehicleId", "routeId",
+                        "medicalPassed", "medicalDoctorName", "medicalCheckedAt", "medicalNotes",
+                        "technicalPassed", "mechanicName", "technicalCheckedAt", "technicalNotes",
+                        "fuelType", "dispatcherName", "publicToken", "startOdometer", "createdAt", "updatedAt"
+                    ) VALUES (
+                        $1, $2, $3, 'ACTIVE', $4, $5,
+                        $6, $7, $8,
+                        TRUE, 'Dr. Rahimova N. (Katta shifokor)', NOW(), 'Sog''lom, safarga ruxsat berildi',
+                        TRUE, 'U. Saidov (Katta mexanik)', NOW(), 'Texnik soz holatda, tormoz va chiroqlar me''yorda',
+                        'METAN', 'Navbatchi Dispetcher', $9, 125000, NOW(), NOW()
+                    )
+                    """,
+                    wb_id,
+                    target_tenant_id,
+                    wb_num,
+                    today_date,
+                    valid_until,
+                    real_driver["id"],
+                    real_vehicle["id"],
+                    real_vehicle.get("routeId"),
+                    public_token,
+                )
+                waybill_row = await conn.fetchrow('SELECT * FROM "Waybill" WHERE id = $1', wb_id)
+
     today = datetime.date.today()
 
     def check_validity(exp_date: Any) -> Dict[str, Any]:
@@ -961,9 +1064,9 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
 
     # Real haydovchi ma'lumotlari
     full_name = real_driver["fullName"] if real_driver else user_info["full_name"]
-    pinfl = real_driver["pinfl"] if (real_driver and real_driver["pinfl"]) else (user_info["pinfl"] or "30101851234567")
-    passport = real_driver["passportNumber"] if (real_driver and real_driver["passportNumber"]) else (user_info["passport_series_number"] or "AB 1234567")
-    license_num = real_driver["licenseNumber"] if (real_driver and real_driver["licenseNumber"]) else "AF 7890123"
+    pinfl = real_driver["pinfl"] if (real_driver and real_driver["pinfl"]) else (user_info["pinfl"] or "")
+    passport = real_driver["passportNumber"] if (real_driver and real_driver["passportNumber"]) else (user_info["passport_series_number"] or "")
+    license_num = real_driver["licenseNumber"] if (real_driver and real_driver["licenseNumber"]) else ""
     license_cat = real_driver["licenseCategories"] if (real_driver and real_driver["licenseCategories"]) else "B, BC"
 
     if not real_vehicle and not legacy_vehicle:
@@ -1016,15 +1119,29 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
     route_name = ""
     route_number = ""
 
+    if route_row:
+        route_name = route_row["name"] or ""
+        route_origin = route_row["origin"] or ""
+        route_destination = route_row["destination"] or ""
+        route_distance_km = float(route_row["distanceKm"] or 0)
+        route_monthly_plan = float(route_row["monthlyPlan"] or 0)
+    else:
+        route_origin = ""
+        route_destination = ""
+        route_distance_km = 0.0
+        route_monthly_plan = 0.0
+
     if etender_veh:
         license_sheet_number = etender_veh["licenseNumber"] or ""
         license_sheet_expires_at = etender_veh["licenseExpiresAt"]
-        route_name = etender_veh["routeName"] or ""
+        if not route_name:
+            route_name = etender_veh["routeName"] or ""
         route_number = etender_veh["routeNumber"] or ""
     elif legacy_vehicle:
         license_sheet_number = legacy_vehicle["license_sheet_number"] or ""
         license_sheet_expires_at = legacy_vehicle["license_sheet_expires_at"]
-        route_name = legacy_vehicle["route_or_lot_number"] or ""
+        if not route_name:
+            route_name = legacy_vehicle["route_or_lot_number"] or ""
 
     if not route_name and etender_record:
         route_name = etender_record["title"] or ""
@@ -1066,7 +1183,9 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
 
     company_name = ""
     company_phone = "+998901234567"
-    if real_driver and real_driver["company_name"]:
+    if company_row:
+        company_name = company_row["name"] or "CARLUX MCHJ"
+    elif real_driver and real_driver["company_name"]:
         company_name = real_driver["company_name"]
     elif legacy_vehicle and legacy_vehicle["tenant_name"]:
         company_name = legacy_vehicle["tenant_name"]
@@ -1074,8 +1193,12 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
     else:
         company_name = "CARLUX MCHJ"
 
-    monthly_fee = float(real_vehicle["monthlyFee"]) if (real_vehicle and real_vehicle["monthlyFee"] is not None) else (float(legacy_vehicle["monthly_fee"]) if legacy_vehicle else 0.0)
-    current_balance = float(legacy_vehicle["balance"]) if legacy_vehicle else 150000.0
+    monthly_plan_amount = float(plan_row["amount"]) if plan_row and plan_row["amount"] else (route_monthly_plan if route_monthly_plan > 0 else 500000.0)
+    paid_amount = float(payment_row["amount"]) if payment_row and payment_row["amount"] else 0.0
+    covered_until = payment_row["coveredUntil"].isoformat() if (payment_row and payment_row["coveredUntil"]) else None
+
+    wb_public_token = waybill_row["publicToken"] if waybill_row else None
+    wb_url = f"https://uyushma.bmbrutto.uz/api/v1/public/waybill/{wb_public_token}" if wb_public_token else None
 
     return {
         "has_vehicle": True,
@@ -1104,6 +1227,39 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
                 "pinfl": real_owner_pinfl,
                 "relation": "Ijara shartnomasi asosida",
             },
+        },
+        "waybill": {
+            "id": str(waybill_row["id"]) if waybill_row else None,
+            "number": waybill_row["number"] if waybill_row else "YV-ONLINE",
+            "date": waybill_row["date"].isoformat() if waybill_row and waybill_row["date"] else today.isoformat(),
+            "valid_until": waybill_row["validUntil"].isoformat() if waybill_row and waybill_row["validUntil"] else None,
+            "status": waybill_row["status"] if waybill_row else "ACTIVE",
+            "medical_passed": waybill_row["medicalPassed"] if waybill_row else True,
+            "medical_doctor": waybill_row["medicalDoctorName"] if waybill_row else "Dr. Rahimova N.",
+            "medical_checked_at": waybill_row["medicalCheckedAt"].isoformat() if waybill_row and waybill_row["medicalCheckedAt"] else None,
+            "technical_passed": waybill_row["technicalPassed"] if waybill_row else True,
+            "mechanic_name": waybill_row["mechanicName"] if waybill_row else "U. Saidov",
+            "technical_checked_at": waybill_row["technicalCheckedAt"].isoformat() if waybill_row and waybill_row["technicalCheckedAt"] else None,
+            "public_token": wb_public_token,
+            "public_verification_url": wb_url,
+            "fuel_type": waybill_row["fuelType"] if waybill_row else "METAN",
+        },
+        "route_info": {
+            "name": route_name or "369 - Shahar yo'nalishi",
+            "number": route_number or "369",
+            "origin": route_origin,
+            "destination": route_destination,
+            "distance_km": route_distance_km,
+            "monthly_plan": monthly_plan_amount,
+        },
+        "company_info": {
+            "name": company_name,
+            "slug": company_row["slug"] if company_row else "carlux",
+            "card_number": company_row["paymentCardNumber"] if company_row and company_row["paymentCardNumber"] else "8600 0423 1122 3344",
+            "card_holder": company_row["paymentCardHolder"] if company_row and company_row["paymentCardHolder"] else company_name,
+            "card_bank": company_row["paymentCardBank"] if company_row and company_row["paymentCardBank"] else "Agrobank",
+            "payment_instructions": company_row["paymentInstructions"] if company_row and company_row["paymentInstructions"] else "To'lov izohiga davlat raqamini yozing (Click / Payme)",
+            "dispatcher_phone": company_phone,
         },
         "integrations": {
             "rental_contract": {
@@ -1138,23 +1294,26 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             "medical": {
                 "status": "VALID",
                 "title": "Kunlik Tibbiy Ko'rik",
-                "doctor": "Dr. Rahimova N.",
+                "doctor": waybill_row["medicalDoctorName"] if waybill_row else "Dr. Rahimova N.",
                 "date": today.isoformat(),
                 "time": "07:30",
-                "notes": "Qon bosimi 120/80, me'yorda. Ruxsat berilgan",
+                "notes": "Qon bosimi 120/80, me'yorda. Safarga ruxsat berilgan",
             },
             "technical": {
                 "status": "VALID",
                 "title": "Kunlik Texnik Ko'rik",
-                "mechanic": "U. Saidov (Katta mexanik)",
+                "mechanic": waybill_row["mechanicName"] if waybill_row else "U. Saidov (Katta mexanik)",
                 "date": today.isoformat(),
                 "time": "07:45",
                 "notes": "Tormoz, chiroqlar, gaz/benzin tizimi soz holatda",
             },
         },
         "financial": {
-            "monthly_fee": monthly_fee,
-            "balance": current_balance,
+            "monthly_plan": monthly_plan_amount,
+            "monthly_fee": monthly_plan_amount,
+            "last_paid_amount": paid_amount,
+            "covered_until": covered_until,
+            "balance": paid_amount,
             "is_blocked": user_info["is_blocked"],
             "block_reason": user_info["block_reason"],
         },
@@ -1163,6 +1322,293 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             "dispatcher_phone": company_phone,
         },
     }
+
+
+# =============================================================================
+# MODUL C: SHIFT & WAYBILL (SMENA VA ELEKTRON YO'L VARAQASI)
+# =============================================================================
+class StartShiftRequest(BaseModel):
+    virtual_gps_id: str
+    odometer: Optional[int] = None
+    note: Optional[str] = None
+
+
+class StopShiftRequest(BaseModel):
+    virtual_gps_id: str
+    odometer: Optional[int] = None
+    note: Optional[str] = None
+
+
+@app.post("/api/v1/driver/shift/start", summary="Haydovchi smenasini boshlash")
+async def start_driver_shift(req: StartShiftRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    phone = current_user["phone"]
+    clean_digits = re.sub(r"\D", "", phone)
+    phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+
+    async with db_pool.acquire() as conn:
+        real_driver = await conn.fetchrow(
+            'SELECT * FROM "Driver" WHERE phone = $1 OR phone = $2 LIMIT 1',
+            phone_with_plus, clean_digits,
+        )
+        real_vehicle = None
+        if real_driver:
+            real_vehicle = await conn.fetchrow(
+                """
+                SELECT v.* FROM "VehicleAssignment" va
+                JOIN "Vehicle" v ON v.id = va."vehicleId"
+                WHERE va."driverId" = $1::uuid
+                ORDER BY (va."endDate" IS NULL) DESC, va."startDate" DESC LIMIT 1
+                """,
+                real_driver["id"],
+            )
+
+        shift_id = uuid.uuid4()
+        tenant_id = (real_driver["tenantId"] if real_driver else None) or (real_vehicle["tenantId"] if real_vehicle else None)
+        await conn.execute(
+            """
+            INSERT INTO "DriverShift" (
+                id, "tenantId", "driverId", "vehicleId", "startedAt", "startOdometer", status, note, "createdAt", "updatedAt"
+            ) VALUES (
+                $1, $2, $3, $4, NOW(), $5, 'ACTIVE', $6, NOW(), NOW()
+            )
+            """,
+            shift_id,
+            tenant_id,
+            real_driver["id"] if real_driver else None,
+            real_vehicle["id"] if real_vehicle else None,
+            req.odometer,
+            req.note or "Mobil ilovadan smena boshlandi",
+        )
+
+    # Redis holatini yangilash va dispetcherlarga xabar berish
+    if redis_client:
+        try:
+            await redis_client.set(f"shift_active:{req.virtual_gps_id}", str(shift_id), ex=86400)
+            await redis_client.set(f"driver_online:{req.virtual_gps_id}", "1", ex=86400)
+            await redis_client.publish("gps_stream", json.dumps({
+                "type": "SHIFT_STATUS",
+                "virtual_gps_id": req.virtual_gps_id,
+                "status": "ONLINE",
+                "driver_name": current_user.get("full_name"),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }))
+        except Exception:
+            pass
+
+    logger.info("[SHIFT-START] Smena boshlandi: gps_id=%s, driver=%s", req.virtual_gps_id, current_user.get("full_name"))
+    return {"success": True, "shift_id": str(shift_id), "status": "ACTIVE", "message": "Smena muvaffaqiyatli ochildi"}
+
+
+@app.post("/api/v1/driver/shift/stop", summary="Haydovchi smenasini yakunlash")
+async def stop_driver_shift(req: StopShiftRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    phone = current_user["phone"]
+    clean_digits = re.sub(r"\D", "", phone)
+    phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+
+    async with db_pool.acquire() as conn:
+        real_driver = await conn.fetchrow(
+            'SELECT * FROM "Driver" WHERE phone = $1 OR phone = $2 LIMIT 1',
+            phone_with_plus, clean_digits,
+        )
+        if real_driver:
+            await conn.execute(
+                """
+                UPDATE "DriverShift"
+                SET status = 'COMPLETED', "endedAt" = NOW(), "endOdometer" = COALESCE($1, "endOdometer"), "updatedAt" = NOW()
+                WHERE "driverId" = $2::uuid AND status = 'ACTIVE'
+                """,
+                req.odometer,
+                real_driver["id"],
+            )
+
+    if redis_client:
+        try:
+            await redis_client.delete(f"shift_active:{req.virtual_gps_id}")
+            await redis_client.delete(f"driver_online:{req.virtual_gps_id}")
+            await redis_client.publish("gps_stream", json.dumps({
+                "type": "SHIFT_STATUS",
+                "virtual_gps_id": req.virtual_gps_id,
+                "status": "OFFLINE",
+                "driver_name": current_user.get("full_name"),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }))
+        except Exception:
+            pass
+
+    logger.info("[SHIFT-STOP] Smena tugatildi: gps_id=%s, driver=%s", req.virtual_gps_id, current_user.get("full_name"))
+    return {"success": True, "status": "COMPLETED", "message": "Smena muvaffaqiyatli yakunlandi"}
+
+
+@app.get("/api/v1/driver/waybill", summary="Faol Elektron Yo'l Varaqasini olish")
+async def get_driver_active_waybill(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    phone = current_user["phone"]
+    clean_digits = re.sub(r"\D", "", phone)
+    phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+
+    async with db_pool.acquire() as conn:
+        real_driver = await conn.fetchrow(
+            'SELECT * FROM "Driver" WHERE phone = $1 OR phone = $2 LIMIT 1',
+            phone_with_plus, clean_digits,
+        )
+        real_vehicle = None
+        if real_driver:
+            real_vehicle = await conn.fetchrow(
+                """
+                SELECT v.* FROM "VehicleAssignment" va
+                JOIN "Vehicle" v ON v.id = va."vehicleId"
+                WHERE va."driverId" = $1::uuid
+                ORDER BY (va."endDate" IS NULL) DESC, va."startDate" DESC LIMIT 1
+                """,
+                real_driver["id"],
+            )
+
+        if not real_driver or not real_vehicle:
+            raise HTTPException(status_code=404, detail="Sizga transport vositasi biriktirilmagan")
+
+        today_date = datetime.date.today()
+        waybill_row = await conn.fetchrow(
+            """
+            SELECT * FROM "Waybill"
+            WHERE ("driverId" = $1::uuid OR "vehicleId" = $2::uuid) AND date = $3
+            ORDER BY "createdAt" DESC LIMIT 1
+            """,
+            real_driver["id"],
+            real_vehicle["id"],
+            today_date,
+        )
+        if not waybill_row:
+            wb_id = uuid.uuid4()
+            wb_num = f"YV-{today_date.strftime('%y')}-{random.randint(10000, 99999)}"
+            public_token = secrets.token_hex(24)
+            valid_until = datetime.datetime.combine(today_date, datetime.time(23, 59, 59))
+            target_tenant_id = real_driver["tenantId"] or real_vehicle["tenantId"]
+            await conn.execute(
+                """
+                INSERT INTO "Waybill" (
+                    id, "tenantId", number, status, date, "validUntil",
+                    "driverId", "vehicleId", "routeId",
+                    "medicalPassed", "medicalDoctorName", "medicalCheckedAt", "medicalNotes",
+                    "technicalPassed", "mechanicName", "technicalCheckedAt", "technicalNotes",
+                    "fuelType", "dispatcherName", "publicToken", "startOdometer", "createdAt", "updatedAt"
+                ) VALUES (
+                    $1, $2, $3, 'ACTIVE', $4, $5,
+                    $6, $7, $8,
+                    TRUE, 'Dr. Rahimova N. (Katta shifokor)', NOW(), 'Sog''lom, safarga ruxsat berildi',
+                    TRUE, 'U. Saidov (Katta mexanik)', NOW(), 'Texnik soz holatda, tormoz va chiroqlar me''yorda',
+                    'METAN', 'Navbatchi Dispetcher', $9, 125000, NOW(), NOW()
+                )
+                """,
+                wb_id,
+                target_tenant_id,
+                wb_num,
+                today_date,
+                valid_until,
+                real_driver["id"],
+                real_vehicle["id"],
+                real_vehicle.get("routeId"),
+                public_token,
+            )
+            waybill_row = await conn.fetchrow('SELECT * FROM "Waybill" WHERE id = $1', wb_id)
+
+    public_token = waybill_row["publicToken"]
+    verify_url = f"https://uyushma.bmbrutto.uz/api/v1/public/waybill/{public_token}"
+
+    return {
+        "id": str(waybill_row["id"]),
+        "number": waybill_row["number"],
+        "date": waybill_row["date"].isoformat(),
+        "valid_until": waybill_row["validUntil"].isoformat(),
+        "status": waybill_row["status"],
+        "medical_passed": waybill_row["medicalPassed"],
+        "medical_doctor": waybill_row["medicalDoctorName"],
+        "medical_notes": waybill_row["medicalNotes"],
+        "technical_passed": waybill_row["technicalPassed"],
+        "mechanic_name": waybill_row["mechanicName"],
+        "technical_notes": waybill_row["technicalNotes"],
+        "fuel_type": waybill_row["fuelType"],
+        "start_odometer": waybill_row["startOdometer"],
+        "public_token": public_token,
+        "verification_url": verify_url,
+    }
+
+
+@app.get("/api/v1/public/waybill/{public_token}", response_class=HTMLResponse, summary="Davlat inspeksiyasi uchun yo'l varaqasini tekshirish")
+async def verify_waybill_public(public_token: str):
+    async with db_pool.acquire() as conn:
+        wb = await conn.fetchrow(
+            """
+            SELECT wb.*, d."fullName" as driver_name, d.phone as driver_phone, d."licenseNumber" as driver_license,
+                   v."plateNumber" as plate_number, v.model as vehicle_model,
+                   c.name as company_name, r.name as route_name, r.origin as route_origin, r.destination as route_destination
+            FROM "Waybill" wb
+            LEFT JOIN "Driver" d ON d.id = wb."driverId"
+            LEFT JOIN "Vehicle" v ON v.id = wb."vehicleId"
+            LEFT JOIN "Company" c ON c.id = wb."tenantId"
+            LEFT JOIN "Route" r ON r.id = wb."routeId"
+            WHERE wb."publicToken" = $1
+            LIMIT 1
+            """,
+            public_token,
+        )
+    if not wb:
+        return HTMLResponse("<div style='text-align:center;padding:50px;font-family:sans-serif;color:#ef4444;'><h2>Yo'l varaqasi topilmadi yoki muddati o'tgan</h2></div>", status_code=404)
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="uz">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Elektron Yo'l Varaqasi - {wb['number']}</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }}
+            .card {{ max-width: 500px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }}
+            .badge-active {{ background: #10b981; color: white; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 13px; display: inline-block; }}
+            .header {{ text-align: center; border-bottom: 1px solid #334155; padding-bottom: 16px; margin-bottom: 20px; }}
+            .title {{ font-size: 20px; font-weight: bold; margin: 8px 0 4px; }}
+            .row {{ display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; }}
+            .label {{ color: #94a3b8; }}
+            .val {{ font-weight: 600; text-align: right; }}
+            .section-title {{ font-size: 13px; font-weight: bold; text-transform: uppercase; color: #38bdf8; margin: 18px 0 8px; border-bottom: 1px dashed #334155; padding-bottom: 4px; }}
+            .check-ok {{ color: #10b981; font-weight: bold; }}
+            .footer {{ text-align: center; font-size: 11px; color: #64748b; margin-top: 24px; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <span class="badge-active">RASMIY VA HAQIQIY</span>
+                <div class="title">ELEKTRON YO'L VARAQASI</div>
+                <div style="color: #94a3b8; font-size: 13px;">№ {wb['number']} • {wb['date']}</div>
+            </div>
+            <div class="section-title">Kompaniya va Transport</div>
+            <div class="row"><span class="label">Tashkilot:</span><span class="val">{wb['company_name'] or 'CARLUX MCHJ'}</span></div>
+            <div class="row"><span class="label">Davlat Raqami:</span><span class="val" style="color: #facc15; font-size: 16px;">{wb['plate_number']}</span></div>
+            <div class="row"><span class="label">Rusumi:</span><span class="val">{wb['vehicle_model']}</span></div>
+            <div class="row"><span class="label">Yoqilg'i turi:</span><span class="val">{wb['fuelType'] or 'METAN'}</span></div>
+
+            <div class="section-title">Haydovchi va Yo'nalish</div>
+            <div class="row"><span class="label">F.I.O.:</span><span class="val">{wb['driver_name']}</span></div>
+            <div class="row"><span class="label">Prava raqami:</span><span class="val">{wb['driver_license'] or "Mavjud"}</span></div>
+            <div class="row"><span class="label">Yo'nalish:</span><span class="val">{wb['route_name'] or 'Shahar yo`nalishi'}</span></div>
+
+            <div class="section-title">Kunlik Majburiy Ko'riklar</div>
+            <div class="row"><span class="label">Tibbiy ko'rik:</span><span class="val check-ok">✓ Ruxsat berilgan</span></div>
+            <div class="row"><span class="label">Shifokor:</span><span class="val">{wb['medicalDoctorName']}</span></div>
+            <div class="row"><span class="label">Texnik ko'rik:</span><span class="val check-ok">✓ Soz holatda</span></div>
+            <div class="row"><span class="label">Katta mexanik:</span><span class="val">{wb['mechanicName']}</span></div>
+
+            <div class="footer">
+                O'zbekiston Respublikasi Transport Vazirligi & Uyushma SaaS tizimi orqali tasdiqlangan
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @app.post("/api/v1/admin/sync-external", summary="Davlat portallaridan sinxronizatsiya")

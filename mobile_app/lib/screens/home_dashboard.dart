@@ -296,10 +296,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
       // Fon xizmatini yoqish
       await BackgroundTrackerManager.startShift(virtualGpsId: virtualGpsId);
-      await ApiService().logShiftStarted(virtualGpsId);
+      try {
+        await ApiService().startShift(virtualGpsId: virtualGpsId);
+      } catch (e) {
+        debugPrint('[API-SHIFT-START-ERR] $e');
+      }
     } else {
       _stopLiveTelemetry();
       await BackgroundTrackerManager.stopShift();
+      final virtualGpsId = _profileData?['vehicle']?['virtual_gps_id'] ?? '9012345678';
+      try {
+        await ApiService().stopShift(virtualGpsId: virtualGpsId);
+      } catch (e) {
+        debugPrint('[API-SHIFT-STOP-ERR] $e');
+      }
       setState(() {
         _isShiftActive = false;
         _isServerConnected = false;

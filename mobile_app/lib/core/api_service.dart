@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -85,85 +84,114 @@ class ApiService {
   }
 
 
-  String _generateDevToken(String phone) {
-    String base64UrlClean(String str) =>
-        base64Url.encode(utf8.encode(str)).replaceAll('=', '');
-
-    final header = base64UrlClean(jsonEncode({'alg': 'HS256', 'typ': 'JWT'}));
-    final payload = base64UrlClean(jsonEncode({
-      'user_id': '00000000-0000-0000-0000-000000000003',
-      'tenant_id': '00000000-0000-0000-0000-000000000001',
-      'phone': phone,
-      'role': 'DRIVER',
-      'full_name': 'Jamshid Karimov (Haydovchi)',
-      'exp': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + (365 * 86400),
-    }));
-
-    final key = utf8.encode('super-secret-uyushma-jwt-key-2026-production');
-    final hmac = Hmac(sha256, key);
-    final digest = hmac.convert(utf8.encode('$header.$payload'));
-    final sig = base64Url.encode(digest.bytes).replaceAll('=', '');
-    return '$header.$payload.$sig';
-  }
-
+  // ---------------------------------------------------------------------------
+  // AUTH (SMS / TELEGRAM OTP) - REAL PRODUCTION
+  // ---------------------------------------------------------------------------
   Future<Map<String, dynamic>> verifyOtp(String phone, String code) async {
-    // 1. Agar test/universal kod kiritilgan bo'lsa (Eskiz SMS sozlanmagan holatlar uchun)
-    if (code == '12345' || code == '77777') {
-      final token = _generateDevToken(phone);
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/verify-otp'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'phone': phone, 'code': code}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final String token = data['token'];
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('jwt_token', token);
-      await prefs.setString('virtual_gps_id', '9012345678');
-      await logLogin(phone);
-      return {
-        'success': true,
-        'token': token,
-        'user': {
-          'id': '00000000-0000-0000-0000-000000000003',
-          'phone': phone,
-          'full_name': 'Jamshid Karimov (Haydovchi)',
-          'role': 'DRIVER',
-          'is_blocked': false,
-        },
-        'vehicle': {
-          'id': '00000000-0000-0000-0000-000000000004',
-          'plate_number': '01A777AA',
-          'model': 'Chevrolet Cobalt',
-          'virtual_gps_id': '9012345678',
-          'is_blocked': false,
-          'balance': 200000.0,
+      await prefs.setString('user_data', jsonEncode(data['user']));
+      if (data['vehicle'] != null) {
+        await prefs.setString('vehicle_data', jsonEncode(data['vehicle']));
+        if (data['vehicle']['virtual_gps_id'] != null) {
+          await prefs.setString('virtual_gps_id', data['vehicle']['virtual_gps_id']);
         }
-      };
+      }
+
+      await logLogin(phone);
+      return data;
+    } else {
+      throw Exception(data['detail'] ?? 'Kodni tasdiqlashda xatolik yuz berdi');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SMENA BOSHQARUVI (SHIFT MANAGEMENT)
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> startShift({required String virtualGpsId, int? odometer, String? note}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('jwt_token');
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/driver/shift/start'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'virtual_gps_id': virtualGpsId,
+        'odometer': odometer,
+        'note': note,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      await logShiftStarted(virtualGpsId);
+      return data;
+    } else {
+      throw Exception(data['detail'] ?? 'Smenani ochishda xatolik yuz berdi');
+    }
+  }
+
+  Future<Map<String, dynamic>> stopShift({required String virtualGpsId, int? odometer, String? note}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('jwt_token');
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/driver/shift/stop'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'virtual_gps_id': virtualGpsId,
+        'odometer': odometer,
+        'note': note,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return data;
+    } else {
+      throw Exception(data['detail'] ?? 'Smenani tugatishda xatolik yuz berdi');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ELEKTRON YO'L VARAQASI (WAYBILL)
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> getActiveWaybill() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('jwt_token');
+
+    if (token == null) {
+      throw Exception('Foydalanuvchi tizimga kirmagan');
     }
 
-    // 2. Server orqali rasmiy tekshirish
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/verify-otp'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'phone': phone, 'code': code}),
-      );
+    final response = await http.get(
+      Uri.parse('$baseUrl/driver/waybill'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
 
-      final data = jsonDecode(response.body);
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final String token = data['token'];
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('jwt_token', token);
-        await prefs.setString('user_data', jsonEncode(data['user']));
-        if (data['vehicle'] != null) {
-          await prefs.setString('vehicle_data', jsonEncode(data['vehicle']));
-          if (data['vehicle']['virtual_gps_id'] != null) {
-            await prefs.setString('virtual_gps_id', data['vehicle']['virtual_gps_id']);
-          }
-        }
-
-        await logLogin(phone);
-        return data;
-      } else {
-        throw Exception(data['detail'] ?? 'Kodni tasdiqlashda xatolik yuz berdi');
-      }
-    } catch (e) {
-      // Agar kiritilgan kod "12345" bo'lmasa, lekin server xato bersa
-      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    final data = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return data;
+    } else {
+      throw Exception(data['detail'] ?? 'Yo\'l varaqasini yuklashda xatolik');
     }
   }
 

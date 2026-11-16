@@ -171,3 +171,4 @@ def mask_sensitive(text: Optional[str], visible_chars: int = 4) -> str:
     if len(text) <= visible_chars:
         return "*" * len(text)
     return "*" * (len(text) - visible_chars) + text[-visible_chars:]
+
