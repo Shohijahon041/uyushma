@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -182,7 +181,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(
-              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.slate[700], borderRadius: BorderRadius.circular(2))),
+              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[700], borderRadius: BorderRadius.circular(2))),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -367,7 +366,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         boxShadow: [
                           if (_isShiftActive)
                             BoxShadow(
-                              color: const Color(0xFF10B981).withOpacity(0.15),
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
                               blurRadius: 16,
                               offset: const Offset(0, 4),
                             ),
@@ -401,7 +400,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               ),
                               Switch.adaptive(
                                 value: _isShiftActive,
-                                activeColor: const Color(0xFF10B981),
+                                activeTrackColor: const Color(0xFF10B981),
                                 onChanged: _toggleShift,
                               ),
                             ],

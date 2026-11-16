@@ -40,7 +40,6 @@ class UyushmaApp extends StatelessWidget {
           primary: Color(0xFF2563EB),
           secondary: Color(0xFF10B981),
           surface: Color(0xFF1E293B),
-          background: Color(0xFF0F172A),
         ),
         fontFamily: 'Roboto',
         useMaterial3: true,

@@ -132,7 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF2563EB).withOpacity(0.4),
+                          color: const Color(0xFF2563EB).withValues(alpha: 0.4),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -165,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Xatolik xabari
                 if (_errorMessage != null)
                   Container(
-                    margin: const EdgeInsets.bottom: 16,
+                    margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFF450A0A),

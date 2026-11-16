@@ -256,9 +256,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: badgeColor.withOpacity(0.15),
+                  color: badgeColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: badgeColor.withOpacity(0.4)),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
                 ),
                 child: Text(
                   badgeText,
