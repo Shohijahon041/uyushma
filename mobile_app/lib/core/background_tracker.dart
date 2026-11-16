@@ -7,6 +7,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'h02_protocol.dart';
 
 const String notificationChannelId = 'uyushma_gps_channel';
@@ -125,7 +126,7 @@ void onServiceStart(ServiceInstance service) async {
   Future<Socket?> getSocket() async {
     if (tcpSocket != null) return tcpSocket;
     try {
-      tcpSocket = await Socket.connect(serverHost, serverPort, timeout: const Duration(seconds: 4));
+      tcpSocket = await Socket.connect(serverHost, serverPort, timeout: const Duration(seconds: 3));
       tcpSocket!.listen(
         (data) {
           final res = utf8.decode(data, allowMalformed: true);
@@ -148,69 +149,135 @@ void onServiceStart(ServiceInstance service) async {
     }
   }
 
-  // GPS paketini yuborish sikli (har 10 soniyada)
-  void startTimerLoop() {
-    pingTimer?.cancel();
-    pingTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
-      if (!isTracking) return;
+  // Telemetriya paketini yuborish (TCP 20335 + HTTPS fallback)
+  Future<void> sendTelemetryPacket() async {
+    if (!isTracking) return;
 
+    try {
+      Position? position;
       try {
-        final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 5),
-        );
+        position = await Geolocator.getLastKnownPosition();
+      } catch (_) {}
 
-        final double speedKmh = (position.speed * 3.6).clamp(0.0, 250.0);
-        final double course = position.heading.clamp(0.0, 360.0);
+      if (position == null) {
+        try {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 4),
+          );
+        } catch (e) {
+          debugPrint('[GPS-FALLBACK] $e');
+        }
+      }
 
-        final String packet = H02Protocol.buildPacket(
-          virtualGpsId: virtualGpsId,
-          latitude: position.latitude,
-          longitude: position.longitude,
-          speedKmh: speedKmh,
-          course: course,
-          timestamp: position.timestamp,
-          isValid: true,
-        );
+      final double lat = position?.latitude ?? 41.2995;
+      final double lon = position?.longitude ?? 69.2401;
+      final double speedKmh = position != null ? (position.speed * 3.6).clamp(0.0, 250.0) : 0.0;
+      final double course = position != null ? position.heading.clamp(0.0, 360.0) : 0.0;
+      final DateTime timestamp = position?.timestamp ?? DateTime.now();
 
+      final String packet = H02Protocol.buildPacket(
+        virtualGpsId: virtualGpsId,
+        latitude: lat,
+        longitude: lon,
+        speedKmh: speedKmh,
+        course: course,
+        timestamp: timestamp,
+        isValid: true,
+      );
+
+      bool isConnected = false;
+
+      // 1. Asosiy H02 TCP soketi (port 20335)
+      try {
         final socket = await getSocket();
         if (socket != null) {
           socket.add(utf8.encode(packet));
           await socket.flush();
           packetCount++;
+          isConnected = true;
         }
-
-        // Bildirishnomani yangilash
-        if (service is AndroidServiceInstance) {
-          localNotifications.show(
-            notificationId,
-            'Smena Faol (Uyushma GPS)',
-            'Tezlik: ${speedKmh.toStringAsFixed(1)} km/soat | Yuborildi: $packetCount ta',
-            const NotificationDetails(
-              android: AndroidNotificationDetails(
-                notificationChannelId,
-                'Uyushma Jonli GPS Xizmati',
-                icon: '@mipmap/ic_launcher',
-                ongoing: true,
-              ),
-            ),
-          );
-        }
-
-        // Ilova UI ga ma'lumot uzatish
-        service.invoke('GPS_UPDATE', {
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'speed': speedKmh,
-          'packets': packetCount,
-          'connected': socket != null,
-        });
-
-      } catch (e) {
-        debugPrint('[TRACKER-ERROR] $e');
+      } catch (err) {
+        tcpSocket?.destroy();
+        tcpSocket = null;
       }
+
+      // 2. Agar TCP ulanmagan bo'lsa, zaxira HTTPS API orqali yuborish (port 443)
+      if (!isConnected) {
+        try {
+          final res = await http.post(
+            Uri.parse('https://uyushma.bmbrutto.uz/api/v1/gps/ping'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'virtual_gps_id': virtualGpsId,
+              'latitude': lat,
+              'longitude': lon,
+              'speed_kmh': speedKmh,
+              'course': course,
+              'is_valid': true,
+            }),
+          ).timeout(const Duration(seconds: 3));
+
+          if (res.statusCode == 200) {
+            packetCount++;
+            isConnected = true;
+          }
+        } catch (httpErr) {
+          debugPrint('[HTTPS-PING-ERR] $httpErr');
+        }
+      }
+
+      // Bildirishnomani yangilash
+      if (service is AndroidServiceInstance) {
+        localNotifications.show(
+          notificationId,
+          'Smena Faol (Uyushma GPS)',
+          'Tezlik: ${speedKmh.toStringAsFixed(1)} km/s | Paket: $packetCount ta | Aloqa: ${isConnected ? "ON" : "Ulanmoqda"}',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              notificationChannelId,
+              'Uyushma Jonli GPS Xizmati',
+              icon: '@mipmap/ic_launcher',
+              ongoing: true,
+            ),
+          ),
+        );
+      }
+
+      // Ilova UI ga ma'lumot uzatish
+      service.invoke('GPS_UPDATE', {
+        'latitude': lat,
+        'longitude': lon,
+        'speed': speedKmh,
+        'packets': packetCount,
+        'connected': isConnected,
+      });
+
+    } catch (e) {
+      debugPrint('[TRACKER-ERROR] $e');
+    }
+  }
+
+  // GPS paketini yuborish sikli (darhol boshlash va har 8 soniyada)
+  void startTimerLoop() {
+    pingTimer?.cancel();
+    // Darhol birinchi paketni yuborish (10 soniya kutmasdan)
+    sendTelemetryPacket();
+    pingTimer = Timer.periodic(const Duration(seconds: 8), (timer) {
+      sendTelemetryPacket();
     });
   }
+
+  // Avtomatik tiklash: Agar avval smena faol bo'lsa
+  SharedPreferences.getInstance().then((prefs) {
+    if (prefs.getBool('pref_is_shift_active') == true) {
+      virtualGpsId = prefs.getString('pref_virtual_gps_id') ?? virtualGpsId;
+      serverHost = prefs.getString('pref_server_host') ?? serverHost;
+      serverPort = prefs.getInt('pref_server_port') ?? serverPort;
+      isTracking = true;
+      startTimerLoop();
+    }
+  });
 
   // Hodisalarni tinglash
   service.on('START_TRACKING').listen((event) {
@@ -220,7 +287,6 @@ void onServiceStart(ServiceInstance service) async {
       serverPort = event['port'] ?? serverPort;
     }
     isTracking = true;
-    packetCount = 0;
     startTimerLoop();
   });
 

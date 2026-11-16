@@ -27,6 +27,7 @@ const SECTIONS: Array<{ titleKey?: string; items: NavItem[] }> = [
   {
     titleKey: "operations",
     items: [
+      { href: "/map", labelKey: "liveMap", icon: "map" },
       { href: "/vehicles", labelKey: "vehicles", icon: "truck" },
       { href: "/drivers", labelKey: "drivers", icon: "users" },
       { href: "/waybills", labelKey: "waybills", icon: "file" },

@@ -53,7 +53,8 @@
     "daily": "Kunlik to'lovlar",
     "submissions": "To'lov arizalari",
     "notifications": "Bildirishnomalar",
-    "admin": "Super admin"
+    "admin": "Super admin",
+    "liveMap": "Jonli GPS Xaritasi"
   },
   "auth": {
     "loginTitle": "Tizimga kirish",
@@ -842,5 +843,13 @@
     "riskMedium": "O'rta xavf (MEDIUM)",
     "riskHigh": "Yuqori xavf / Soxta (HIGH)",
     "flags": "Aniqlangan belgilar"
+  },
+  "map": {
+    "title": "Jonli GPS Dispetcher Xaritasi",
+    "subtitle": "100 000 ta transport vositasining real vaqtdagi harakati va telemetriyasi",
+    "openFullscreen": "Alohida oynada ochish",
+    "refreshMap": "Xaritani yangilash",
+    "statusLive": "JONLI EFIR (H02 & Redis)",
+    "allVehicles": "Barcha avtomobillar"
   }
 }

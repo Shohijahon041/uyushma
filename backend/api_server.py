@@ -114,6 +114,15 @@ class ToggleBlockRequest(BaseModel):
     reason: Optional[str] = "Dispetcher tomonidan o'zgartirildi"
 
 
+class GpsPingRequest(BaseModel):
+    virtual_gps_id: str
+    latitude: float
+    longitude: float
+    speed_kmh: Optional[float] = 0.0
+    course: Optional[float] = 0.0
+    is_valid: Optional[bool] = True
+
+
 # =============================================================================
 # LIFESPAN & CRON WORKER
 # =============================================================================
@@ -837,6 +846,56 @@ async def payme_webhook(request: Request):
 # =============================================================================
 # MODUL DISPETCHER: LIVE DATA & WEBSOCKET
 # =============================================================================
+@app.post("/api/v1/gps/ping", summary="Mobil ilovadan to'g'ridan-to'g'ri GPS telemetriya yuborish (HTTPS)")
+async def receive_gps_ping(req: GpsPingRequest):
+    """
+    Mobil ilovada TCP port (20335) cheklangan yoki kechikayotgan holatda
+    standart HTTPS (port 443) orqali GPS nuqtasini qabul qilish.
+    Redis 'gps_stream' va PostgreSQL/TimescaleDB ga yozadi.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    redis_payload = {
+        "virtual_gps_id": req.virtual_gps_id,
+        "lat": req.latitude,
+        "lng": req.longitude,
+        "speed": req.speed_kmh or 0.0,
+        "course": req.course or 0.0,
+        "time": now.isoformat(),
+        "valid": req.is_valid,
+    }
+    json_str = json.dumps(redis_payload)
+
+    if redis_client:
+        try:
+            async with redis_client.pipeline(transaction=False) as pipe:
+                pipe.set(f"live_gps:{req.virtual_gps_id}", json_str, ex=86400)
+                pipe.publish("gps_stream", json_str)
+                await pipe.execute()
+        except Exception as e:
+            logger.warning("Redis ping update error: %s", e)
+
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE vehicles
+                    SET last_gps_time = $1,
+                        last_latitude = $2,
+                        last_longitude = $3,
+                        last_speed_kmh = $4,
+                        last_course = $5,
+                        updated_at = NOW()
+                    WHERE virtual_gps_id = $6
+                    """,
+                    now, req.latitude, req.longitude, req.speed_kmh or 0.0, req.course or 0.0, req.virtual_gps_id
+                )
+        except Exception as e:
+            logger.warning("DB ping update error: %s", e)
+
+    return {"status": "ok", "ack": "ON", "time": now.isoformat()}
+
+
 @app.get("/api/v1/vehicles/live", summary="Barcha avtomobillarning jonli koordinatalari")
 async def get_live_vehicles(tenant_id: Optional[str] = None):
     """

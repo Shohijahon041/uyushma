@@ -425,9 +425,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               ),
                               _buildMetric(
                                 label: 'Server Aloqasi',
-                                value: _isServerConnected ? 'ON (20335)' : 'Kutilmoqda',
+                                value: _isServerConnected
+                                    ? 'ON (20335)'
+                                    : (_isShiftActive ? 'Ulanmoqda...' : 'Kutilmoqda'),
                                 icon: Icons.wifi,
-                                color: _isServerConnected ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                                color: _isServerConnected
+                                    ? const Color(0xFF34D399)
+                                    : (_isShiftActive ? const Color(0xFF60A5FA) : const Color(0xFFFBBF24)),
                               ),
                             ],
                           ),

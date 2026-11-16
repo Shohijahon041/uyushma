@@ -84,6 +84,48 @@ export default function DashboardPage() {
         <StatCard tone="amber" label={t("users")} value={data.counts.users} />
       </div>
 
+      {/* Jonli GPS Dispetcher Xaritasi Banneri */}
+      <div className="mt-4 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-4 text-white shadow-md border border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3.5 w-3.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-emerald-500"></span>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white tracking-wide">
+                  Jonli GPS Dispetcher Xaritasi (SinoTrack H02)
+                </h3>
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                  ONLINE
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-300">
+                100 000 ta mashinaning onlayn harakati, tezligi va yo'nalishi xaritada jonli kuzatilmoqda
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/map"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-500 transition"
+            >
+              <Icon name="map" className="h-3.5 w-3.5" />
+              Xaritani ochish →
+            </Link>
+            <a
+              href="/map"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/20 transition"
+            >
+              To'liq ekran ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-4">
         <h2 className="mb-2 text-sm font-bold text-slate-800">{t("driversToday")}</h2>
         <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
