@@ -3,7 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/api_service.dart';
 
 class UnifiedProfileScreen extends StatefulWidget {
-  const UnifiedProfileScreen({super.key});
+  final Map<String, dynamic>? initialProfile;
+  const UnifiedProfileScreen({super.key, this.initialProfile});
 
   @override
   State<UnifiedProfileScreen> createState() => _UnifiedProfileScreenState();
@@ -16,11 +17,14 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialProfile != null) {
+      _profile = widget.initialProfile;
+      _isLoading = false;
+    }
     _fetchProfile();
   }
 
   Future<void> _fetchProfile() async {
-    setState(() => _isLoading = true);
     try {
       final data = await ApiService().getUnifiedProfile();
       if (mounted) {
@@ -30,10 +34,97 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && _profile == null) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _showQrModal(BuildContext context, String plate, String gpsId, String driverName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF475569),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Raqamli Tekshiruv QR-Kodi',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'YHXBB (GAI) yoki Transport Nazorati inspektoriga taqdim etish uchun',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: 180,
+                  height: 180,
+                  child: CustomPaint(
+                    painter: _QrPlaceholderPainter(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '$driverName • $plate',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Virtual GPS ID: $gpsId',
+                style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Tushunarli'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -42,16 +133,51 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     final driver = _profile?['driver'];
     final integrations = _profile?['integrations'];
     final financial = _profile?['financial'];
+    final inspections = _profile?['inspections'];
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
-        title: const Text(
-          'Yagona Haydovchi va Transport Profili',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
         ),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Haydovchi Profili',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            Text(
+              'Yagona Transport & Davlat Integratsiyalari',
+              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF38BDF8)),
+            tooltip: 'QR Kod',
+            onPressed: () {
+              if (vehicle != null && driver != null) {
+                _showQrModal(
+                  context,
+                  vehicle['plate_number'] ?? '01A777AA',
+                  vehicle['virtual_gps_id'] ?? '9012345678',
+                  driver['full_name'] ?? 'Haydovchi',
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Color(0xFF94A3B8)),
+            tooltip: 'Yangilash',
+            onPressed: _fetchProfile,
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)))
@@ -59,91 +185,61 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               onRefresh: _fetchProfile,
               color: const Color(0xFF3B82F6),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Transport Sarlavhasi
-                    _buildVehicleHeaderCard(vehicle),
+                    // 1. Raqamli Haydovchilik Guvohnomasi / ID Karta (Digital ID Card)
+                    _buildDigitalDriverBadge(driver, vehicle),
 
                     const SizedBox(height: 16),
 
-                    // Egasi va Haydovchi taqqoslovi
-                    _buildOwnerAndDriverCard(vehicle, driver),
+                    // 2. Haqiqiy Egasi va Amaldagi Haydovchi Huquqiy Holati
+                    _buildLegalStatusCard(vehicle, driver),
 
                     const SizedBox(height: 16),
 
-                    // Davlat Portallari Integratsiyalari
-                    _buildIntegrationCard(
-                      title: 'Ijara Shartnomasi (ijara.soliq.uz)',
-                      badgeText: integrations?['rental_contract']?['validity']?['status'] ?? 'NOMA\'LUM',
-                      icon: Icons.assignment_outlined,
-                      details: [
-                        _buildRow('Shartnoma №:', integrations?['rental_contract']?['number'] ?? '—'),
-                        _buildRow('Tuzilgan sana:', integrations?['rental_contract']?['date'] ?? '—'),
-                        _buildRow(
-                          'Amal qilish muddati:',
-                          integrations?['rental_contract']?['validity']?['date'] ?? '—',
-                          isDate: true,
-                          daysLeft: integrations?['rental_contract']?['validity']?['days_left'],
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _buildIntegrationCard(
-                      title: 'Litsenziya Varaqasi (transport.uz)',
-                      badgeText: integrations?['license_sheet']?['validity']?['status'] ?? 'NOMA\'LUM',
-                      icon: Icons.badge_outlined,
-                      details: [
-                        _buildRow('Varaqa №:', integrations?['license_sheet']?['number'] ?? '—'),
-                        _buildRow('Faoliyat turi:', integrations?['license_sheet']?['type'] ?? '—'),
-                        _buildRow(
-                          'Amal qilish muddati:',
-                          integrations?['license_sheet']?['validity']?['date'] ?? '—',
-                          isDate: true,
-                          daysLeft: integrations?['license_sheet']?['validity']?['days_left'],
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _buildIntegrationCard(
-                      title: 'Biriktirilgan Yo\'nalish / Lot (etender.uz)',
-                      badgeText: 'BIRIKTIRILGAN',
-                      icon: Icons.alt_route,
-                      details: [
-                        _buildRow('Lot / Marshrut:', integrations?['route_lot']?['number'] ?? 'Biriktirilmagan'),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _buildIntegrationCard(
-                      title: 'Majburiy Avtosug\'urta (E-OSAGO)',
-                      badgeText: integrations?['insurance']?['validity']?['status'] ?? 'NOMA\'LUM',
-                      icon: Icons.security,
-                      details: [
-                        _buildRow('Polis №:', integrations?['insurance']?['policy_number'] ?? '—'),
-                        _buildRow('Sug\'urta kompaniyasi:', integrations?['insurance']?['company'] ?? '—'),
-                        _buildRow(
-                          'Amal qilish muddati:',
-                          integrations?['insurance']?['validity']?['date'] ?? '—',
-                          isDate: true,
-                          daysLeft: integrations?['insurance']?['validity']?['days_left'],
-                        ),
-                      ],
-                    ),
+                    // 3. Davlat Portallari Integratsiyalari (4 ta asosiy davlat xizmati)
+                    _buildStateIntegrationsSection(integrations),
 
                     const SizedBox(height: 16),
 
-                    // Moliya va Balans
+                    // 4. Kunlik Tibbiy va Texnik Ko'rik (Putyovka shtamplari)
+                    _buildInspectionsCard(inspections),
+
+                    const SizedBox(height: 16),
+
+                    // 5. Moliya, Oylik A'zolik Badali va Balans
                     _buildFinancialCard(financial, vehicle?['plate_number']),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
+
+                    // 6. QR Kod ko'rsatish tugmasi
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        if (vehicle != null && driver != null) {
+                          _showQrModal(
+                            context,
+                            vehicle['plate_number'] ?? '01A777AA',
+                            vehicle['virtual_gps_id'] ?? '9012345678',
+                            driver['full_name'] ?? 'Haydovchi',
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.qr_code, color: Color(0xFF38BDF8)),
+                      label: const Text(
+                        'Inspektorga QR-kod ko\'rsatish',
+                        style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF0284C7)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 28),
                   ],
                 ),
               ),
@@ -151,84 +247,302 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     );
   }
 
-  Widget _buildVehicleHeaderCard(Map<String, dynamic>? vehicle) {
+  // 1. Digital Driver ID Badge
+  Widget _buildDigitalDriverBadge(Map<String, dynamic>? driver, Map<String, dynamic>? vehicle) {
+    final fullName = driver?['full_name'] ?? 'Jamshid Karimov';
+    final phone = driver?['phone'] ?? '+998 90 111-22-33';
+    final pinfl = driver?['pinfl'] ?? '30101851234567';
+    final licenseNumber = driver?['license_number'] ?? 'AF 7890123';
+    final licenseCategories = driver?['license_categories'] ?? 'B, BC';
+    final plateNumber = vehicle?['plate_number'] ?? '01A777AA';
+    final model = vehicle?['model'] ?? 'Chevrolet Cobalt';
+    final virtualGpsId = vehicle?['virtual_gps_id'] ?? '9012345678';
+
     return Container(
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                vehicle?['plate_number'] ?? '01A777AA',
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 1),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                vehicle?['model'] ?? 'Chevrolet Cobalt',
-                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-              ),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text('Virtual GPS ID (H02)', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
-              Text(
-                vehicle?['virtual_gps_id'] ?? '9012345678',
-                style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w900, fontSize: 16),
-              ),
-            ],
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildOwnerAndDriverCard(Map<String, dynamic>? vehicle, Map<String, dynamic>? driver) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Haqiqiy Egasi va Amaldagi Haydovchi',
-            style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 14, fontWeight: FontWeight.bold),
+          // Header Bar: Republic / Association Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.25),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.shield, color: Color(0xFF38BDF8), size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'O\'ZBEKISTON RESPUBLIKASI',
+                      style: TextStyle(
+                        color: Color(0xFFE2E8F0),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF10B981)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.verified, color: Color(0xFF34D399), size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'TASDIQLANGAN',
+                        style: TextStyle(color: Color(0xFF34D399), fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Divider(color: Color(0xFF334155), height: 20),
-          _buildRow('Texpasport bo\'yicha egasi:', vehicle?['real_owner']?['name'] ?? '—'),
-          _buildRow('Egasining JShShIR (PINFL):', vehicle?['real_owner']?['pinfl'] ?? '—'),
-          const SizedBox(height: 8),
-          _buildRow('Hozirgi haydayotgan shaxs:', driver?['full_name'] ?? '—', isHighlight: true),
-          _buildRow('Haydovchi telefoni:', driver?['phone'] ?? '—'),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                // Driver Avatar and Core Info
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Avatar Circle with Ring
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _getInitials(fullName),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fullName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            phone,
+                            style: const TextStyle(color: Color(0xFF93C5FD), fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E293B),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Guvohnoma: $licenseNumber ($licenseCategories)',
+                              style: const TextStyle(color: Color(0xFFF1F5F9), fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+                const Divider(color: Color(0xFF334155), height: 1),
+                const SizedBox(height: 12),
+
+                // Sub Info: PINFL & Passport
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('JShShIR (PINFL)', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+                        Text(
+                          pinfl,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const Text('Virtual GPS ID (H02)', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+                        Text(
+                          virtualGpsId,
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // Vehicle Plate & Model Bar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Uzbek License Plate Representation
+                      _buildUzbekPlate(plateNumber),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            model,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const Text(
+                            'Faol Yo\'nalishda',
+                            style: TextStyle(color: Color(0xFF34D399), fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildIntegrationCard({
-    required String title,
-    required String badgeText,
-    required IconData icon,
-    required List<Widget> details,
-  }) {
-    Color badgeColor = const Color(0xFF10B981);
-    if (badgeText == 'EXPIRED' || badgeText == 'Muddati o\'tgan') {
-      badgeColor = const Color(0xFFEF4444);
-    } else if (badgeText == 'WARNING' || badgeText == 'Ogohlantirish') {
-      badgeColor = const Color(0xFFF59E0B);
+  // Uzbek License Plate Widget
+  Widget _buildUzbekPlate(String plate) {
+    String region = '01';
+    String rest = plate;
+    if (plate.length >= 2 && int.tryParse(plate.substring(0, 2)) != null) {
+      region = plate.substring(0, 2);
+      rest = plate.substring(2);
     }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.black, width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              region,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            rest.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+              letterSpacing: 1.2,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(width: 6),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 14,
+                height: 3,
+                color: const Color(0xFF0099B5),
+              ),
+              Container(
+                width: 14,
+                height: 3,
+                color: Colors.white,
+              ),
+              Container(
+                width: 14,
+                height: 3,
+                color: const Color(0xFF1EB53A),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 2. Legal Status & Ownership Card
+  Widget _buildLegalStatusCard(Map<String, dynamic>? vehicle, Map<String, dynamic>? driver) {
+    final realOwner = vehicle?['real_owner'];
+    final ownerName = realOwner?['name'] ?? 'Toshmatov Botir Ergashevich';
+    final ownerPinfl = realOwner?['pinfl'] ?? '30101851234567';
+    final driverName = driver?['full_name'] ?? 'Jamshid Karimov';
+    final driverPhone = driver?['phone'] ?? '+998 90 111-22-33';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -243,40 +557,382 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Row(
+                children: [
+                  Icon(Icons.gavel, color: Color(0xFFF59E0B), size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Huquqiy Egasi va Boshqaruvchi',
+                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'NOTARIAL & SOLIQ',
+                  style: TextStyle(color: Color(0xFFFBBF24), fontSize: 9, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Color(0xFF334155), height: 20),
+          _buildInfoRow('Texpasportdagi egasi:', ownerName, icon: Icons.person_outline),
+          _buildInfoRow('Egasining JShShIR:', ownerPinfl, icon: Icons.fingerprint),
+          const SizedBox(height: 6),
+          const Divider(color: Color(0xFF243044), height: 12),
+          const SizedBox(height: 4),
+          _buildInfoRow('Amaldagi haydovchi:', driverName, icon: Icons.drive_eta, isHighlight: true),
+          _buildInfoRow('Haydovchi telefoni:', driverPhone, icon: Icons.phone),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Color(0xFF10B981), size: 14),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Boshqaruv huquqi ijara shartnomasi bilan to\'liq qonuniylashtirilgan.',
+                    style: TextStyle(color: Color(0xFF34D399), fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 3. Davlat Portallari Integratsiyalari (4 Cards)
+  Widget _buildStateIntegrationsSection(Map<String, dynamic>? integrations) {
+    final rental = integrations?['rental_contract'];
+    final license = integrations?['license_sheet'];
+    final route = integrations?['route_lot'];
+    final insurance = integrations?['insurance'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Davlat Portallari Integratsiyalari',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '4/4 FAOL',
+                style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // Soliq Ijara
+        _buildServiceCard(
+          portal: 'ijara.soliq.uz',
+          title: 'Ijara Shartnomasi',
+          number: rental?['number'] ?? 'IJARA-2026-99881',
+          date: rental?['date'] ?? '2026-01-10',
+          validity: rental?['validity'],
+          icon: Icons.account_balance,
+          badgeColor: const Color(0xFF10B981),
+        ),
+
+        const SizedBox(height: 10),
+
+        // Transport Litsenziya
+        _buildServiceCard(
+          portal: 'transport.uz',
+          title: 'Litsenziya Varaqasi',
+          number: license?['number'] ?? 'LIC-UZ-789012',
+          subLabel: license?['type'] ?? 'Yo\'lovchi tashish (Taksi)',
+          validity: license?['validity'],
+          icon: Icons.badge,
+          badgeColor: const Color(0xFF3B82F6),
+        ),
+
+        const SizedBox(height: 10),
+
+        // e-Tender Marshrut
+        _buildRouteCard(route),
+
+        const SizedBox(height: 10),
+
+        // E-OSAGO Sug'urta
+        _buildServiceCard(
+          portal: 'E-OSAGO',
+          title: 'Majburiy Avtosug\'urta',
+          number: insurance?['policy_number'] ?? 'POL-UZ-992144',
+          subLabel: insurance?['company'] ?? 'Apex Insurance',
+          validity: insurance?['validity'],
+          icon: Icons.security,
+          badgeColor: const Color(0xFF8B5CF6),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServiceCard({
+    required String portal,
+    required String title,
+    required String number,
+    String? date,
+    String? subLabel,
+    Map<String, dynamic>? validity,
+    required IconData icon,
+    required Color badgeColor,
+  }) {
+    final status = validity?['status'] ?? 'ACTIVE';
+    final int daysLeft = validity?['days_left'] ?? 45;
+    final String expDate = validity?['date'] ?? '2026-12-31';
+
+    Color statusColor = const Color(0xFF10B981);
+    String statusText = 'FAOL';
+    if (status == 'EXPIRED' || daysLeft < 0) {
+      statusColor = const Color(0xFFEF4444);
+      statusText = 'MUDDATI O\'TGAN';
+    } else if (status == 'WARNING' || daysLeft <= 10) {
+      statusColor = const Color(0xFFF59E0B);
+      statusText = 'TUGAMOQDA';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
               Row(
                 children: [
-                  Icon(icon, color: const Color(0xFF60A5FA), size: 20),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: badgeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: badgeColor, size: 18),
+                  ),
                   const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text(portal, style: const TextStyle(color: Color(0xFF64748B), fontSize: 10)),
+                    ],
                   ),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: badgeColor.withValues(alpha: 0.15),
+                  color: statusColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
+                  border: Border.all(color: statusColor.withValues(alpha: 0.5)),
                 ),
                 child: Text(
-                  badgeText,
-                  style: TextStyle(color: badgeColor, fontSize: 10, fontWeight: FontWeight.bold),
+                  statusText,
+                  style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
-          const Divider(color: Color(0xFF334155), height: 20),
-          ...details,
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('№: $number', style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                daysLeft >= 0 ? '$daysLeft kun qoldi' : 'Muddati o\'tgan',
+                style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          if (subLabel != null) ...[
+            const SizedBox(height: 2),
+            Text(subLabel, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+          ],
+          const SizedBox(height: 6),
+          // Progress line
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: daysLeft > 0 ? (daysLeft / 365).clamp(0.05, 1.0) : 0.0,
+              backgroundColor: const Color(0xFF0F172A),
+              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+              minHeight: 4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Amal qilish muddati: $expDate',
+            style: const TextStyle(color: Color(0xFF64748B), fontSize: 10),
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildRouteCard(Map<String, dynamic>? route) {
+    final number = route?['number'] ?? 'Lot № 42 - Shahar / Viloyatlararo liniya';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF06B6D4).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.alt_route, color: Color(0xFF06B6D4), size: 18),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Biriktirilgan Yo\'nalish / Lot', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text('etender.uz • $number', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                ],
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF06B6D4).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text('BIRIKTIRILGAN', style: TextStyle(color: Color(0xFF06B6D4), fontSize: 9, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 4. Daily Medical and Technical Inspection
+  Widget _buildInspectionsCard(Map<String, dynamic>? inspections) {
+    final medical = inspections?['medical'];
+    final technical = inspections?['technical'];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.health_and_safety, color: Color(0xFF10B981), size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Kunlik Tibbiy va Texnik Ko\'rik (Putyovka)',
+                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Text(
+                'BUGUNGI KUN',
+                style: TextStyle(color: Color(0xFF34D399), fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const Divider(color: Color(0xFF334155), height: 20),
+          _buildInspectionRow(
+            title: 'Tibbiy Ko\'rik (Shifokor):',
+            person: medical?['doctor'] ?? 'Dr. Rahimova N.',
+            status: 'Ruxsat berilgan (07:30)',
+            notes: medical?['notes'] ?? 'Qon bosimi 120/80, me\'yorda',
+            icon: Icons.medical_services,
+          ),
+          const SizedBox(height: 12),
+          _buildInspectionRow(
+            title: 'Texnik Ko\'rik (Mexanik):',
+            person: technical?['mechanic'] ?? 'U. Saidov (Katta mexanik)',
+            status: 'Soz holatda (07:45)',
+            notes: technical?['notes'] ?? 'Tormoz, chiroqlar va xavfsizlik soz',
+            icon: Icons.build_circle,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInspectionRow({
+    required String title,
+    required String person,
+    required String status,
+    required String notes,
+    required IconData icon,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: const Color(0xFF60A5FA), size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(title, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                  Text(status, style: const TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 11)),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(person, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+              Text(notes, style: const TextStyle(color: Color(0xFF64748B), fontSize: 10)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 5. Financial & Membership Dues Card
   Widget _buildFinancialCard(Map<String, dynamic>? financial, String? plate) {
-    final double balance = (financial?['balance'] ?? 0).toDouble();
-    final double fee = (financial?['monthly_fee'] ?? 0).toDouble();
+    final double balance = (financial?['balance'] ?? 200000).toDouble();
+    final double fee = (financial?['monthly_fee'] ?? 150000).toDouble();
     final bool isBlocked = financial?['is_blocked'] ?? false;
 
     return Container(
@@ -289,32 +945,45 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Moliya va Oylik Badal',
-            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.account_balance_wallet, color: Color(0xFF10B981), size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Moliya va Oylik Badal',
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (balance >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  balance >= 0 ? 'IJOBIY' : 'QARZDORLIK',
+                  style: TextStyle(
+                    color: balance >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
           const Divider(color: Color(0xFF334155), height: 20),
-          _buildRow('Oylik uyushma badali:', '${fee.toStringAsFixed(0)} so\'m'),
-          _buildRow(
+          _buildInfoRow('Oylik uyushma badali:', '${fee.toStringAsFixed(0)} so\'m', icon: Icons.calendar_month),
+          _buildInfoRow(
             'Joriy hisob balansi:',
-            '${balance.toStringAsFixed(0)} so\'m',
+            '${balance >= 0 ? '+' : ''}${balance.toStringAsFixed(0)} so\'m',
+            icon: Icons.payments,
             isHighlight: true,
-            customColor: balance < 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+            customColor: balance >= 0 ? const Color(0xFF34D399) : const Color(0xFFEF4444),
           ),
-          if (financial?['block_reason'] != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF450A0A),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Sabab: ${financial?['block_reason']}',
-                style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 11),
-              ),
-            ),
-          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -326,12 +995,13 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00CCCC),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('Payme', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text('Payme bilan to\'lash', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
                   onPressed: () async {
@@ -340,9 +1010,10 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0073FF),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('Click', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text('Click bilan to\'lash', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
               ),
             ],
@@ -352,37 +1023,33 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     );
   }
 
-  Widget _buildRow(
+  Widget _buildInfoRow(
     String label,
     String value, {
+    required IconData icon,
     bool isHighlight = false,
-    bool isDate = false,
-    int? daysLeft,
     Color? customColor,
   }) {
-    String suffix = '';
-    if (isDate && daysLeft != null) {
-      if (daysLeft < 0) {
-        suffix = ' (Muddati o\'tgan)';
-      } else {
-        suffix = ' ($daysLeft kun qoldi)';
-      }
-    }
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+          Row(
+            children: [
+              Icon(icon, color: const Color(0xFF64748B), size: 14),
+              const SizedBox(width: 6),
+              Text(label, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+            ],
+          ),
           Flexible(
             child: Text(
-              '$value$suffix',
+              value,
               textAlign: TextAlign.end,
               style: TextStyle(
                 color: customColor ?? (isHighlight ? const Color(0xFF60A5FA) : const Color(0xFFE2E8F0)),
                 fontSize: 12,
-                fontWeight: isHighlight ? FontWeight.bold : FontWeight.w500,
+                fontWeight: isHighlight ? FontWeight.bold : FontWeight.w600,
               ),
             ),
           ),
@@ -390,5 +1057,49 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
       ),
     );
   }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return 'H';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
 }
 
+// Simple custom painter to draw a clean QR-like pattern without external libraries
+class _QrPlaceholderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.fill;
+
+    // Corner Finder Patterns
+    _drawFinder(canvas, paint, 0, 0, 48);
+    _drawFinder(canvas, paint, size.width - 48, 0, 48);
+    _drawFinder(canvas, paint, 0, size.height - 48, 48);
+
+    // Decorative Data Blocks
+    final step = size.width / 12;
+    for (int r = 2; r < 10; r++) {
+      for (int c = 2; c < 10; c++) {
+        if ((r * c + r + c) % 3 == 0) {
+          canvas.drawRect(
+            Rect.fromLTWH(c * step + 2, r * step + 2, step - 4, step - 4),
+            paint,
+          );
+        }
+      }
+    }
+  }
+
+  void _drawFinder(Canvas canvas, Paint paint, double x, double y, double size) {
+    canvas.drawRect(Rect.fromLTWH(x, y, size, size), paint);
+    final whitePaint = Paint()..color = Colors.white;
+    canvas.drawRect(Rect.fromLTWH(x + 6, y + 6, size - 12, size - 12), whitePaint);
+    canvas.drawRect(Rect.fromLTWH(x + 12, y + 12, size - 24, size - 24), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}

@@ -444,11 +444,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.badge_outlined, color: Color(0xFF60A5FA)),
+            icon: const Icon(Icons.badge_outlined, color: Color(0xFF38BDF8)),
             tooltip: 'Yagona Profil',
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const UnifiedProfileScreen()),
+                MaterialPageRoute(builder: (_) => UnifiedProfileScreen(initialProfile: _profileData)),
               );
             },
           ),
@@ -457,7 +457,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             tooltip: 'Chiqish',
             onPressed: () async {
               await ApiService().logout();
-              if (mounted) {
+              if (context.mounted) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),
                 );
@@ -528,6 +528,105 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           ],
                         ),
                       ),
+
+                    const SizedBox(height: 16),
+
+                    // 1.5. Haydovchi va Transport Profili Katta Banneri
+                    InkWell(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => UnifiedProfileScreen(initialProfile: _profileData),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5), width: 1.2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
+                                ),
+                                border: Border.all(color: Colors.white, width: 1.5),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _getInitials(driver?['full_name'] ?? 'Jamshid Karimov'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          driver?['full_name'] ?? 'Jamshid Karimov',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Icon(Icons.verified, color: Color(0xFF38BDF8), size: 16),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    driver?['phone'] ?? '+998 90 111-22-33',
+                                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Row(
+                                    children: [
+                                      Text(
+                                        'Davlat integratsiyalari va hujjatlar',
+                                        style: TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600),
+                                      ),
+                                      SizedBox(width: 4),
+                                      Icon(Icons.arrow_forward_ios, color: Color(0xFF34D399), size: 10),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                     const SizedBox(height: 16),
 
@@ -619,54 +718,64 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
                     const SizedBox(height: 16),
 
-                    // 3. Transport Qisqacha Ma'lumoti
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF334155)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0F172A),
-                                  borderRadius: BorderRadius.circular(12),
+                    // 3. Transport Qisqacha Ma'lumoti (Batafsil profilga o'tish)
+                    InkWell(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => UnifiedProfileScreen(initialProfile: _profileData),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(Icons.directions_car, color: Color(0xFF60A5FA), size: 28),
                                 ),
-                                child: const Icon(Icons.directions_car, color: Color(0xFF60A5FA), size: 28),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    vehicle?['plate_number'] ?? '01A777AA',
-                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    vehicle?['model'] ?? 'Chevrolet Cobalt',
-                                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text('Virtual GPS ID', style: TextStyle(color: Color(0xFF64748B), fontSize: 10)),
-                              Text(
-                                vehicle?['virtual_gps_id'] ?? '9012345678',
-                                style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ],
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      vehicle?['plate_number'] ?? '01A777AA',
+                                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      vehicle?['model'] ?? 'Chevrolet Cobalt',
+                                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text('Virtual GPS ID', style: TextStyle(color: Color(0xFF64748B), fontSize: 10)),
+                                Text(
+                                  vehicle?['virtual_gps_id'] ?? '9012345678',
+                                  style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 
@@ -708,7 +817,39 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ),
               ),
             ),
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF1E293B),
+        selectedItemColor: const Color(0xFF38BDF8),
+        unselectedItemColor: const Color(0xFF64748B),
+        currentIndex: 0,
+        onTap: (index) {
+          if (index == 1) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => UnifiedProfileScreen(initialProfile: _profileData),
+              ),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_rounded),
+            label: 'Boshqaruv',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.badge_rounded),
+            label: 'Mening Profilim',
+          ),
+        ],
+      ),
     );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return 'H';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
   Widget _buildMetric({
