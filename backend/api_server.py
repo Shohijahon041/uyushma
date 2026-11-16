@@ -734,7 +734,8 @@ async def verify_otp(req: VerifyOtpRequest):
                 """
                 SELECT v.* FROM "VehicleAssignment" va
                 JOIN "Vehicle" v ON v.id = va."vehicleId"
-                WHERE va."driverId" = $1 AND va."endDate" IS NULL
+                WHERE va."driverId" = $1::uuid
+                ORDER BY (va."endDate" IS NULL) DESC, va."startDate" DESC
                 LIMIT 1
                 """,
                 real_driver["id"],
@@ -842,7 +843,8 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
                 SELECT v.*, va."startDate" as assignment_start
                 FROM "VehicleAssignment" va
                 JOIN "Vehicle" v ON v.id = va."vehicleId"
-                WHERE va."driverId" = $1 AND va."endDate" IS NULL
+                WHERE va."driverId" = $1::uuid
+                ORDER BY (va."endDate" IS NULL) DESC, va."startDate" DESC
                 LIMIT 1
                 """,
                 real_driver["id"],
