@@ -40,6 +40,15 @@ async def main():
     await conn.execute("UPDATE \"Driver\" SET status = 'INACTIVE' WHERE \"fullName\" = 'Sergey Sergevich';")
     print("✓ Dirty test records deactivated.")
 
+    # 1.5. Sync companies into tenants table to satisfy foreign keys
+    print("\n[STEP 1.5] Syncing Company into tenants table...")
+    await conn.execute("""
+        INSERT INTO tenants (id, name, created_at, updated_at)
+        SELECT id, name, "createdAt", "updatedAt" FROM "Company"
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+    """)
+    print("✓ Tenants synchronized from Company.")
+
     # 2. Fetch all real vehicles from "Vehicle"
     print("\n[STEP 2] Fetching real vehicles from \"Vehicle\"...")
     vehicles = await conn.fetch("""
