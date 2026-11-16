@@ -799,7 +799,7 @@ async def verify_otp(req: VerifyOtpRequest):
         "tenant": {
             "id": str(real_driver["tenantId"]) if (real_driver and real_driver["tenantId"]) else (str(tenant_info["id"]) if tenant_info else None),
             "name": real_driver["company_name"] if (real_driver and real_driver["company_name"]) else (tenant_info["name"] if tenant_info else "CARLUX MCHJ"),
-            "dispatcher_phone": real_driver["company_phone"] if (real_driver and real_driver["company_phone"]) else "+998901234567",
+            "dispatcher_phone": "+998901234567",
         },
     }
 
@@ -1028,16 +1028,14 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
         model_name = "DAMAS"
 
     company_name = ""
-    company_phone = ""
+    company_phone = "+998901234567"
     if real_driver and real_driver["company_name"]:
         company_name = real_driver["company_name"]
-        company_phone = real_driver["company_phone"] or "+998901234567"
     elif legacy_vehicle and legacy_vehicle["tenant_name"]:
         company_name = legacy_vehicle["tenant_name"]
         company_phone = legacy_vehicle["tenant_dispatcher_phone"] or "+998901234567"
     else:
         company_name = "CARLUX MCHJ"
-        company_phone = "+998901234567"
 
     monthly_fee = float(real_vehicle["monthlyFee"]) if (real_vehicle and real_vehicle["monthlyFee"] is not None) else (float(legacy_vehicle["monthly_fee"]) if legacy_vehicle else 0.0)
     current_balance = float(legacy_vehicle["balance"]) if legacy_vehicle else 150000.0
