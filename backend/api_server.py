@@ -581,7 +581,7 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
         else:
             msg = "5 xonali tasdiqlash kodi SMS orqali yuborildi"
 
-    return {
+    res = {
         "success": True,
         "channel": used_channel,
         "telegram_linked": telegram_sent,
@@ -590,6 +590,9 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
         "message": msg,
         "expires_in_seconds": 300,
     }
+    if preferred_channel == "bot_direct":
+        res["code"] = code
+    return res
 
 
 @app.get("/api/v1/auth/telegram-info", summary="Telegram bot ma'lumotlari va ulanish holati")
@@ -914,9 +917,16 @@ async def verify_otp(req: VerifyOtpRequest):
             if ext_row:
                 ext_gps = ext_row["gpsImei"]
 
+        live_veh = None
+        if plate_num:
+            live_veh = await conn.fetchrow(
+                "SELECT * FROM vehicles WHERE plate_number = $1 LIMIT 1",
+                plate_num,
+            )
+
         gps_id = get_or_generate_imei(
             plate_num or clean_digits,
-            ext_gps or (legacy_vehicle["virtual_gps_id"] if legacy_vehicle else None),
+            ext_gps or (live_veh["virtual_gps_id"] if live_veh else (legacy_vehicle["virtual_gps_id"] if legacy_vehicle else None)),
             str(real_vehicle["id"]) if real_vehicle else None,
         )
 
@@ -1041,6 +1051,19 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             plate_number = real_vehicle["plateNumber"]
         elif legacy_vehicle:
             plate_number = legacy_vehicle["plate_number"]
+
+        live_vehicle = None
+        if plate_number:
+            live_vehicle = await conn.fetchrow(
+                """
+                SELECT v.*, t.name as tenant_name, t.dispatcher_phone as tenant_dispatcher_phone
+                FROM vehicles v
+                LEFT JOIN tenants t ON t.id = v.tenant_id
+                WHERE v.plate_number = $1
+                LIMIT 1
+                """,
+                plate_number,
+            )
 
         # 3. Agar plate_number bo'lsa, davlat portallaridan (ExternalVehicle va ExternalRecord) ma'lumotlarni tortish
         ext_vehicle_map = {}
@@ -1287,6 +1310,8 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
         raw_ext_imei = autopark_veh["gpsImei"]
     elif etender_veh and etender_veh["gpsImei"]:
         raw_ext_imei = etender_veh["gpsImei"]
+    elif live_vehicle and live_vehicle["virtual_gps_id"]:
+        raw_ext_imei = live_vehicle["virtual_gps_id"]
     elif legacy_vehicle and legacy_vehicle["virtual_gps_id"]:
         raw_ext_imei = legacy_vehicle["virtual_gps_id"]
 

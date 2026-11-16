@@ -78,24 +78,36 @@ class _LoginScreenState extends State<LoginScreen> {
     final cleanPhone = _cleanPhone(_phoneController.text).replaceAll(RegExp(r'\D'), '');
     final botName = _botUsername.isNotEmpty ? _botUsername : 'uyushma_saas_bot';
 
-    // 1. Telegram ilovasini bevosita ochish (tg:// protokoli)
     final tgDirectUri = Uri.parse('tg://resolve?domain=$botName&start=otp_$cleanPhone');
-    // 2. HTTPS web fallback havolasi
     final webUri = Uri.parse('https://t.me/$botName?start=otp_$cleanPhone');
 
     bool opened = false;
     try {
-      opened = await launchUrl(tgDirectUri, mode: LaunchMode.externalApplication);
+      opened = await launchUrl(tgDirectUri, mode: LaunchMode.externalNonBrowserApplication);
     } catch (_) {}
 
     if (!opened) {
       try {
+        opened = await launchUrl(tgDirectUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+
+    if (!opened) {
+      try {
+        opened = await launchUrl(webUri, mode: LaunchMode.externalNonBrowserApplication);
+      } catch (_) {}
+    }
+
+    if (!opened) {
+      try {
         opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
-      } catch (_) {
-        try {
-          opened = await launchUrl(webUri, mode: LaunchMode.platformDefault);
-        } catch (_) {}
-      }
+      } catch (_) {}
+    }
+
+    if (!opened) {
+      try {
+        opened = await launchUrl(webUri, mode: LaunchMode.platformDefault);
+      } catch (_) {}
     }
 
     if (!opened && mounted) {
