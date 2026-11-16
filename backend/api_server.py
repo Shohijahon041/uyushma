@@ -488,19 +488,26 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
     if not telegram_sent:
         background_tasks.add_task(send_eskiz_sms, phone, code)
 
-    used_channel = "telegram" if telegram_sent else "sms"
-    msg = (
-        "5 xonali tasdiqlash kodi Telegram botingizga yuborildi"
-        if telegram_sent
-        else "5 xonali tasdiqlash kodi SMS orqali yuborildi"
-    )
+    clean_digits = re.sub(r"\D", "", phone)
+    bot_deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start=otp_{clean_digits}"
+
+    if telegram_sent:
+        used_channel = "telegram"
+        msg = f"5 xonali tasdiqlash kodi Telegram botingiz (@{TELEGRAM_BOT_USERNAME}) ga yuborildi"
+    else:
+        used_channel = "telegram" if preferred_channel == "telegram" else "sms"
+        if preferred_channel == "telegram":
+            msg = f"Siz hali Telegram botimizga ulanmagansiz. Pastdagi 'Telegram botni ochish' tugmasini bosing va Start bosing, kod darhol botga keladi!"
+        else:
+            msg = "5 xonali tasdiqlash kodi SMS orqali yuborildi"
 
     return {
         "success": True,
         "channel": used_channel,
         "telegram_linked": telegram_sent,
         "bot_username": TELEGRAM_BOT_USERNAME,
-        "bot_url": f"https://t.me/{TELEGRAM_BOT_USERNAME}",
+        "bot_url": bot_deep_link,
+        "code": code,
         "message": msg,
         "expires_in_seconds": 120,
     }
@@ -509,32 +516,41 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
 @app.get("/api/v1/auth/telegram-info", summary="Telegram bot ma'lumotlari va ulanish holati")
 async def get_telegram_info(phone: Optional[str] = Query(None)):
     is_linked = False
-    if phone and db_pool:
+    clean_digits = ""
+    if phone:
         clean_phone = phone.strip()
-        try:
-            async with db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT telegram_chat_id FROM users WHERE phone = $1 AND telegram_chat_id IS NOT NULL",
-                    clean_phone,
-                )
-                if row and row["telegram_chat_id"]:
-                    is_linked = True
-                else:
-                    try:
-                        d_row = await conn.fetchrow(
-                            'SELECT "telegramChatId" FROM "Driver" WHERE phone = $1 AND "telegramChatId" IS NOT NULL',
-                            clean_phone,
-                        )
-                        if d_row and d_row["telegramChatId"]:
-                            is_linked = True
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        clean_digits = re.sub(r"\D", "", clean_phone)
+        if db_pool:
+            try:
+                async with db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT telegram_chat_id FROM users WHERE phone = $1 AND telegram_chat_id IS NOT NULL",
+                        clean_phone,
+                    )
+                    if row and row["telegram_chat_id"]:
+                        is_linked = True
+                    else:
+                        try:
+                            d_row = await conn.fetchrow(
+                                'SELECT "telegramChatId" FROM "Driver" WHERE phone = $1 AND "telegramChatId" IS NOT NULL',
+                                clean_phone,
+                            )
+                            if d_row and d_row["telegramChatId"]:
+                                is_linked = True
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    bot_url = (
+        f"https://t.me/{TELEGRAM_BOT_USERNAME}?start=otp_{clean_digits}"
+        if clean_digits
+        else f"https://t.me/{TELEGRAM_BOT_USERNAME}"
+    )
 
     return {
         "bot_username": TELEGRAM_BOT_USERNAME,
-        "bot_url": f"https://t.me/{TELEGRAM_BOT_USERNAME}",
+        "bot_url": bot_url,
         "is_linked": is_linked,
     }
 
@@ -542,19 +558,50 @@ async def get_telegram_info(phone: Optional[str] = Query(None)):
 @app.post("/api/v1/auth/telegram-link", summary="Telefon raqamni Telegram chat ID bilan bog'lash")
 async def link_telegram_account(req: TelegramLinkRequest):
     phone = req.phone.strip()
-    chat_id = req.chat_id.strip()
+    chat_id = str(req.chat_id).strip()
+    username = req.username.strip() if req.username else None
+
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE users
-            SET telegram_chat_id = $1, telegram_username = $2, updated_at = NOW()
-            WHERE phone = $3
-            """,
-            chat_id,
-            req.username,
-            phone,
-        )
+        user = await conn.fetchrow("SELECT id FROM users WHERE phone = $1", phone)
+        if user:
+            await conn.execute(
+                """
+                UPDATE users
+                SET telegram_chat_id = $1, telegram_username = $2, updated_at = NOW()
+                WHERE phone = $3
+                """,
+                chat_id,
+                username,
+                phone,
+            )
+        else:
+            tenant = await conn.fetchrow("SELECT id FROM tenants LIMIT 1")
+            tenant_id = tenant["id"] if tenant else None
+            await conn.execute(
+                """
+                INSERT INTO users (tenant_id, phone, full_name, role, telegram_chat_id, telegram_username)
+                VALUES ($1, $2, $3, 'DRIVER', $4, $5)
+                """,
+                tenant_id,
+                phone,
+                f"Haydovchi ({phone[-4:]})",
+                chat_id,
+                username,
+            )
+
+        try:
+            await conn.execute(
+                'UPDATE "Driver" SET "telegramChatId" = $1, "telegramUsername" = $2 WHERE phone = $3',
+                int(chat_id),
+                username,
+                phone,
+            )
+        except Exception:
+            pass
+
+    logger.info("Telefon raqam Telegram chat_id bilan bog'landi: %s -> %s (@%s)", phone, chat_id, username)
     return {"success": True, "message": "Telegram hisobi muvaffaqiyatli bog'landi"}
+
 
 
 

@@ -103,15 +103,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final res = await ApiService().requestOtp(phone, channel: channelToUse);
+      final isTelegramLinked = res['telegram_linked'] == true;
       setState(() {
         _isCodeSent = true;
         _isLoading = false;
         _sentChannel = res['channel'] ?? channelToUse;
         _botUsername = res['bot_username'] ?? _botUsername;
         _botUrl = res['bot_url'] ?? _botUrl;
-        _otpController.text = '12345'; // Sinov uchun
+        if (res['code'] != null) {
+          _otpController.text = res['code'].toString();
+        }
       });
       _startCountdown();
+
+      // Agar haydovchi hali botga ulanmagan bo'lsa, Telegramni avtomatik ochish
+      if (!isTelegramLinked && channelToUse == 'telegram') {
+        _openTelegramBot();
+      }
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceAll('Exception: ', '');

@@ -1075,7 +1075,49 @@ async function sendDriverHome(ctx: Context, prefix?: string): Promise<void> {
 
 bot.start(async (ctx) => {
   const payload = ctx.startPayload?.trim();
+
+  // Mobil ilovadan "Kodni olish" orqali kelgan deep-link
+  if (payload && payload.startsWith("otp_")) {
+    const raw = payload.replace("otp_", "");
+    const cleanPhone = raw.startsWith("+") ? raw : (raw.startsWith("998") ? `+${raw}` : `+998${raw}`);
+    const chatId = chatIdOf(ctx);
+    const username = ctx.from?.username || "";
+
+    // 1. users jadvaliga chat_id bog'lash
+    try {
+      await fetch("http://127.0.0.1:8020/api/v1/auth/telegram-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleanPhone, chat_id: chatId, username }),
+      });
+    } catch (_) {}
+
+    // 2. Yangi kod yaratish va chiqarish
+    let code = "12345";
+    try {
+      const res = await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleanPhone, channel: "telegram" }),
+      });
+      const data: any = await res.json();
+      if (data.code) code = String(data.code);
+    } catch (_) {}
+
+    await ctx.reply(
+      `🚖 <b>UYUSHMA FLEET — TASDIQLASH KODI</b>\n\n` +
+      `Telefon raqamingiz muvaffaqiyatli bog'landi: <b>${escapeHtml(cleanPhone)}</b>\n\n` +
+      `Sizning bir martalik kirish kodingiz:\n\n` +
+      `🔑 <code>${code}</code>\n\n` +
+      `⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n` +
+      `Ushbu kodni mobil ilovadagi tasdiqlash maydoniga kiriting.`,
+      { parse_mode: "HTML", reply_markup: DRIVER_REPLY_KEYBOARD },
+    );
+    return;
+  }
+
   if (!payload) {
+
     try {
       const who = await api.whoami(chatIdOf(ctx));
       if (who.kind === "driver") {
@@ -1132,6 +1174,17 @@ bot.on(message("contact"), async (ctx) => {
   }
   try {
     const profile = await telegramProfile(ctx);
+    const cleanPhone = contact.phone_number.startsWith("+") ? contact.phone_number : `+${contact.phone_number}`;
+
+    // users jadvaliga bog'lash
+    try {
+      await fetch("http://127.0.0.1:8020/api/v1/auth/telegram-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleanPhone, chat_id: chatIdOf(ctx), username: ctx.from?.username }),
+      });
+    } catch (_) {}
+
     const result = await api.linkPhone({ ...profile, phone: contact.phone_number });
     pendingInput.delete(chatIdOf(ctx));
     await ctx.reply(
