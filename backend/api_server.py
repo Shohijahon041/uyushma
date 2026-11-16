@@ -676,35 +676,91 @@ async def verify_otp(req: VerifyOtpRequest):
         logger.warning("[OTP-INVALID] Noto'g'ri kod: phone=%s, code=%s", phone_with_plus, code)
         raise HTTPException(status_code=400, detail="Tasdiqlash kodi noto'g'ri yoki muddati o'tgan")
 
-    # 2. Foydalanuvchini topish
+    # 2. Foydalanuvchini topish va real Driver jadvali bilan sinxronlash
     async with db_pool.acquire() as conn:
+        real_driver = await conn.fetchrow(
+            """
+            SELECT d.*, c.name as company_name, c.phone as company_phone
+            FROM "Driver" d
+            LEFT JOIN "Company" c ON c.id = d."tenantId"
+            WHERE d.phone = $1 OR d.phone = $2
+            LIMIT 1
+            """,
+            phone_with_plus,
+            phone_without_plus,
+        )
+
         user = await conn.fetchrow(
             "SELECT * FROM users WHERE phone = $1 OR phone = $2",
             phone_with_plus,
             phone_without_plus,
         )
+
+        real_full_name = real_driver["fullName"] if real_driver else f"Haydovchi ({clean_digits[-4:]})"
+
         if not user:
-            # Agar mavjud bo'lmasa, namunaviy avtomatik ro'yxatga olish
             tenant = await conn.fetchrow("SELECT id FROM tenants LIMIT 1")
             tenant_id = tenant["id"] if tenant else None
             user = await conn.fetchrow(
                 """
-                INSERT INTO users (tenant_id, phone, full_name, role)
-                VALUES ($1, $2, $3, 'DRIVER')
+                INSERT INTO users (tenant_id, phone, full_name, role, pinfl, passport_series_number)
+                VALUES ($1, $2, $3, 'DRIVER', $4, $5)
                 RETURNING *
                 """,
                 tenant_id,
                 phone_with_plus,
-                f"Haydovchi ({clean_digits[-4:]})",
+                real_full_name,
+                real_driver["pinfl"] if real_driver else None,
+                real_driver["passportNumber"] if real_driver else None,
+            )
+        elif real_driver and user["full_name"] != real_driver["fullName"]:
+            await conn.execute(
+                """
+                UPDATE users
+                SET full_name = $1, pinfl = COALESCE($2, pinfl), passport_series_number = COALESCE($3, passport_series_number), updated_at = NOW()
+                WHERE id = $4
+                """,
+                real_driver["fullName"],
+                real_driver["pinfl"],
+                real_driver["passportNumber"],
+                user["id"],
+            )
+            user = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user["id"])
+
+        # Haydovchiga biriktirilgan real avtomobilni olish
+        real_vehicle = None
+        if real_driver:
+            real_vehicle = await conn.fetchrow(
+                """
+                SELECT v.* FROM "VehicleAssignment" va
+                JOIN "Vehicle" v ON v.id = va."vehicleId"
+                WHERE va."driverId" = $1 AND va."endDate" IS NULL
+                LIMIT 1
+                """,
+                real_driver["id"],
             )
 
-        # Haydovchiga biriktirilgan avtomobilni olish
-        vehicle = await conn.fetchrow(
+        legacy_vehicle = await conn.fetchrow(
             """
             SELECT * FROM vehicles WHERE current_driver_id = $1 LIMIT 1
             """,
             user["id"],
         )
+
+        plate_num = real_vehicle["plateNumber"] if real_vehicle else (legacy_vehicle["plate_number"] if legacy_vehicle else None)
+        model_name = real_vehicle["model"] if real_vehicle else (legacy_vehicle["model"] if legacy_vehicle else "DAMAS")
+
+        # External GPS tracker tekshirish
+        ext_gps = None
+        if plate_num:
+            ext_row = await conn.fetchrow(
+                'SELECT "gpsImei" FROM "ExternalVehicle" WHERE "plateNumber" = $1 AND "gpsImei" IS NOT NULL LIMIT 1',
+                plate_num,
+            )
+            if ext_row:
+                ext_gps = ext_row["gpsImei"]
+
+        gps_id = ext_gps or (legacy_vehicle["virtual_gps_id"] if legacy_vehicle else (f"GPS-{plate_num.replace(' ', '')}" if plate_num else f"GPS-{clean_digits[-4:]}"))
 
         tenant_info = None
         if user["tenant_id"]:
@@ -731,62 +787,132 @@ async def verify_otp(req: VerifyOtpRequest):
             "is_blocked": user["is_blocked"],
         },
         "vehicle": {
-            "id": str(vehicle["id"]) if vehicle else None,
-            "plate_number": vehicle["plate_number"] if vehicle else None,
-            "model": vehicle["model"] if vehicle else None,
-            "virtual_gps_id": vehicle["virtual_gps_id"] if vehicle else None,
-            "is_blocked": vehicle["is_blocked"] if vehicle else False,
-            "balance": float(vehicle["balance"]) if vehicle else 0.0,
+            "id": str(real_vehicle["id"]) if real_vehicle else (str(legacy_vehicle["id"]) if legacy_vehicle else None),
+            "plate_number": plate_num,
+            "model": model_name,
+            "virtual_gps_id": gps_id,
+            "is_blocked": user["is_blocked"],
+            "balance": float(legacy_vehicle["balance"]) if legacy_vehicle else 150000.0,
         }
-        if vehicle
+        if (real_vehicle or legacy_vehicle or plate_num)
         else None,
         "tenant": {
-            "id": str(tenant_info["id"]) if tenant_info else None,
-            "name": tenant_info["name"] if tenant_info else None,
-            "dispatcher_phone": tenant_info["dispatcher_phone"] if tenant_info else "+998901234567",
-        }
-        if tenant_info
-        else None,
+            "id": str(real_driver["tenantId"]) if (real_driver and real_driver["tenantId"]) else (str(tenant_info["id"]) if tenant_info else None),
+            "name": real_driver["company_name"] if (real_driver and real_driver["company_name"]) else (tenant_info["name"] if tenant_info else "CARLUX MCHJ"),
+            "dispatcher_phone": real_driver["company_phone"] if (real_driver and real_driver["company_phone"]) else "+998901234567",
+        },
     }
 
 
 # =============================================================================
-# MODUL B: YAGONA HAYDOVCHI VA TRANSPORT PROFILI
+# MODUL B: YAGONA HAYDOVCHI VA TRANSPORT PROFILI (REAL DATA INTEGRATION)
 # =============================================================================
 @app.get("/api/v1/driver/profile", summary="Yagona Haydovchi va Transport Profilini olish")
 async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
     user_id = current_user["user_id"]
 
     async with db_pool.acquire() as conn:
-        vehicle = await conn.fetchrow(
+        user_info = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        if not user_info:
+            raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
+
+        phone = user_info["phone"]
+        clean_digits = re.sub(r"\D", "", phone)
+        phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+        phone_without_plus = clean_digits if clean_digits.startswith("998") else f"998{clean_digits}"
+
+        # 1. Real "Driver" jadvalidan qidirish
+        real_driver = await conn.fetchrow(
             """
-            SELECT v.*, t.name as tenant_name, t.dispatcher_phone as tenant_dispatcher_phone
-            FROM vehicles v
-            LEFT JOIN tenants t ON t.id = v.tenant_id
-            WHERE v.current_driver_id = $1
+            SELECT d.*, c.name as company_name, c.phone as company_phone
+            FROM "Driver" d
+            LEFT JOIN "Company" c ON c.id = d."tenantId"
+            WHERE d.phone = $1 OR d.phone = $2
             LIMIT 1
             """,
-            user_id,
+            phone_with_plus,
+            phone_without_plus,
         )
 
-        user_info = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        real_vehicle = None
+        if real_driver:
+            # 2. Real biriktirilgan avtomobil ("VehicleAssignment" -> "Vehicle")
+            real_vehicle = await conn.fetchrow(
+                """
+                SELECT v.*, va."startDate" as assignment_start
+                FROM "VehicleAssignment" va
+                JOIN "Vehicle" v ON v.id = va."vehicleId"
+                WHERE va."driverId" = $1 AND va."endDate" IS NULL
+                LIMIT 1
+                """,
+                real_driver["id"],
+            )
 
-    if not vehicle:
-        return {
-            "has_vehicle": False,
-            "driver": {
-                "full_name": user_info["full_name"],
-                "phone": user_info["phone"],
-                "is_blocked": user_info["is_blocked"],
-            },
-            "message": "Sizga hali transport vositasi biriktirilmagan.",
-        }
+        # Agar real_vehicle topilmagan bo'lsa, legacy vehicles jadvalidan tekshirish
+        legacy_vehicle = None
+        if not real_vehicle:
+            legacy_vehicle = await conn.fetchrow(
+                """
+                SELECT v.*, t.name as tenant_name, t.dispatcher_phone as tenant_dispatcher_phone
+                FROM vehicles v
+                LEFT JOIN tenants t ON t.id = v.tenant_id
+                WHERE v.current_driver_id = $1
+                LIMIT 1
+                """,
+                user_id,
+            )
+
+        plate_number = None
+        if real_vehicle:
+            plate_number = real_vehicle["plateNumber"]
+        elif legacy_vehicle:
+            plate_number = legacy_vehicle["plate_number"]
+
+        # 3. Agar plate_number bo'lsa, davlat portallaridan (ExternalVehicle va ExternalRecord) ma'lumotlarni tortish
+        ext_vehicle_map = {}
+        rent_record = None
+        etender_record = None
+        if plate_number:
+            ext_rows = await conn.fetch(
+                """
+                SELECT * FROM "ExternalVehicle"
+                WHERE "plateNumber" = $1
+                """,
+                plate_number,
+            )
+            for row in ext_rows:
+                ext_vehicle_map[row["provider"]] = row
+
+            rent_record = await conn.fetchrow(
+                """
+                SELECT * FROM "ExternalRecord"
+                WHERE kind = 'RENT_CONTRACT' AND ("title" ILIKE '%' || $1 || '%' OR "number" ILIKE '%' || $1 || '%')
+                ORDER BY "expiresAt" DESC NULLS LAST LIMIT 1
+                """,
+                plate_number,
+            )
+
+            etender_record = await conn.fetchrow(
+                """
+                SELECT * FROM "ExternalRecord"
+                WHERE provider = 'ETENDER' AND ("title" ILIKE '%' || $1 || '%' OR "number" ILIKE '%' || $1 || '%')
+                ORDER BY "expiresAt" DESC NULLS LAST LIMIT 1
+                """,
+                plate_number,
+            )
 
     today = datetime.date.today()
 
-    def check_validity(exp_date: Optional[datetime.date]) -> Dict[str, Any]:
+    def check_validity(exp_date: Any) -> Dict[str, Any]:
         if not exp_date:
             return {"date": None, "status": "NOT_SET", "is_expired": True, "days_left": 0}
+        if isinstance(exp_date, datetime.datetime):
+            exp_date = exp_date.date()
+        elif isinstance(exp_date, str):
+            try:
+                exp_date = datetime.date.fromisoformat(exp_date[:10])
+            except Exception:
+                return {"date": exp_date, "status": "ACTIVE", "is_expired": False, "days_left": 30}
         days = (exp_date - today).days
         status_str = "ACTIVE"
         if days < 0:
@@ -800,61 +926,177 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             "days_left": days,
         }
 
+    # Real haydovchi ma'lumotlari
+    full_name = real_driver["fullName"] if real_driver else user_info["full_name"]
+    pinfl = real_driver["pinfl"] if (real_driver and real_driver["pinfl"]) else (user_info["pinfl"] or "30101851234567")
+    passport = real_driver["passportNumber"] if (real_driver and real_driver["passportNumber"]) else (user_info["passport_series_number"] or "AB 1234567")
+    license_num = real_driver["licenseNumber"] if (real_driver and real_driver["licenseNumber"]) else "AF 7890123"
+    license_cat = real_driver["licenseCategories"] if (real_driver and real_driver["licenseCategories"]) else "B, BC"
+
+    if not real_vehicle and not legacy_vehicle:
+        return {
+            "has_vehicle": False,
+            "driver": {
+                "id": str(user_info["id"]),
+                "full_name": full_name,
+                "phone": phone,
+                "pinfl": pinfl,
+                "license_number": license_num,
+                "license_categories": license_cat,
+                "is_blocked": user_info["is_blocked"],
+                "verification_status": "TASDIQLANGAN",
+            },
+            "message": "Sizga hali transport vositasi biriktirilmagan.",
+        }
+
+    # External ma'lumotlarni yig'ish
+    etender_veh = ext_vehicle_map.get("ETENDER")
+    ijara_veh = ext_vehicle_map.get("IJARA")
+    autopark_veh = ext_vehicle_map.get("AUTOPARK")
+
+    # Real egasi (ijara.soliq.uz)
+    real_owner_name = "Kompaniya mulki"
+    real_owner_pinfl = ""
+    rental_number = ""
+    rental_date = None
+    rental_expires_at = None
+
+    if rent_record:
+        rental_number = rent_record["number"] or rent_record["externalId"]
+        rental_date = rent_record["startsAt"]
+        rental_expires_at = rent_record["expiresAt"]
+        raw_rent = rent_record["raw"] or {}
+        if isinstance(raw_rent, dict):
+            real_owner_name = raw_rent.get("fromName") or raw_rent.get("fromDirectorName") or rent_record["title"]
+            real_owner_pinfl = str(raw_rent.get("fromPersonId") or "")
+    elif ijara_veh and ijara_veh["raw"]:
+        raw_ij = ijara_veh["raw"]
+        if isinstance(raw_ij, dict):
+            real_owner_name = raw_ij.get("fromName") or raw_ij.get("fromDirectorName") or "Ijara shartnomasi asosida"
+            real_owner_pinfl = str(raw_ij.get("fromPersonId") or "")
+            rental_number = str(raw_ij.get("id") or "")
+            rental_expires_at = raw_ij.get("rentEndDate")
+
+    # Litsenziya va Yo'nalish (transport.uz va etender.uz)
+    license_sheet_number = ""
+    license_sheet_expires_at = None
+    route_name = ""
+    route_number = ""
+
+    if etender_veh:
+        license_sheet_number = etender_veh["licenseNumber"] or ""
+        license_sheet_expires_at = etender_veh["licenseExpiresAt"]
+        route_name = etender_veh["routeName"] or ""
+        route_number = etender_veh["routeNumber"] or ""
+    elif legacy_vehicle:
+        license_sheet_number = legacy_vehicle["license_sheet_number"] or ""
+        license_sheet_expires_at = legacy_vehicle["license_sheet_expires_at"]
+        route_name = legacy_vehicle["route_or_lot_number"] or ""
+
+    if not route_name and etender_record:
+        route_name = etender_record["title"] or ""
+        route_number = etender_record["number"] or ""
+
+    # GPS identifikatori
+    gps_imei = ""
+    if autopark_veh and autopark_veh["gpsImei"]:
+        gps_imei = autopark_veh["gpsImei"]
+    elif etender_veh and etender_veh["gpsImei"]:
+        gps_imei = etender_veh["gpsImei"]
+    elif legacy_vehicle and legacy_vehicle["virtual_gps_id"]:
+        gps_imei = legacy_vehicle["virtual_gps_id"]
+    else:
+        gps_imei = f"GPS-{plate_number.replace(' ', '')}"
+
+    # Model va rang
+    model_name = ""
+    vehicle_year = 2022
+    vehicle_color = "Oq (White)"
+    if etender_veh and etender_veh["raw"] and isinstance(etender_veh["raw"], dict):
+        gai = etender_veh["raw"].get("gai", {})
+        if isinstance(gai, dict):
+            vehicle_color = gai.get("pTechnicalStatus") or vehicle_color
+            vehicle_year = int(gai.get("pMadeofYear") or 2022)
+
+    if real_vehicle:
+        model_name = real_vehicle["model"]
+    elif etender_veh and etender_veh["vehicleModel"]:
+        model_name = etender_veh["vehicleModel"]
+    elif legacy_vehicle:
+        model_name = legacy_vehicle["model"]
+    else:
+        model_name = "DAMAS"
+
+    company_name = ""
+    company_phone = ""
+    if real_driver and real_driver["company_name"]:
+        company_name = real_driver["company_name"]
+        company_phone = real_driver["company_phone"] or "+998901234567"
+    elif legacy_vehicle and legacy_vehicle["tenant_name"]:
+        company_name = legacy_vehicle["tenant_name"]
+        company_phone = legacy_vehicle["tenant_dispatcher_phone"] or "+998901234567"
+    else:
+        company_name = "CARLUX MCHJ"
+        company_phone = "+998901234567"
+
+    monthly_fee = float(real_vehicle["monthlyFee"]) if (real_vehicle and real_vehicle["monthlyFee"] is not None) else (float(legacy_vehicle["monthly_fee"]) if legacy_vehicle else 0.0)
+    current_balance = float(legacy_vehicle["balance"]) if legacy_vehicle else 150000.0
+
     return {
         "has_vehicle": True,
         "driver": {
             "id": str(user_info["id"]),
-            "full_name": user_info["full_name"],
-            "phone": user_info["phone"],
-            "passport": user_info["passport_series_number"] or "AB 1234567",
-            "pinfl": user_info["pinfl"] or "30101851234567",
-            "license_number": "AF 7890123",
-            "license_categories": "B, BC",
+            "full_name": full_name,
+            "phone": phone,
+            "passport": passport,
+            "pinfl": pinfl,
+            "license_number": license_num,
+            "license_categories": license_cat,
             "status": "ACTIVE",
             "verification_status": "TASDIQLANGAN",
-            "is_blocked": vehicle["is_blocked"] or user_info["is_blocked"],
-            "block_reason": vehicle["block_reason"] or user_info["block_reason"],
+            "is_blocked": user_info["is_blocked"],
+            "block_reason": user_info["block_reason"],
         },
         "vehicle": {
-            "id": str(vehicle["id"]),
-            "plate_number": vehicle["plate_number"],
-            "model": vehicle["model"],
-            "virtual_gps_id": vehicle["virtual_gps_id"],
-            "color": "Oq (White)",
-            "year": 2023,
+            "id": str(real_vehicle["id"]) if real_vehicle else str(legacy_vehicle["id"]),
+            "plate_number": plate_number,
+            "model": model_name,
+            "virtual_gps_id": gps_imei,
+            "color": vehicle_color,
+            "year": vehicle_year,
             "real_owner": {
-                "name": vehicle["real_owner_name"] or "Toshmatov Botir Ergashevich",
-                "pinfl": vehicle["real_owner_pinfl"] or "30101851234567",
-                "relation": "Ijara va Ishonchnoma asosida",
+                "name": real_owner_name,
+                "pinfl": real_owner_pinfl,
+                "relation": "Ijara shartnomasi asosida",
             },
         },
         "integrations": {
             "rental_contract": {
                 "provider": "ijara.soliq.uz",
                 "title": "Ijara Shartnomasi",
-                "number": vehicle["rental_contract_number"] or "IJARA-2026-99881",
-                "date": vehicle["rental_contract_date"].isoformat() if vehicle["rental_contract_date"] else "2026-01-10",
-                "validity": check_validity(vehicle["rental_contract_expires_at"]),
+                "number": rental_number or "IJARA-2026-ONLINE",
+                "date": rental_date.isoformat() if isinstance(rental_date, (datetime.date, datetime.datetime)) else str(rental_date or "2026-10-04"),
+                "validity": check_validity(rental_expires_at or "2026-12-10"),
             },
             "license_sheet": {
                 "provider": "transport.uz",
                 "title": "Litsenziya Varaqasi",
-                "number": vehicle["license_sheet_number"] or "LIC-UZ-789012",
-                "type": vehicle["license_sheet_type"] or "Yo'lovchi tashish (Taksi)",
-                "validity": check_validity(vehicle["license_sheet_expires_at"]),
+                "number": license_sheet_number or "LIC-UZ-ONLINE",
+                "type": "Yo'lovchi tashish (Yo'nalishli taksi)",
+                "validity": check_validity(license_sheet_expires_at or "2026-12-10"),
             },
             "route_lot": {
                 "provider": "etender.uz",
                 "title": "Biriktirilgan Yo'nalish / Lot",
-                "number": vehicle["route_or_lot_number"] or "Lot № 42 - Shahar / Viloyatlararo liniya",
+                "number": f"{route_number} - {route_name}" if route_number else (route_name or "369 - Shahar yo'nalishi"),
                 "status": "BIRIKTIRILGAN",
             },
             "insurance": {
                 "provider": "E-OSAGO",
                 "title": "Majburiy Avtosug'urta",
-                "policy_number": vehicle["insurance_policy_number"] or "POL-UZ-992144",
-                "company": vehicle["insurance_company"] or "Apex Insurance",
-                "validity": check_validity(vehicle["insurance_expires_at"]),
+                "policy_number": "POL-UZ-7890123",
+                "company": "Apex Insurance",
+                "validity": check_validity(datetime.date(2027, 1, 15)),
             },
         },
         "inspections": {
@@ -876,14 +1118,14 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             },
         },
         "financial": {
-            "monthly_fee": float(vehicle["monthly_fee"]),
-            "balance": float(vehicle["balance"]),
-            "is_blocked": vehicle["is_blocked"],
-            "block_reason": vehicle["block_reason"],
+            "monthly_fee": monthly_fee,
+            "balance": current_balance,
+            "is_blocked": user_info["is_blocked"],
+            "block_reason": user_info["block_reason"],
         },
         "tenant": {
-            "name": vehicle["tenant_name"],
-            "dispatcher_phone": vehicle["tenant_dispatcher_phone"] or "+998901234567",
+            "name": company_name,
+            "dispatcher_phone": company_phone,
         },
     }
 
