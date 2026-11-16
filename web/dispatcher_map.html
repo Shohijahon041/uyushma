@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uyushma GPS & Fleet — Dispetcher Xaritasi (100K High-Load)</title>
+
+  <!-- Google Analytics 4 (GA4) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-UYUSHMA2026"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-UYUSHMA2026', {
+      'page_title': 'Dispetcher Xaritasi',
+      'page_location': window.location.href
+    });
+
+    // GA4 maxsus hodisalar yordamchisi
+    function logGA4Event(eventName, params) {
+      if (typeof gtag === 'function') {
+        gtag('event', eventName, params || {});
+      }
+    }
+  </script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Leaflet.markercluster (100,000 ta transport vositasini klasterlash uchun) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <style>
+    html, body, #map {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0f172a;
+    }
+    .custom-cluster-icon {
+      background: linear-gradient(135deg, #2563eb, #1e40af);
+      border: 2px solid #60a5fa;
+      color: #ffffff;
+      font-weight: 700;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+    }
+    .leaflet-popup-content-wrapper {
+      background-color: #1e293b !important;
+      color: #f8fafc !important;
+      border-radius: 12px !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+    }
+    .leaflet-popup-tip {
+      background-color: #1e293b !important;
+    }
+  </style>
+</head>
+<body class="relative overflow-hidden text-slate-100">
+
+  <!-- ========================================================================= -->
+  <!-- TEPADAGI STATISTIKA VA TEZKOR BOSHQARUV PANELI -->
+  <!-- ========================================================================= -->
+  <header class="absolute top-4 left-4 right-4 z-[1000] flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-slate-800 shadow-2xl">
+    
+    <!-- Brend va Tizim Nomi -->
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xl shadow-lg shadow-blue-500/30">
+        🛰️
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+          UYUSHMA GPS & FLEET
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-400 border border-blue-700/50">100K Fleet SaaS</span>
+        </h1>
+        <p class="text-xs text-slate-400">Jonli H02 telemetriya & Davlat portallari nazorati</p>
+      </div>
+    </div>
+
+    <!-- Ko'rsatkichlar (KPI) -->
+    <div class="flex items-center gap-2 text-xs">
+      <div class="bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 flex items-center gap-2">
+        <span class="text-slate-400">Jami:</span>
+        <span id="stat-total" class="font-bold text-white text-sm">0</span>
+      </div>
+      <div class="bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-800/50 flex items-center gap-2 text-emerald-400">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Harakatda:</span>
+        <span id="stat-moving" class="font-bold text-sm">0</span>
+      </div>
+      <div class="bg-amber-950/40 px-3 py-1.5 rounded-xl border border-amber-800/50 flex items-center gap-2 text-amber-400">
+        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span>To'xtagan:</span>
+        <span id="stat-stopped" class="font-bold text-sm">0</span>
+      </div>
+      <div class="bg-rose-950/40 px-3 py-1.5 rounded-xl border border-rose-800/50 flex items-center gap-2 text-rose-400">
+        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+        <span>Bloklangan:</span>
+        <span id="stat-blocked" class="font-bold text-sm">0</span>
+      </div>
+      <div class="bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 flex items-center gap-2">
+        <span id="ws-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+        <span id="ws-status" class="text-slate-300 font-medium">Ulanmoqda...</span>
+      </div>
+    </div>
+
+    <!-- Qidiruv va Filtrlar -->
+    <div class="flex items-center gap-2">
+      <div class="relative">
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Raqam, F.I.Sh., GPS ID..."
+          class="w-56 bg-slate-800/90 text-sm text-white placeholder-slate-400 px-3 py-1.5 rounded-xl border border-slate-700 focus:outline-none focus:border-blue-500 transition-all"
+        />
+        <button id="search-btn" class="absolute right-2 top-1.5 text-slate-400 hover:text-white">
+          🔍
+        </button>
+      </div>
+
+      <select
+        id="status-filter"
+        class="bg-slate-800/90 text-xs text-white px-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-blue-500"
+      >
+        <option value="ALL">Barchasi</option>
+        <option value="MOVING">Faqat Harakatda</option>
+        <option value="STOPPED">Faqat To'xtagan</option>
+        <option value="BLOCKED">Faqat Bloklangan</option>
+      </select>
+
+      <button
+        id="reload-btn"
+        title="Qayta yuklash"
+        class="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl border border-slate-700 text-xs font-semibold text-slate-200 transition"
+      >
+        🔄
+      </button>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- ASOSIY LEAFLET XARITASI -->
+  <!-- ========================================================================= -->
+  <div id="map"></div>
+
+  <!-- ========================================================================= -->
+  <!-- SCRIPT BO'LIMI -->
+  <!-- ========================================================================= -->
+  <script>
+    // 1. Leaflet xaritasini boshlash (O'zbekiston markazi)
+    const map = L.map('map', {
+      center: [41.311081, 69.240562], // Toshkent
+      zoom: 12,
+      zoomControl: false,
+      preferCanvas: true // Yuqori render tezligi uchun canvas rejim
+    });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // Dark Theme Tile Layer (CartoDB Dark Matter)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap contributors',
+      maxZoom: 19,
+      subdomains: 'abcd'
+    }).addTo(map);
+
+    // 2. High-Load MarkerCluster Guruhi (100K obyektlar uchun sozlangan)
+    const markersCluster = L.markerClusterGroup({
+      chunkedLoading: true,        // Brauzer qotib qolmasligi uchun bo'lib yuklash
+      chunkInterval: 100,
+      chunkDelay: 20,
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      iconCreateFunction: function (cluster) {
+        const count = cluster.getChildCount();
+        let size = count < 100 ? 36 : count < 1000 ? 46 : 56;
+        return L.divIcon({
+          html: `<div class="custom-cluster-icon" style="width: ${size}px; height: ${size}px;">${count.toLocaleString()}</div>`,
+          className: 'marker-cluster-custom',
+          iconSize: L.point(size, size)
+        });
+      }
+    });
+    map.addLayer(markersCluster);
+
+    // Xotiradagi transportlar ma'lumoti
+    const vehiclesMap = new Map(); // virtual_gps_id => { data, marker }
+
+    // SVG Marker Ikonkalari
+    function createCarIcon(isMoving, isBlocked, course) {
+      let color = '#10b981'; // Harakatda (Yashil)
+      if (isBlocked) color = '#ef4444'; // Bloklangan (Qizil)
+      else if (!isMoving) color = '#f59e0b'; // To'xtagan (Sariq)
+
+      const svgHtml = `
+        <div style="transform: rotate(${course || 0}deg); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
+          </svg>
+        </div>
+      `;
+
+      return L.divIcon({
+        className: 'vehicle-marker-icon',
+        html: svgHtml,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+    }
+
+    // Popup HTML matnini yaratish
+    function buildPopupHtml(v) {
+      const isMoving = (v.speed_kmh || 0) > 3.0;
+      const statusBadge = v.is_blocked
+        ? '<span class="bg-rose-500/20 text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded text-[11px] font-bold">BLOKLANGAN</span>'
+        : isMoving
+        ? '<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded text-[11px] font-bold">HARAKATDA</span>'
+        : '<span class="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-2 py-0.5 rounded text-[11px] font-bold">TO\'XTAGAN</span>';
+
+      return `
+        <div class="p-3 w-72 text-slate-200">
+          <div class="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2">
+            <span class="font-extrabold text-base text-white tracking-wider">${v.plate_number || 'NOMA\'LUM'}</span>
+            ${statusBadge}
+          </div>
+
+          <div class="space-y-1.5 text-xs">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Model:</span>
+              <span class="font-semibold text-slate-200">${v.model || '—'}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Virtual GPS ID:</span>
+              <span class="font-mono text-blue-400 font-bold">${v.virtual_gps_id || '—'}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Haydovchi:</span>
+              <span class="font-medium text-slate-200">${v.driver_name || '—'}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Telefon:</span>
+              <a href="tel:${v.driver_phone}" class="text-blue-400 hover:underline">${v.driver_phone || '—'}</a>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Haqiqiy egasi:</span>
+              <span class="text-slate-300 text-[11px]">${v.real_owner_name || '—'}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Tezlik:</span>
+              <span class="font-bold text-white">${v.speed_kmh || 0} km/soat</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Balans:</span>
+              <span class="font-bold ${(v.balance || 0) < 0 ? 'text-rose-400' : 'text-emerald-400'}">
+                ${Number(v.balance || 0).toLocaleString()} so'm
+              </span>
+            </div>
+            ${v.block_reason ? `
+              <div class="mt-2 p-1.5 bg-rose-950/60 border border-rose-800 rounded text-[11px] text-rose-300">
+                ⚠️ ${v.block_reason}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
+            <button
+              onclick="toggleBlockVehicle('${v.id}', ${!v.is_blocked})"
+              class="w-full text-xs font-semibold py-1.5 px-3 rounded-lg transition ${
+                v.is_blocked
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                  : 'bg-rose-600 hover:bg-rose-500 text-white'
+              }"
+            >
+              ${v.is_blocked ? "🔓 Blokdan chiqarish" : "🚫 Bloklash"}
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Avtomobilni qo'shish yoki yangilash
+    function upsertVehicle(v) {
+      if (!v.virtual_gps_id || !v.latitude || !v.longitude) return;
+
+      const isMoving = (v.speed_kmh || 0) > 3.0;
+      let record = vehiclesMap.get(v.virtual_gps_id);
+
+      if (record) {
+        // Ma'lumotlarni yangilash
+        Object.assign(record.data, v);
+        record.marker.setLatLng([v.latitude, v.longitude]);
+        record.marker.setIcon(createCarIcon(isMoving, record.data.is_blocked, v.course));
+        record.marker.setPopupContent(buildPopupHtml(record.data));
+      } else {
+        // Yangi marker yaratish
+        const marker = L.marker([v.latitude, v.longitude], {
+          icon: createCarIcon(isMoving, v.is_blocked, v.course)
+        });
+
+        marker.bindPopup(buildPopupHtml(v), { maxWidth: 320 });
+        marker.on('click', () => {
+          logGA4Event('vehicle_popup_opened', {
+            plate_number: v.plate_number,
+            virtual_gps_id: v.virtual_gps_id
+          });
+        });
+
+        markersCluster.addLayer(marker);
+        vehiclesMap.set(v.virtual_gps_id, { data: v, marker: marker });
+      }
+
+      updateKPIs();
+    }
+
+    // KPI Ko'rsatkichlarini yangilash
+    function updateKPIs() {
+      let total = vehiclesMap.size;
+      let moving = 0;
+      let stopped = 0;
+      let blocked = 0;
+
+      for (let item of vehiclesMap.values()) {
+        const v = item.data;
+        if (v.is_blocked) blocked++;
+        if ((v.speed_kmh || 0) > 3.0) moving++;
+        else stopped++;
+      }
+
+      document.getElementById('stat-total').innerText = total.toLocaleString();
+      document.getElementById('stat-moving').innerText = moving.toLocaleString();
+      document.getElementById('stat-stopped').innerText = stopped.toLocaleString();
+      document.getElementById('stat-blocked').innerText = blocked.toLocaleString();
+    }
+
+    // 4. API orqali dastlabki avtomobillar ro'yxatini yuklash
+    async function loadInitialVehicles() {
+      try {
+        const res = await fetch('/api/v1/vehicles/live');
+        if (!res.ok) throw new Error('API javobi xato');
+        const json = await res.json();
+        if (json.data && Array.isArray(json.data)) {
+          json.data.forEach(v => upsertVehicle(v));
+          logGA4Event('initial_fleet_loaded', { count: json.data.length });
+        }
+      } catch (err) {
+        console.warn('API yuklashda xatolik:', err);
+      }
+    }
+
+    // 5. Dispetcher Real-Time WebSocket ulanishi
+    let ws = null;
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/dispatcher`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById('ws-indicator').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        document.getElementById('ws-status').innerText = 'Jonli Efir';
+        logGA4Event('websocket_connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.virtual_gps_id && payload.lat && payload.lng) {
+            upsertVehicle({
+              virtual_gps_id: payload.virtual_gps_id,
+              latitude: payload.lat,
+              longitude: payload.lng,
+              speed_kmh: payload.speed,
+              course: payload.course,
+              last_gps_time: payload.time
+            });
+          }
+        } catch (e) {
+          // Parse xatosi
+        }
+      };
+
+      ws.onclose = () => {
+        document.getElementById('ws-indicator').className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping';
+        document.getElementById('ws-status').innerText = 'Qayta ulanmoqda...';
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    // 6. Avtomobilni bloklash/ochish funksiyasi
+    async function toggleBlockVehicle(vehicleId, isBlocked) {
+      try {
+        const res = await fetch(`/api/v1/vehicles/${vehicleId}/toggle-block`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_blocked: isBlocked, reason: "Dispetcher veb-panelidan o'zgartirildi" })
+        });
+        if (res.ok) {
+          logGA4Event('vehicle_block_toggled', { vehicle_id: vehicleId, is_blocked: isBlocked });
+          await loadInitialVehicles();
+        }
+      } catch (err) {
+        alert("Xatolik yuz berdi: " + err);
+      }
+    }
+
+    // 7. Qidiruv va Filtr tadbirlari
+    document.getElementById('search-btn').addEventListener('click', performSearch);
+    document.getElementById('search-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') performSearch();
+    });
+
+    function performSearch() {
+      const query = document.getElementById('search-input').value.trim().toLowerCase();
+      if (!query) return;
+
+      logGA4Event('dispatcher_search', { query: query });
+
+      for (let item of vehiclesMap.values()) {
+        const v = item.data;
+        if (
+          (v.plate_number && v.plate_number.toLowerCase().includes(query)) ||
+          (v.virtual_gps_id && v.virtual_gps_id.includes(query)) ||
+          (v.driver_name && v.driver_name.toLowerCase().includes(query))
+        ) {
+          map.setView([v.latitude, v.longitude], 17);
+          item.marker.openPopup();
+          return;
+        }
+      }
+      alert("Mos keluvchi transport vositasi topilmadi.");
+    }
+
+    document.getElementById('status-filter').addEventListener('change', (e) => {
+      const filterVal = e.target.value;
+      logGA4Event('filter_applied', { filter: filterVal });
+
+      markersCluster.clearLayers();
+      for (let item of vehiclesMap.values()) {
+        const v = item.data;
+        const isMoving = (v.speed_kmh || 0) > 3.0;
+
+        if (filterVal === 'ALL') {
+          markersCluster.addLayer(item.marker);
+        } else if (filterVal === 'MOVING' && isMoving && !v.is_blocked) {
+          markersCluster.addLayer(item.marker);
+        } else if (filterVal === 'STOPPED' && !isMoving && !v.is_blocked) {
+          markersCluster.addLayer(item.marker);
+        } else if (filterVal === 'BLOCKED' && v.is_blocked) {
+          markersCluster.addLayer(item.marker);
+        }
+      }
+    });
+
+    document.getElementById('reload-btn').addEventListener('click', () => {
+      loadInitialVehicles();
+    });
+
+    // Dastlabki yuklash
+    loadInitialVehicles();
+    connectWebSocket();
+  </script>
+</body>
+</html>
+

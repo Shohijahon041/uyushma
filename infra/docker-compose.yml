@@ -1,0 +1,170 @@
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # 1. TIMESCALEDB 16 (PostgreSQL 16 + TimescaleDB Extension)
+  # ===========================================================================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: uyushma_timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_secure_pass_2026
+      POSTGRES_DB: uyushma
+      TIMESCALEDB_TELEMETRY: "off"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - uyushma_net
+    command: >
+      postgres
+      -c max_connections=500
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
+      -c maintenance_work_mem=512MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=10MB
+
+  # ===========================================================================
+  # 2. REDIS 7 (Yuqori tezlikdagi jonli kesh va Pub/Sub)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: uyushma_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save ""
+      --appendonly yes
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - uyushma_net
+
+  # ===========================================================================
+  # 3. HIGH-LOAD H02 TCP PROXY GATEWAYS (100K Yuklamani taqsimlovchi klaster)
+  # ===========================================================================
+  h02_gateway_1:
+    build:
+      context: ..
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY backend/requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt
+        COPY backend/h02_gateway.py .
+        CMD ["python", "h02_gateway.py"]
+    container_name: uyushma_h02_gateway_1
+    restart: unless-stopped
+    environment:
+      GATEWAY_HOST: "0.0.0.0"
+      GATEWAY_PORT: 20335
+      GOV_GPS_HOST: "bm.dtransport.uz"
+      GOV_GPS_PORT: 20335
+      ENABLE_GOV_FORWARD: "true"
+      REDIS_URL: "redis://redis:6379/0"
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      DB_BATCH_SIZE: 1000
+      DB_FLUSH_INTERVAL: 0.5
+    depends_on:
+      - timescaledb
+      - redis
+    networks:
+      - uyushma_net
+
+  h02_gateway_2:
+    build:
+      context: ..
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY backend/requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt
+        COPY backend/h02_gateway.py .
+        CMD ["python", "h02_gateway.py"]
+    container_name: uyushma_h02_gateway_2
+    restart: unless-stopped
+    environment:
+      GATEWAY_HOST: "0.0.0.0"
+      GATEWAY_PORT: 20335
+      GOV_GPS_HOST: "bm.dtransport.uz"
+      GOV_GPS_PORT: 20335
+      ENABLE_GOV_FORWARD: "true"
+      REDIS_URL: "redis://redis:6379/0"
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      DB_BATCH_SIZE: 1000
+      DB_FLUSH_INTERVAL: 0.5
+    depends_on:
+      - timescaledb
+      - redis
+    networks:
+      - uyushma_net
+
+  # ===========================================================================
+  # 4. FASTAPI BACKEND API & CRON WORKER
+  # ===========================================================================
+  api_server:
+    build:
+      context: ..
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY backend/requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt
+        COPY backend/api_server.py .
+        CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    container_name: uyushma_api_server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "super-secret-uyushma-jwt-key-2026-production"
+      CLICK_SERVICE_ID: "12345"
+      CLICK_SECRET_KEY: "click_secret_key_demo"
+      PAYME_KEY: "payme_secret_key_demo"
+    depends_on:
+      - timescaledb
+      - redis
+    networks:
+      - uyushma_net
+
+  # ===========================================================================
+  # 5. NGINX LOAD BALANCER (TCP Stream 20335 + HTTP/WebSocket 80)
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: uyushma_nginx
+    restart: unless-stopped
+    ports:
+      - "20335:20335" # H02 TCP Gateway
+      - "80:80"       # Web Dispetcher & API
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../web/dispatcher_map.html:/usr/share/nginx/html/dispatcher_map.html:ro
+    depends_on:
+      - h02_gateway_1
+      - h02_gateway_2
+      - api_server
+    networks:
+      - uyushma_net
+
+networks:
+  uyushma_net:
+    driver: bridge
+
+volumes:
+  timescaledb_data:
+  redis_data:
+
