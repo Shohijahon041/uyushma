@@ -12,8 +12,13 @@ import hashlib
 import os
 import re
 import asyncpg
+from dotenv import load_dotenv
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/uyushma")
+load_dotenv("/opt/uyushma/.env")
+load_dotenv("/opt/uyushma/app/.env")
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://uyushma_app:d0b7410e63d2b0d2dc5beb09672fcbac30ef@127.0.0.1:5432/uyushma")
 if "?" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.split("?")[0]
 
