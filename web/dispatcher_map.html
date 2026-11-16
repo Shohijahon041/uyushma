@@ -66,6 +66,28 @@
     .leaflet-popup-tip {
       background-color: #1e293b !important;
     }
+    .leaflet-control-layers {
+      background: rgba(15, 23, 42, 0.92) !important;
+      color: #f8fafc !important;
+      border: 1px solid #334155 !important;
+      border-radius: 12px !important;
+      padding: 10px 14px !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+      backdrop-filter: blur(8px);
+    }
+    .leaflet-control-layers-base label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 4px 0;
+      color: #cbd5e1;
+    }
+    .leaflet-control-layers-base label:hover {
+      color: #60a5fa;
+    }
   </style>
 </head>
 <body class="relative overflow-hidden text-slate-100">
@@ -169,12 +191,32 @@
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Dark Theme Tile Layer (CartoDB Dark Matter)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap contributors',
+    // 100% BEPUL VA HECH QANDAY API KEY TALAB QILMAYDIGAN QATLAM (OpenStreetMap)
+    const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Sun'iy yo'ldosh (Sputnik / Satellite) qatlami (Esri World Imagery - 100% Bepul, API keysiz)
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri World Imagery',
+      maxZoom: 19
+    });
+
+    // Qorong'i / Zamonaviy shahar qatlami (Voyager)
+    const voyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; CARTO &copy; OSM',
       maxZoom: 19,
       subdomains: 'abcd'
-    }).addTo(map);
+    });
+
+    // Qatlamlarni tanlash boshqaruvi (Layer Switcher)
+    const baseLayers = {
+      "🗺️ Standart Xarita (OpenStreetMap)": osmLayer,
+      "🛰️ Sputnik (Sun'iy yo'ldosh)": satelliteLayer,
+      "🏙️ Zamonaviy (Voyager)": voyagerLayer
+    };
+    L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
 
     // 2. High-Load MarkerCluster Guruhi (100K obyektlar uchun sozlangan)
     const markersCluster = L.markerClusterGroup({
@@ -349,7 +391,9 @@
     // 4. API orqali dastlabki avtomobillar ro'yxatini yuklash
     async function loadInitialVehicles() {
       try {
-        const res = await fetch('/api/v1/vehicles/live');
+        const isRemote = window.location.host.includes('bmbrutto.uz');
+        const apiUrl = isRemote ? '/api/v1/vehicles/live' : 'https://uyushma.bmbrutto.uz/api/v1/vehicles/live';
+        const res = await fetch(apiUrl);
         if (!res.ok) throw new Error('API javobi xato');
         const json = await res.json();
         if (json.data && Array.isArray(json.data)) {
@@ -364,8 +408,10 @@
     // 5. Dispetcher Real-Time WebSocket ulanishi
     let ws = null;
     function connectWebSocket() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/dispatcher`;
+      const isRemote = window.location.host.includes('bmbrutto.uz');
+      const wsHost = isRemote ? window.location.host : 'uyushma.bmbrutto.uz';
+      const wsProtocol = (isRemote && window.location.protocol === 'http:') ? 'ws:' : 'wss:';
+      const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ws/dispatcher`;
 
       ws = new WebSocket(wsUrl);
 
@@ -407,7 +453,9 @@
     // 6. Avtomobilni bloklash/ochish funksiyasi
     async function toggleBlockVehicle(vehicleId, isBlocked) {
       try {
-        const res = await fetch(`/api/v1/vehicles/${vehicleId}/toggle-block`, {
+        const isRemote = window.location.host.includes('bmbrutto.uz');
+        const apiBase = isRemote ? '' : 'https://uyushma.bmbrutto.uz';
+        const res = await fetch(`${apiBase}/api/v1/vehicles/${vehicleId}/toggle-block`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ is_blocked: isBlocked, reason: "Dispetcher veb-panelidan o'zgartirildi" })

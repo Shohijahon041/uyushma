@@ -69,6 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() {
         _isCodeSent = true;
         _isLoading = false;
+        _otpController.text = '12345';
       });
       _startCountdown();
     } catch (e) {
@@ -279,7 +280,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 8),
+                  const Center(
+                    child: Text(
+                      '💡 Sinov uchun tasdiqlash kodi: 12345',
+                      style: TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: _isLoading ? null : _handleVerifyOtp,
                     style: ElevatedButton.styleFrom(

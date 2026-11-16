@@ -30,6 +30,7 @@ dependencies:
   # Formatlash va UI yordamchilari
   intl: ^0.19.0
   cupertino_icons: ^1.0.6
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

@@ -34,6 +34,12 @@ class BackgroundTrackerManager {
         FlutterLocalNotificationsPlugin();
 
     if (Platform.isAndroid) {
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      await flutterLocalNotificationsPlugin.initialize(
+        const InitializationSettings(android: initializationSettingsAndroid),
+      );
+
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
@@ -184,7 +190,7 @@ void onServiceStart(ServiceInstance service) async {
               android: AndroidNotificationDetails(
                 notificationChannelId,
                 'Uyushma Jonli GPS Xizmati',
-                icon: 'ic_bg_service_small',
+                icon: '@mipmap/ic_launcher',
                 ongoing: true,
               ),
             ),

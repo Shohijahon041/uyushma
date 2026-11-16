@@ -1,4 +1,4 @@
-import 'package:firebase_core/firebase_core.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'core/api_service.dart';
 import 'core/background_tracker.dart';
@@ -6,22 +6,34 @@ import 'screens/home_dashboard.dart';
 import 'screens/login_screen.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase Analytics (GA4) initsializatsiyasi
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint('Firebase init (dev/offline mode): $e');
-  }
+    // Global xatoliklarni ushlab qolish (ilova yopilib ketmasligi uchun)
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      debugPrint('[FLUTTER-ERROR] ${details.exception}');
+    };
 
-  // Fon GPS xizmati (Foreground Service)
-  await BackgroundTrackerManager.initializeService();
+    // Fon GPS xizmati initsializatsiyasi
+    try {
+      await BackgroundTrackerManager.initializeService();
+    } catch (e) {
+      debugPrint('[SERVICE-INIT-ERROR] $e');
+    }
 
-  // Sessiya holatini tekshirish
-  final bool loggedIn = await ApiService().isLoggedIn();
+    // Sessiya holatini tekshirish
+    bool loggedIn = false;
+    try {
+      loggedIn = await ApiService().isLoggedIn();
+    } catch (e) {
+      debugPrint('[SESSION-CHECK-ERROR] $e');
+    }
 
-  runApp(UyushmaApp(isLoggedIn: loggedIn));
+    runApp(UyushmaApp(isLoggedIn: loggedIn));
+  }, (error, stack) {
+    debugPrint('[GLOBAL-UNCAUGHT-ERROR] $error');
+  });
 }
 
 class UyushmaApp extends StatelessWidget {
@@ -48,4 +60,3 @@ class UyushmaApp extends StatelessWidget {
     );
   }
 }
-

@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="uz.uyushma.driver">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- GPS va Joylashuv ruxsatlari -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -23,7 +22,7 @@
         android:icon="@mipmap/ic_launcher">
 
         <activity
-            android:name=".MainActivity"
+            android:name="uz.uyushma.driver.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
