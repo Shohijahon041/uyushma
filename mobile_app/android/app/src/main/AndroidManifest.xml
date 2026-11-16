@@ -19,6 +19,26 @@
     <!-- Batareya optimizatsiyasidan chiqarish (Background Tracking Kill oldini olish) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Telegram va Tashqi havolalarni ochish (Android 11+ Package Visibility) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tg" />
+        </intent>
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.thunderdog.challegram" />
+        <package android:name="org.telegram.plus" />
+        <package android:name="org.telegram.messenger.web" />
+    </queries>
+
     <application
         android:label="Uyushma Haydovchi"
         android:name="${applicationName}"

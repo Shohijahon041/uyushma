@@ -75,13 +75,37 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _openTelegramBot() async {
-    final uri = Uri.parse(_botUrl);
+    final cleanPhone = _cleanPhone(_phoneController.text).replaceAll(RegExp(r'\D'), '');
+    final botName = _botUsername.isNotEmpty ? _botUsername : 'uyushma_saas_bot';
+
+    // 1. Telegram ilovasini bevosita ochish (tg:// protokoli)
+    final tgDirectUri = Uri.parse('tg://resolve?domain=$botName&start=otp_$cleanPhone');
+    // 2. HTTPS web fallback havolasi
+    final webUri = Uri.parse('https://t.me/$botName?start=otp_$cleanPhone');
+
+    bool opened = false;
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      opened = await launchUrl(tgDirectUri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+
+    if (!opened) {
+      try {
+        opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        try {
+          opened = await launchUrl(webUri, mode: LaunchMode.platformDefault);
+        } catch (_) {}
       }
-    } catch (e) {
-      debugPrint('[LAUNCH-TG-ERR] $e');
+    }
+
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Telegram bot: @$botName"),
+          backgroundColor: const Color(0xFF0284C7),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -103,21 +127,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final res = await ApiService().requestOtp(phone, channel: channelToUse);
-      final isTelegramLinked = res['telegram_linked'] == true;
       setState(() {
         _isCodeSent = true;
         _isLoading = false;
         _sentChannel = res['channel'] ?? channelToUse;
         _botUsername = res['bot_username'] ?? _botUsername;
         _botUrl = res['bot_url'] ?? _botUrl;
-        if (res['code'] != null) {
-          _otpController.text = res['code'].toString();
-        }
+        _otpController.clear();
       });
       _startCountdown();
 
-      // Agar haydovchi hali botga ulanmagan bo'lsa, Telegramni avtomatik ochish
-      if (!isTelegramLinked && channelToUse == 'telegram') {
+      // Telegram tanlangan bo'lsa, zudlik bilan botga o'tkazish
+      if (channelToUse == 'telegram') {
         _openTelegramBot();
       }
     } catch (e) {

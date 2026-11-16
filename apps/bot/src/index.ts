@@ -1092,8 +1092,8 @@ bot.start(async (ctx) => {
       });
     } catch (_) {}
 
-    // 2. Yangi kod yaratish va chiqarish
-    let code = "12345";
+    // 2. Kodni olish (yoki mavjud faol kodni qaytarish)
+    let code = "";
     try {
       const res = await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
         method: "POST",
@@ -1101,15 +1101,26 @@ bot.start(async (ctx) => {
         body: JSON.stringify({ phone: cleanPhone, channel: "telegram" }),
       });
       const data: any = await res.json();
-      if (data.code) code = String(data.code);
-    } catch (_) {}
+      if (data && data.code) code = String(data.code);
+    } catch (e) {
+      console.error("[BOT-START-OTP-ERR]", e);
+    }
+
+    if (!code) {
+      await ctx.reply(
+        `✅ Telefon raqamingiz muvaffaqiyatli bog'landi: <b>${escapeHtml(cleanPhone)}</b>\n\n` +
+        `Mobil ilovaga qaytib <b>"Kodni Telegramdan olish"</b> tugmasini bosing yoki pastdagi <b>"🔑 Mobil ilova kodi (/kod)"</b> tugmasini bosing.`,
+        { parse_mode: "HTML", reply_markup: DRIVER_REPLY_KEYBOARD },
+      );
+      return;
+    }
 
     await ctx.reply(
       `🚖 <b>UYUSHMA FLEET — TASDIQLASH KODI</b>\n\n` +
       `Telefon raqamingiz muvaffaqiyatli bog'landi: <b>${escapeHtml(cleanPhone)}</b>\n\n` +
       `Sizning bir martalik kirish kodingiz:\n\n` +
       `🔑 <code>${code}</code>\n\n` +
-      `⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n` +
+      `⏱ Amal qilish muddati: <b>5 daqiqa</b>.\n` +
       `Ushbu kodni mobil ilovadagi tasdiqlash maydoniga kiriting.`,
       { parse_mode: "HTML", reply_markup: DRIVER_REPLY_KEYBOARD },
     );
@@ -1242,20 +1253,31 @@ async function handleDriverLoginCode(ctx: Context) {
       return;
     }
 
-    const code = String(Math.floor(10000 + Math.random() * 90000));
+    let code = "";
     try {
-      await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
+      const res = await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, channel: "telegram" }),
       });
-    } catch (_) {}
+      const data: any = await res.json();
+      if (data && data.code) {
+        code = String(data.code);
+      }
+    } catch (fetchErr) {
+      console.error("[BOT-KOD-ERR]", fetchErr);
+    }
+
+    if (!code) {
+      await ctx.reply("❌ Tasdiqlash kodini olishda xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      return;
+    }
 
     await ctx.reply(
       `🚖 <b>UYUSHMA FLEET — BIR MARTALIK KIRISH KODI</b>\n\n` +
       `Hurmatli haydovchi, sizning mobil ilovaga kirish kodingiz:\n\n` +
       `🔑 <code>${code}</code>\n\n` +
-      `⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n` +
+      `⏱ Amal qilish muddati: <b>5 daqiqa</b>.\n` +
       `⚠️ Ushbu kodni mobil ilovadagi tasdiqlash maydoniga kiriting.`,
       { parse_mode: "HTML" },
     );

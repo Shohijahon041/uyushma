@@ -389,14 +389,19 @@ async def send_telegram_otp(phone: str, code: str) -> bool:
     if not TELEGRAM_BOT_TOKEN:
         return False
 
+    clean_digits = re.sub(r"\D", "", phone)
+    phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+    phone_without_plus = clean_digits if clean_digits.startswith("998") else f"998{clean_digits}"
+
     chat_id = None
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
                 # 1. users jadvalida telegram_chat_id tekshirish
                 row = await conn.fetchrow(
-                    "SELECT telegram_chat_id FROM users WHERE phone = $1 AND telegram_chat_id IS NOT NULL LIMIT 1",
-                    phone,
+                    "SELECT telegram_chat_id FROM users WHERE (phone = $1 OR phone = $2) AND telegram_chat_id IS NOT NULL LIMIT 1",
+                    phone_with_plus,
+                    phone_without_plus,
                 )
                 if row and row["telegram_chat_id"]:
                     chat_id = row["telegram_chat_id"]
@@ -404,15 +409,17 @@ async def send_telegram_otp(phone: str, code: str) -> bool:
                     # 2. Prisma Driver jadvalidan telegramChatId tekshirish (agar mavjud bo'lsa)
                     try:
                         d_row = await conn.fetchrow(
-                            'SELECT "telegramChatId" FROM "Driver" WHERE phone = $1 AND "telegramChatId" IS NOT NULL LIMIT 1',
-                            phone,
+                            'SELECT "telegramChatId" FROM "Driver" WHERE (phone = $1 OR phone = $2) AND "telegramChatId" IS NOT NULL LIMIT 1',
+                            phone_with_plus,
+                            phone_without_plus,
                         )
                         if d_row and d_row["telegramChatId"]:
                             chat_id = str(d_row["telegramChatId"])
                             await conn.execute(
-                                "UPDATE users SET telegram_chat_id = $1 WHERE phone = $2",
+                                "UPDATE users SET telegram_chat_id = $1 WHERE phone = $2 OR phone = $3",
                                 chat_id,
-                                phone,
+                                phone_with_plus,
+                                phone_without_plus,
                             )
                     except Exception:
                         pass
@@ -427,7 +434,7 @@ async def send_telegram_otp(phone: str, code: str) -> bool:
         "🚖 <b>UYUSHMA FLEET — TASDIQLASH KODI</b>\n\n"
         "Hurmatli haydovchi, mobil ilovaga kirish uchun bir martalik kodingiz:\n\n"
         f"🔑 <code>{code}</code>\n\n"
-        "⏱ Amal qilish muddati: <b>2 daqiqa</b>.\n"
+        "⏱ Amal qilish muddati: <b>5 daqiqa</b>.\n"
         "⚠️ <i>Xavfsizlik maqsadida ushbu kodni begona shaxslarga bermang!</i>"
     )
 
@@ -454,42 +461,61 @@ async def send_telegram_otp(phone: str, code: str) -> bool:
 
 @app.post("/api/v1/auth/request-otp", summary="5 xonali tasdiqlash kodini so'rash (SMS / Telegram)")
 async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks):
-    phone = req.phone.strip()
-    if not phone.startswith("+998") or len(phone) < 13:
-        raise HTTPException(status_code=400, detail="Telefon raqam +998XXXXXXXXX formatida bo'lishi kerak")
+    raw_phone = req.phone.strip()
+    clean_digits = re.sub(r"\D", "", raw_phone)
+    if len(clean_digits) < 9:
+        raise HTTPException(status_code=400, detail="Telefon raqam noto'g'ri kiritildi")
 
-    # 5 xonali tasodifiy kod
-    code = str(random.randint(10000, 99999))
-    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=120)
+    formatted_phone = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+    digits_phone = clean_digits if clean_digits.startswith("998") else f"998{clean_digits}"
 
-    # DB ga yozish
+    code = None
+    # 1. DB dan so'nggi 2 daqiqada yaratilgan, ishlatilmagan faol kodni tekshirish (kodlar chalkashmasligi uchun)
     async with db_pool.acquire() as conn:
-        await conn.execute(
+        existing = await conn.fetchrow(
             """
-            INSERT INTO otp_codes (phone, code, expires_at, is_used)
-            VALUES ($1, $2, $3, FALSE)
+            SELECT code FROM otp_codes
+            WHERE (phone = $1 OR phone = $2) AND is_used = FALSE AND expires_at > NOW() + INTERVAL '30 seconds'
+            ORDER BY created_at DESC LIMIT 1
             """,
-            phone,
-            code,
-            expires_at,
+            formatted_phone,
+            digits_phone,
         )
+        if existing and existing["code"]:
+            code = existing["code"]
+            logger.info("[OTP-REUSE] Faol kod qayta ishlatildi: %s -> %s", formatted_phone, code)
+        else:
+            code = str(random.randint(10000, 99999))
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=300)
+            await conn.execute(
+                """
+                INSERT INTO otp_codes (phone, code, expires_at, is_used)
+                VALUES ($1, $2, $3, FALSE)
+                """,
+                formatted_phone,
+                code,
+                expires_at,
+            )
 
-    # Redis ga tezkor tekshiruv uchun yozish
+    # Redis ga tezkor tekshiruv uchun yozish (300 soniya / 5 daqiqa)
     if redis_client:
-        await redis_client.set(f"otp:{phone}", code, ex=120)
+        try:
+            await redis_client.set(f"otp:{formatted_phone}", code, ex=300)
+            await redis_client.set(f"otp:{digits_phone}", code, ex=300)
+        except Exception:
+            pass
 
     preferred_channel = req.channel.lower() if req.channel else "auto"
     telegram_sent = False
 
     # 1. Telegram orqali yuborishga urinish
     if preferred_channel in ("telegram", "auto"):
-        telegram_sent = await send_telegram_otp(phone, code)
+        telegram_sent = await send_telegram_otp(formatted_phone, code)
 
     # 2. Agar Telegramga ulanmagan bo'lsa yoki preferred_channel 'sms' bo'lsa, SMS yuborish
     if not telegram_sent:
-        background_tasks.add_task(send_eskiz_sms, phone, code)
+        background_tasks.add_task(send_eskiz_sms, formatted_phone, code)
 
-    clean_digits = re.sub(r"\D", "", phone)
     bot_deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start=otp_{clean_digits}"
 
     if telegram_sent:
@@ -510,7 +536,7 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
         "bot_url": bot_deep_link,
         "code": code,
         "message": msg,
-        "expires_in_seconds": 120,
+        "expires_in_seconds": 300,
     }
 
 
@@ -608,7 +634,11 @@ async def link_telegram_account(req: TelegramLinkRequest):
 
 @app.post("/api/v1/auth/verify-otp", summary="SMS kodini tekshirish va kirish")
 async def verify_otp(req: VerifyOtpRequest):
-    phone = req.phone.strip()
+    raw_phone = req.phone.strip()
+    clean_digits = re.sub(r"\D", "", raw_phone)
+    phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
+    phone_without_plus = clean_digits if clean_digits.startswith("998") else f"998{clean_digits}"
+
     code = req.code.strip()
 
     # 1. Kodni tekshirish (Redis yoki DB)
@@ -616,20 +646,26 @@ async def verify_otp(req: VerifyOtpRequest):
     if code in ("12345", "77777"):
         is_valid = True
     elif redis_client:
-        cached_code = await redis_client.get(f"otp:{phone}")
-        if cached_code and cached_code == code:
-            is_valid = True
-            await redis_client.delete(f"otp:{phone}")
+        try:
+            cached_code = await redis_client.get(f"otp:{phone_with_plus}")
+            if not cached_code:
+                cached_code = await redis_client.get(f"otp:{phone_without_plus}")
+            if cached_code and cached_code == code:
+                is_valid = True
+                await redis_client.delete(f"otp:{phone_with_plus}", f"otp:{phone_without_plus}")
+        except Exception:
+            pass
 
     if not is_valid:
         async with db_pool.acquire() as conn:
             otp_record = await conn.fetchrow(
                 """
                 SELECT * FROM otp_codes
-                WHERE phone = $1 AND code = $2 AND is_used = FALSE AND expires_at > NOW()
+                WHERE (phone = $1 OR phone = $2) AND code = $3 AND is_used = FALSE AND expires_at > NOW()
                 ORDER BY created_at DESC LIMIT 1
                 """,
-                phone,
+                phone_with_plus,
+                phone_without_plus,
                 code,
             )
             if otp_record:
@@ -637,11 +673,16 @@ async def verify_otp(req: VerifyOtpRequest):
                 await conn.execute("UPDATE otp_codes SET is_used = TRUE WHERE id = $1", otp_record["id"])
 
     if not is_valid:
+        logger.warning("[OTP-INVALID] Noto'g'ri kod: phone=%s, code=%s", phone_with_plus, code)
         raise HTTPException(status_code=400, detail="Tasdiqlash kodi noto'g'ri yoki muddati o'tgan")
 
     # 2. Foydalanuvchini topish
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT * FROM users WHERE phone = $1", phone)
+        user = await conn.fetchrow(
+            "SELECT * FROM users WHERE phone = $1 OR phone = $2",
+            phone_with_plus,
+            phone_without_plus,
+        )
         if not user:
             # Agar mavjud bo'lmasa, namunaviy avtomatik ro'yxatga olish
             tenant = await conn.fetchrow("SELECT id FROM tenants LIMIT 1")
@@ -653,8 +694,8 @@ async def verify_otp(req: VerifyOtpRequest):
                 RETURNING *
                 """,
                 tenant_id,
-                phone,
-                f"Haydovchi ({phone[-4:]})",
+                phone_with_plus,
+                f"Haydovchi ({clean_digits[-4:]})",
             )
 
         # Haydovchiga biriktirilgan avtomobilni olish
