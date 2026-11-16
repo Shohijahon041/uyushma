@@ -70,6 +70,7 @@ export default function CollectorPage() {
   const [search, setSearch] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [watchdogBusy, setWatchdogBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<CollectorRecord | null>(null);
 
@@ -128,6 +129,29 @@ export default function CollectorPage() {
     }
   }
 
+  async function handleTriggerWatchdog() {
+    setWatchdogBusy(true);
+    setMessage(null);
+    try {
+      const res = await apiRequest<{ synced: number; durationMs: number }>("/collector/watchdog-tick", {
+        method: "POST",
+      });
+      setMessage({
+        type: "success",
+        text: `Token Watchdog muvaffaqiyatli yakunlandi: ${res.synced} ta ulanish tekshirildi va yangilandi (${Math.round((res.durationMs || 0) / 1000)}s).`,
+      });
+      await reloadStatus();
+      setTimeout(() => void loadRecords(), 2000);
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : tc("error"),
+      });
+    } finally {
+      setWatchdogBusy(false);
+    }
+  }
+
   async function handleImportToMainDb() {
     setImporting(true);
     setMessage(null);
@@ -174,6 +198,14 @@ export default function CollectorPage() {
         subtitle="ijara.soliq.uz, e-tender.uztrans.uz va bm.dtransport.uz portallaridan yig'ilgan yagona ma'lumotlar bazasi"
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleTriggerWatchdog()}
+              disabled={watchdogBusy}
+              className="btn-secondary px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200"
+            >
+              <span>{watchdogBusy ? "Tekshirilmoqda..." : "🛡️ Token Watchdog (Majburiy yangilash)"}</span>
+            </button>
             {me.data && !me.data.company.isPlatform && (
               <button
                 type="button"
