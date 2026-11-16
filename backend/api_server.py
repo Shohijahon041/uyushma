@@ -47,6 +47,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
+from security import encrypt_credential, decrypt_credential, mask_sensitive
 
 # .env yuklash (agar mavjud bo'lsa)
 load_dotenv("/opt/uyushma/.env")
@@ -120,7 +121,23 @@ class GpsPingRequest(BaseModel):
     longitude: float
     speed_kmh: Optional[float] = 0.0
     course: Optional[float] = 0.0
+    time: Optional[str] = None
     is_valid: Optional[bool] = True
+
+
+class GpsPointItem(BaseModel):
+    virtual_gps_id: str
+    latitude: float
+    longitude: float
+    speed_kmh: Optional[float] = 0.0
+    course: Optional[float] = 0.0
+    time: Optional[str] = None
+    is_valid: Optional[bool] = True
+
+
+class GpsBulkPingRequest(BaseModel):
+    points: List[GpsPointItem] = Field(..., max_length=500)
+
 
 
 # =============================================================================
@@ -235,10 +252,25 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool, redis_client
-    logger.info("FastAPI server boshlanmoqda...")
-    db_pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=5, max_size=50)
-    redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
+    logger.info("FastAPI server boshlanmoqda (High-Load 100K Connection Pool)...")
+    
+    # 100,000 ta faol transport uchun optimallashtirilgan AsyncPG connection pool
+    # PGBouncer transaction pooling bilan to'liq mos bo'lishi uchun statement_cache_size=0 qo'llanadi.
+    db_pool = await asyncpg.create_pool(
+        dsn=DATABASE_URL,
+        min_size=int(os.getenv("DB_POOL_MIN", "20")),
+        max_size=int(os.getenv("DB_POOL_MAX", "100")),
+        command_timeout=float(os.getenv("DB_COMMAND_TIMEOUT", "20.0")),
+        max_inactive_connection_lifetime=float(os.getenv("DB_MAX_INACTIVE_SEC", "300.0")),
+        statement_cache_size=0,
+    )
+    redis_client = aioredis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "200")),
+    )
     cron_task = asyncio.create_task(cron_nightly_checker())
+    logger.info("AsyncPG pool (min=20, max=100) va Redis muvaffaqiyatli ishga tushdi.")
     yield
     cron_task.cancel()
     if db_pool:
@@ -924,6 +956,114 @@ async def receive_gps_ping(req: GpsPingRequest):
             logger.warning("DB ping update error: %s", e)
 
     return {"status": "ok", "ack": "ON", "time": now.isoformat()}
+
+
+@app.post("/api/v1/gps/bulk", summary="Oflayn navbatdan to'plangan GPS nuqtalarini ommaviy sinxronlash (Bulk Sync)")
+async def receive_gps_bulk(req: GpsBulkPingRequest):
+    """
+    Haydovchi internet yo'q hududdan (tog' yo'llari, aloqa yo'q joylar) chiqqach,
+    mobil ilova lokal bazasiga (SQLite) saqlangan barcha koordinatalarni
+    serverga ommaviy paket ko'rinishida yuboradi.
+    """
+    if not req.points:
+        return {"status": "ok", "synced_count": 0}
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    records = []
+    latest_by_gps: Dict[str, GpsPointItem] = {}
+
+    for pt in req.points:
+        pt_time = now
+        if pt.time:
+            try:
+                pt_time = datetime.datetime.fromisoformat(pt.time.replace("Z", "+00:00"))
+            except Exception:
+                pt_time = now
+
+        records.append((
+            pt_time,
+            pt.virtual_gps_id,
+            None,
+            None,
+            pt.latitude,
+            pt.longitude,
+            pt.speed_kmh or 0.0,
+            pt.course or 0.0,
+            pt.is_valid if pt.is_valid is not None else True,
+            f"BULK_SYNC:{pt.virtual_gps_id}:{pt_time.isoformat()}"
+        ))
+        latest_by_gps[pt.virtual_gps_id] = pt
+
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                try:
+                    await conn.copy_records_to_table(
+                        "gps_logs",
+                        records=records,
+                        columns=[
+                            "time",
+                            "virtual_gps_id",
+                            "vehicle_id",
+                            "tenant_id",
+                            "latitude",
+                            "longitude",
+                            "speed_kmh",
+                            "course",
+                            "is_valid",
+                            "raw_packet",
+                        ],
+                    )
+                except Exception:
+                    await conn.executemany(
+                        """
+                        INSERT INTO gps_logs (time, virtual_gps_id, latitude, longitude, speed_kmh, course, is_valid, raw_packet)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        """,
+                        [
+                            (r[0], r[1], r[4], r[5], r[6], r[7], r[8], r[9])
+                            for r in records
+                        ]
+                    )
+
+                for v_id, lpt in latest_by_gps.items():
+                    await conn.execute(
+                        """
+                        UPDATE vehicles
+                        SET last_gps_time = $1,
+                            last_latitude = $2,
+                            last_longitude = $3,
+                            last_speed_kmh = $4,
+                            last_course = $5,
+                            updated_at = NOW()
+                        WHERE virtual_gps_id = $6
+                        """,
+                        now, lpt.latitude, lpt.longitude, lpt.speed_kmh or 0.0, lpt.course or 0.0, v_id
+                    )
+        except Exception as err:
+            logger.error("Bulk GPS sync xatoligi: %s", err)
+            raise HTTPException(status_code=500, detail=f"Bulk sync xatosi: {err}")
+
+    if redis_client:
+        try:
+            async with redis_client.pipeline(transaction=False) as pipe:
+                for v_id, lpt in latest_by_gps.items():
+                    r_payload = {
+                        "virtual_gps_id": v_id,
+                        "lat": lpt.latitude,
+                        "lng": lpt.longitude,
+                        "speed": lpt.speed_kmh or 0.0,
+                        "course": lpt.course or 0.0,
+                        "time": now.isoformat(),
+                        "valid": lpt.is_valid,
+                    }
+                    pipe.set(f"live_gps:{v_id}", json.dumps(r_payload), ex=86400)
+                await pipe.execute()
+        except Exception as e:
+            logger.warning("Redis bulk sync xatosi: %s", e)
+
+    return {"status": "ok", "synced_count": len(req.points)}
+
 
 
 @app.get("/api/v1/vehicles/live", summary="Barcha avtomobillarning jonli koordinatalari")

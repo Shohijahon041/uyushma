@@ -60,12 +60,15 @@ if "?" in DATABASE_URL:
 DB_BATCH_SIZE = int(os.getenv("DB_BATCH_SIZE", "1000"))
 DB_FLUSH_INTERVAL = float(os.getenv("DB_FLUSH_INTERVAL", "0.5"))  # soniya
 MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "200000"))
+CLIENT_IDLE_TIMEOUT = float(os.getenv("CLIENT_IDLE_TIMEOUT", "120.0"))  # Qotib qolgan soketlarni uzish (soniya)
+MAX_CLIENT_BUFFER = int(os.getenv("MAX_CLIENT_BUFFER", "8192"))  # Xotira toshib ketishining oldini olish (bayt)
 
 # Global resurslar
 db_pool: Optional[asyncpg.Pool] = None
 redis_client: Optional[aioredis.Redis] = None
 log_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
 running = True
+
 
 # H02 protokoli uchun regex
 # Format: *HQ,<10_digits>,V1,<HHMMSS>,<A/V>,<Lat>,<N/S>,<Lon>,<E/W>,<Speed>,<Course>,<DDMMYY>,<Status>#
@@ -146,21 +149,30 @@ class GovForwarder:
     """
     Davlat portali (bm.dtransport.uz:20335) bilan barqaror TCP ulanishini
     boshqaruvchi va kelgan baytlarni asinxron yo'naltiruvchi proksi sinfi.
+    100 000 ta mashina oqimida xotira (RAM) toshib ketmasligi uchun
+    bounded asyncio.Queue va avtomatik qayta ulanish (Auto-reconnect)
+    mexanizmi asosida ishlaydi.
     """
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, queue_size: int = 100000):
         self.host = host
         self.port = port
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
         self.writer: Optional[asyncio.StreamWriter] = None
-        self.lock = asyncio.Lock()
+        self.worker_task: Optional[asyncio.Task] = None
 
-    async def get_connection(self) -> Optional[asyncio.StreamWriter]:
+    def start(self):
+        if not self.worker_task and ENABLE_GOV_FORWARD:
+            self.worker_task = asyncio.create_task(self._worker_loop())
+            logger.info("Davlat portali (GovForwarder) worker vazifasi ishga tushirildi.")
+
+    async def _get_connection(self) -> Optional[asyncio.StreamWriter]:
         if self.writer and not self.writer.is_closing():
             return self.writer
 
         try:
             _, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), timeout=3.0
+                asyncio.open_connection(self.host, self.port), timeout=5.0
             )
             self.writer = writer
             logger.info("Davlat portali bilan TCP ulanish o'rnatildi: %s:%d", self.host, self.port)
@@ -170,28 +182,64 @@ class GovForwarder:
             self.writer = None
             return None
 
-    async def forward(self, payload: bytes):
-        """Asinxron ravishda paketni davlat portaliga yuborish."""
-        if not ENABLE_GOV_FORWARD:
-            return
-
-        async with self.lock:
+    async def _worker_loop(self):
+        """Doimiy fonda navbatdagi baytlarni davlat portaliga xavfsiz va uzilishsiz uzatuvchi sikl."""
+        reconnect_delay = 1.0
+        while running or not self.queue.empty():
             try:
-                writer = await self.get_connection()
-                if writer:
+                payload = await asyncio.wait_for(self.queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                break
+
+            sent = False
+            while not sent and running:
+                writer = await self._get_connection()
+                if not writer:
+                    await asyncio.sleep(min(reconnect_delay, 10.0))
+                    reconnect_delay = min(reconnect_delay * 1.5, 30.0)
+                    continue
+
+                try:
                     writer.write(payload)
-                    await writer.drain()
-            except Exception as e:
-                logger.debug("Davlat portaliga forward xatosi: %s", e)
-                if self.writer:
+                    await asyncio.wait_for(writer.drain(), timeout=3.0)
+                    sent = True
+                    reconnect_delay = 1.0
+                except Exception as e:
+                    logger.debug("Davlat portaliga paket uzatishda uzilish: %s. Qayta ulanmoqda...", e)
                     try:
-                        self.writer.close()
+                        writer.close()
                     except Exception:
                         pass
                     self.writer = None
+                    await asyncio.sleep(1.0)
+
+            self.queue.task_done()
+
+    def enqueue(self, payload: bytes):
+        """Asinxron ravishda paketni navbatga qo'yish (xotira to'lib ketishidan himoyalangan)."""
+        if not ENABLE_GOV_FORWARD:
+            return
+        if not self.queue.full():
+            self.queue.put_nowait(payload)
+        else:
+            logger.warning("GovForwarder navbati to'ldi, paket tashlab ketildi")
+
+    async def close(self):
+        if self.worker_task:
+            self.worker_task.cancel()
+        if self.writer:
+            try:
+                self.writer.close()
+                await self.writer.wait_closed()
+            except Exception:
+                pass
+            self.writer = None
 
 
 gov_forwarder = GovForwarder(GOV_GPS_HOST, GOV_GPS_PORT)
+
 
 
 async def db_batch_worker():
@@ -300,18 +348,31 @@ async def db_batch_worker():
 async def handle_h02_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     """
     Har bir alohida haydovchi mobil ilovasi / GPS trekerining TCP sessiyasini qabul qilish.
+    100 000 ta parallel ulanishda soketlar qotib qolishining oldini olish uchun
+    CLIENT_IDLE_TIMEOUT va MAX_CLIENT_BUFFER cheklovlari o'rnatilgan.
     """
     peer = writer.get_extra_info("peername")
     buffer = b""
 
     try:
         while running:
-            # 1024 baytgacha o'qish (H02 paketi odatda 60-100 bayt)
-            chunk = await reader.read(1024)
+            # Socket qotib qolishini oldini oluvchi timeout bilan o'qish (120 soniya)
+            try:
+                chunk = await asyncio.wait_for(reader.read(1024), timeout=CLIENT_IDLE_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.debug("Klient idle timeout (%ss) oshdi, ulanish yopilmoqda: %s", CLIENT_IDLE_TIMEOUT, peer)
+                break
+
             if not chunk:
                 break
 
             buffer += chunk
+
+            # Xotira toshib ketishi (RAM exhaustion) dan himoya
+            if len(buffer) > MAX_CLIENT_BUFFER:
+                logger.warning("Klient buffer chegaradan oshdi (%d bayt), tozalanmoqda: %s", len(buffer), peer)
+                buffer = b""
+                continue
 
             # Paketlar '#' belgisi bilan tugaydi
             while b"#" in buffer:
@@ -323,8 +384,8 @@ async def handle_h02_client(reader: asyncio.StreamReader, writer: asyncio.Stream
                 if not raw_text.startswith("*HQ"):
                     continue
 
-                # 1. Real-time forward: Davlat portaliga asl baytlarni yo'naltirish
-                asyncio.create_task(gov_forwarder.forward(packet_bytes + b"\r\n"))
+                # 1. Real-time forward: Davlat portaliga navbat orqali xavfsiz yo'naltirish
+                gov_forwarder.enqueue(packet_bytes + b"\r\n")
 
                 # 2. Paketni parslash
                 parsed = parse_h02_packet(raw_text)
@@ -375,34 +436,43 @@ async def handle_h02_client(reader: asyncio.StreamReader, writer: asyncio.Stream
 async def main():
     global db_pool, redis_client, running
 
-    logger.info("=== H02 TCP PROXY GATEWAY ISHGA TUSHMOQDA ===")
+    logger.info("=== H02 TCP PROXY GATEWAY ISHGA TUSHMOQDA (HIGH-LOAD 100K) ===")
     logger.info("Tinglash manzili: %s:%d", GATEWAY_HOST, GATEWAY_PORT)
     logger.info("Davlat portali: %s:%d (Forward: %s)", GOV_GPS_HOST, GOV_GPS_PORT, ENABLE_GOV_FORWARD)
 
     # 1. Redis ga ulanish
     try:
-        redis_client = aioredis.from_url(REDIS_URL, decode_responses=True, max_connections=200)
+        redis_client = aioredis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "200")),
+        )
         await redis_client.ping()
         logger.info("Redis ga ulanish muvaffaqiyatli: %s", REDIS_URL)
     except Exception as e:
         logger.error("Redis ga ulanishda xato: %s", e)
 
-    # 2. PostgreSQL / TimescaleDB ga ulanish (Connection Pool)
+    # 2. PostgreSQL / TimescaleDB ga ulanish (Connection Pool optimallashtirilgan)
     try:
         db_pool = await asyncpg.create_pool(
             dsn=DATABASE_URL,
-            min_size=10,
-            max_size=100,
-            command_timeout=30.0,
+            min_size=int(os.getenv("DB_POOL_MIN", "20")),
+            max_size=int(os.getenv("DB_POOL_MAX", "100")),
+            command_timeout=float(os.getenv("DB_COMMAND_TIMEOUT", "20.0")),
+            max_inactive_connection_lifetime=float(os.getenv("DB_MAX_INACTIVE_SEC", "300.0")),
+            statement_cache_size=0,
         )
-        logger.info("PostgreSQL/TimescaleDB pool yaratildi (min=10, max=100).")
+        logger.info("PostgreSQL/TimescaleDB pool yaratildi (min=20, max=100, statement_cache=0).")
     except Exception as e:
         logger.error("Database pool yaratishda xato: %s", e)
 
-    # 3. Fon batch workerini ishga tushirish
+    # 3. Davlat portali forward workerini ishga tushirish
+    gov_forwarder.start()
+
+    # 4. Fon batch workerini ishga tushirish
     batch_task = asyncio.create_task(db_batch_worker())
 
-    # 4. TCP Serverni ishga tushirish (100K ulanishni qabul qilish uchun)
+    # 5. TCP Serverni ishga tushirish (100K ulanishni qabul qilish uchun)
     server = await asyncio.start_server(
         handle_h02_client,
         GATEWAY_HOST,
@@ -423,7 +493,6 @@ async def main():
         try:
             loop.add_signal_handler(sig, stop_server)
         except NotImplementedError:
-            # Windows da signal handlerlar to'liq ishlamasligi mumkin
             pass
 
     async with server:
@@ -436,11 +505,13 @@ async def main():
     # Yopilish jarayoni
     running = False
     await batch_task
+    await gov_forwarder.close()
     if db_pool:
         await db_pool.close()
     if redis_client:
         await redis_client.close()
     logger.info("Gateway to'liq to'xtatildi.")
+
 
 
 if __name__ == "__main__":

@@ -34,6 +34,24 @@ services:
       -c work_mem=10MB
 
   # ===========================================================================
+  # 1.1. PGBOUNCER (100K Ulanishlarni boshqaruvchi Connection Pooler)
+  # ===========================================================================
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: uyushma_pgbouncer
+    restart: unless-stopped
+    ports:
+      - "6432:6432"
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    depends_on:
+      - timescaledb
+    networks:
+      - uyushma_net
+
+
+  # ===========================================================================
   # 2. REDIS 7 (Yuqori tezlikdagi jonli kesh va Pub/Sub)
   # ===========================================================================
   redis:
@@ -75,11 +93,12 @@ services:
       GOV_GPS_PORT: 20335
       ENABLE_GOV_FORWARD: "true"
       REDIS_URL: "redis://redis:6379/0"
-      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@pgbouncer:6432/uyushma"
       DB_BATCH_SIZE: 1000
       DB_FLUSH_INTERVAL: 0.5
     depends_on:
       - timescaledb
+      - pgbouncer
       - redis
     networks:
       - uyushma_net
@@ -103,11 +122,12 @@ services:
       GOV_GPS_PORT: 20335
       ENABLE_GOV_FORWARD: "true"
       REDIS_URL: "redis://redis:6379/0"
-      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@pgbouncer:6432/uyushma"
       DB_BATCH_SIZE: 1000
       DB_FLUSH_INTERVAL: 0.5
     depends_on:
       - timescaledb
+      - pgbouncer
       - redis
     networks:
       - uyushma_net
@@ -128,7 +148,7 @@ services:
     container_name: uyushma_api_server
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@timescaledb:5432/uyushma"
+      DATABASE_URL: "postgresql://postgres:postgres_secure_pass_2026@pgbouncer:6432/uyushma"
       REDIS_URL: "redis://redis:6379/0"
       JWT_SECRET: "super-secret-uyushma-jwt-key-2026-production"
       CLICK_SERVICE_ID: "12345"
@@ -136,6 +156,7 @@ services:
       PAYME_KEY: "payme_secret_key_demo"
     depends_on:
       - timescaledb
+      - pgbouncer
       - redis
     networks:
       - uyushma_net

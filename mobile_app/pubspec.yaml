@@ -16,9 +16,11 @@ dependencies:
   geolocator: ^12.0.0
   permission_handler: ^11.3.1
 
-  # HTTP va Mahalliy saqlash
+  # HTTP va Mahalliy saqlash (Offline GPS Queue)
   http: ^1.2.1
   shared_preferences: ^2.2.3
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
 
   # Qo'ng'iroq va havolalarni ochish (tel:, Click, Payme)
   url_launcher: ^6.3.0

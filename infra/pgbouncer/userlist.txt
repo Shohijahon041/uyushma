@@ -1,0 +1,2 @@
+"postgres" "postgres_secure_pass_2026"
+"uyushma_app" "d0b7410e63d2b0d2dc5beb09672fcbac30ef"

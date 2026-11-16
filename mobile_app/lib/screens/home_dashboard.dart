@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/api_service.dart';
 import '../core/background_tracker.dart';
+import '../core/battery_optimizer.dart';
 import '../core/h02_protocol.dart';
 import 'login_screen.dart';
 import 'unified_profile.dart';
@@ -32,6 +33,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   double _longitude = 69.2401;
   int _packetsSent = 0;
   bool _isServerConnected = false;
+  int _offlineCachedCount = 0;
 
   // To'g'ridan-to'g'ri faol telemetriya
   Timer? _liveTelemetryTimer;
@@ -44,6 +46,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     _checkInitialShiftState();
     _loadProfile();
     _listenBackgroundService();
+
+    // Batareya optimizatsiyasidan chiqarish so'rovi (fondagi xizmat o'chib qolmasligi uchun)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        BatteryOptimizer.requestOptimizationDisable(context);
+      }
+    });
   }
 
   @override
@@ -75,10 +84,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           _currentSpeed = event['speed'] ?? _currentSpeed;
           _packetsSent = event['packets'] ?? _packetsSent;
           _isServerConnected = event['connected'] ?? _isServerConnected;
+          _offlineCachedCount = event['offline_cached'] ?? _offlineCachedCount;
         });
       }
     });
   }
+
 
   Future<void> _startLiveTelemetry(String virtualGpsId) async {
     _stopLiveTelemetry();
@@ -712,9 +723,32 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               ),
                             ],
                           ),
+                          if (_offlineCachedCount > 0) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withAlpha(38),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFF59E0B).withAlpha(100)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.cloud_off_rounded, color: Color(0xFFF59E0B), size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Oflayn kesh: $_offlineCachedCount ta nuqta saqlangan (Aloqa tiklangach yuboriladi)',
+                                    style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
+
 
                     const SizedBox(height: 16),
 

@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'h02_protocol.dart';
+import 'offline_gps_queue.dart';
 
 const String notificationChannelId = 'uyushma_gps_channel';
 const int notificationId = 888;
@@ -149,7 +150,63 @@ void onServiceStart(ServiceInstance service) async {
     }
   }
 
-  // Telemetriya paketini yuborish (TCP 20335 + HTTPS fallback)
+  // Oflayn navbatdagi koordinatalarni serverga ommaviy sinxronlash (Bulk Sync)
+  bool isSyncingOffline = false;
+  Future<void> drainOfflineQueue() async {
+    if (isSyncingOffline) return;
+    isSyncingOffline = true;
+    try {
+      final queue = OfflineGpsQueue();
+      int pending = await queue.getQueueCount();
+      if (pending == 0) {
+        isSyncingOffline = false;
+        return;
+      }
+
+      while (pending > 0 && isTracking) {
+        final batch = await queue.getBatch(limit: 50);
+        if (batch.isEmpty) break;
+
+        final List<Map<String, dynamic>> pointsPayload = batch.map((row) {
+          return {
+            'virtual_gps_id': row['virtual_gps_id'],
+            'latitude': row['latitude'],
+            'longitude': row['longitude'],
+            'speed_kmh': row['speed_kmh'],
+            'course': row['course'],
+            'time': row['point_time'],
+            'is_valid': row['is_valid'] == 1,
+          };
+        }).toList();
+
+        try {
+          final res = await http.post(
+            Uri.parse('https://uyushma.bmbrutto.uz/api/v1/gps/bulk'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'points': pointsPayload}),
+          ).timeout(const Duration(seconds: 5));
+
+          if (res.statusCode == 200) {
+            final List<int> ids = batch.map((r) => r['id'] as int).toList();
+            await queue.deleteBatch(ids);
+            pending = await queue.getQueueCount();
+            debugPrint('[BULK-SYNC-SUCCESS] ${ids.length} ta oflayn nuqta uzatildi. Qoldi: $pending');
+          } else {
+            break;
+          }
+        } catch (syncErr) {
+          debugPrint('[BULK-SYNC-FAIL] $syncErr');
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('[BULK-SYNC-ERROR] $e');
+    } finally {
+      isSyncingOffline = false;
+    }
+  }
+
+  // Telemetriya paketini yuborish (TCP 20335 + HTTPS fallback + Offline Queue)
   Future<void> sendTelemetryPacket() async {
     if (!isTracking) return;
 
@@ -227,18 +284,47 @@ void onServiceStart(ServiceInstance service) async {
         }
       }
 
-      // Bildirishnomani yangilash
+      // 3. OFLAYN REJIM: Agar internet yo'q bo'lsa (TCP va HTTPS ikkalasi ham ishlamasa),
+      // koordinatani lokal SQLite bazasiga saqlab qo'yamiz!
+      if (!isConnected) {
+        await OfflineGpsQueue().enqueue(
+          virtualGpsId: virtualGpsId,
+          latitude: lat,
+          longitude: lon,
+          speedKmh: speedKmh,
+          course: course,
+          timestamp: timestamp,
+          isValid: true,
+        );
+      } else {
+        // Aloqa mavjud bo'lganda oflayn navbatni serverga uzatish (Bulk Sync)
+        drainOfflineQueue();
+      }
+
+      final int cachedCount = await OfflineGpsQueue().getQueueCount();
+
+      // Minimalistik va real vaqtda tezlikni ko'rsatuvchi bezovta qilmaydigan bildirishnoma
       if (service is AndroidServiceInstance) {
+        final String notifTitle = isConnected ? 'Uyushma GPS • Faol' : 'Uyushma GPS • Oflayn rejim';
+        final String notifContent = isConnected
+            ? 'Tezlik: ${speedKmh.toStringAsFixed(0)} km/soat • Aloqa: Barqaror'
+            : 'Tezlik: ${speedKmh.toStringAsFixed(0)} km/soat • Keshda: $cachedCount ta nuqta';
+
         localNotifications.show(
           notificationId,
-          'Smena Faol (Uyushma GPS)',
-          'Tezlik: ${speedKmh.toStringAsFixed(1)} km/s | Paket: $packetCount ta | Aloqa: ${isConnected ? "ON" : "Ulanmoqda"}',
+          notifTitle,
+          notifContent,
           const NotificationDetails(
             android: AndroidNotificationDetails(
               notificationChannelId,
               'Uyushma Jonli GPS Xizmati',
               icon: '@mipmap/ic_launcher',
               ongoing: true,
+              showWhen: false,
+              playSound: false,
+              enableVibration: false,
+              importance: Importance.low,
+              priority: Priority.low,
             ),
           ),
         );
@@ -251,12 +337,14 @@ void onServiceStart(ServiceInstance service) async {
         'speed': speedKmh,
         'packets': packetCount,
         'connected': isConnected,
+        'offline_cached': cachedCount,
       });
 
     } catch (e) {
       debugPrint('[TRACKER-ERROR] $e');
     }
   }
+
 
   // GPS paketini yuborish sikli (darhol boshlash va har 8 soniyada)
   void startTimerLoop() {
