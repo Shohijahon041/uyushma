@@ -293,6 +293,7 @@ export interface PublicVehiclePassport {
   driverName: string | null;
   driverPhone?: string | null;
   driverSource?: "SOLIQ" | "PLATFORM" | null;
+  driverPhotoUrl?: string | null;
   license: {
     number: string | null;
     expiresAt: string | null;

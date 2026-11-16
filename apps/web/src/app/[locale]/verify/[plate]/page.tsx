@@ -15,6 +15,7 @@ interface PublicPassportData {
   driverName: string | null;
   driverPhone?: string | null;
   driverSource?: "SOLIQ" | "PLATFORM" | null;
+  driverPhotoUrl?: string | null;
   license: {
     number: string | null;
     expiresAt: string | null;
@@ -231,18 +232,27 @@ export default async function PublicVerifyPage({
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-xs text-slate-400 print:text-slate-600">
-                    {data.driverSource === "SOLIQ" ? "Soliq ijarachi" : "Biriktirilgan haydovchi"}
-                  </div>
-                  <div className="font-bold text-white print:text-black text-sm mt-0.5">
-                    {data.driverName ?? "Ko'rsatilmagan"}
-                  </div>
-                  {data.driverPhone && (
-                    <div className="text-xs text-slate-400 print:text-slate-600 mt-0.5">
-                      {formatUzPhone(data.driverPhone)}
+                <div className="flex items-center gap-3">
+                  {data.driverPhotoUrl ? (
+                    <img
+                      src={data.driverPhotoUrl}
+                      alt={data.driverName ?? "Haydovchi"}
+                      className="w-12 h-12 rounded-full object-cover border border-amber-400/50 shadow-sm shrink-0"
+                    />
+                  ) : null}
+                  <div>
+                    <div className="text-xs text-slate-400 print:text-slate-600">
+                      {data.driverSource === "SOLIQ" ? "Soliq ijarachi" : "Biriktirilgan haydovchi"}
                     </div>
-                  )}
+                    <div className="font-bold text-white print:text-black text-sm mt-0.5">
+                      {data.driverName ?? "Ko'rsatilmagan"}
+                    </div>
+                    {data.driverPhone && (
+                      <div className="text-xs text-slate-400 print:text-slate-600 mt-0.5">
+                        {formatUzPhone(data.driverPhone)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

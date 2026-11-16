@@ -720,7 +720,7 @@ export class ExternalCrossLinkService {
         assignments: {
           where: { endDate: null },
           take: 1,
-          include: { driver: { select: { fullName: true, phone: true } } },
+          include: { driver: { select: { fullName: true, phone: true, telegramChatId: true } } },
         },
         shifts: {
           where: { status: "ACTIVE" },
@@ -825,8 +825,11 @@ export class ExternalCrossLinkService {
 
       const activeShift = vehicle?.shifts?.[0];
       const nativeDriver = vehicle?.assignments[0]?.driver;
-      const driverName = lesseeName ?? nativeDriver?.fullName ?? null;
-      const driverPhone = lesseePhone ?? nativeDriver?.phone ?? null;
+      const driverName = nativeDriver?.fullName ?? lesseeName ?? null;
+      const driverPhone = nativeDriver?.phone ?? lesseePhone ?? null;
+      const driverPhotoUrl = nativeDriver?.telegramChatId
+        ? `https://uyushma.bmbrutto.uz/api/v1/public/avatar/${nativeDriver.telegramChatId}`
+        : null;
 
       let complianceStatus: PublicVehiclePassport["complianceStatus"];
       if (!rentRecord) complianceStatus = "NO_RENT_CONTRACT";
@@ -880,7 +883,8 @@ export class ExternalCrossLinkService {
         routeNumber: etenderVehicle?.routeNumber ?? autoparkVehicle?.routeNumber ?? null,
         driverName,
         driverPhone,
-        driverSource: lesseeName ? "SOLIQ" : nativeDriver ? "PLATFORM" : null,
+        driverSource: nativeDriver ? "PLATFORM" : lesseeName ? "SOLIQ" : null,
+        driverPhotoUrl,
         license: {
           number: licenseNumber,
           expiresAt: dateOnlyTashkent(licenseExpiresAt),

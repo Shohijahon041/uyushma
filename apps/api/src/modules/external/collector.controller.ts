@@ -12,13 +12,17 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser, Roles } from "../../common/auth/decorators";
 import type { AuthenticatedUser } from "../../common/auth/auth.types";
 import { CollectorService } from "./collector.service";
+import { TokenWatchdogService } from "./token-watchdog.service";
 
 @ApiTags("collector")
 @ApiBearerAuth()
 @Roles("OWNER", "ADMIN")
 @Controller("collector")
 export class CollectorController {
-  constructor(private readonly collector: CollectorService) {}
+  constructor(
+    private readonly collector: CollectorService,
+    private readonly watchdog: TokenWatchdogService,
+  ) {}
 
   private assertSuperAdmin(actor: AuthenticatedUser): void {
     if (!actor.isSuperAdmin) {
@@ -84,6 +88,12 @@ export class CollectorController {
   async importToTenant(@CurrentUser() user: AuthenticatedUser) {
     this.assertSuperAdmin(user);
     return this.collector.importToTenant(user.tenantId);
+  }
+
+  @Post("watchdog-tick")
+  async triggerWatchdog(@CurrentUser() actor: AuthenticatedUser) {
+    this.assertSuperAdmin(actor);
+    return this.watchdog.checkAndRenewAll();
   }
 }
 

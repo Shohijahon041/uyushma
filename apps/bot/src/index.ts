@@ -1083,13 +1083,16 @@ bot.start(async (ctx) => {
     const chatId = chatIdOf(ctx);
     const username = ctx.from?.username || "";
 
-    // 1. users jadvaliga chat_id bog'lash
+    // 1. users jadvaliga va Driver jadvaliga chat_id bog'lash va profil rasmini sinxronlash
     try {
       await fetch("http://127.0.0.1:8020/api/v1/auth/telegram-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: cleanPhone, chat_id: chatId, username }),
       });
+      const profile = await telegramProfile(ctx);
+      await api.linkPhone({ ...profile, phone: cleanPhone }).catch(() => null);
+      await api.syncProfile(profile).catch(() => null);
     } catch (_) {}
 
     // 2. Kodni olish (yoki mavjud faol kodni qaytarish) - bot_direct orqali takroriy xabar yuborilmaydi
