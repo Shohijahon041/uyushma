@@ -1198,7 +1198,7 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
     covered_until = payment_row["coveredUntil"].isoformat() if (payment_row and payment_row["coveredUntil"]) else None
 
     wb_public_token = waybill_row["publicToken"] if waybill_row else None
-    wb_url = f"https://uyushma.bmbrutto.uz/api/v1/public/waybill/{wb_public_token}" if wb_public_token else None
+    wb_url = f"https://uyushma.bmbrutto.uz/waybill/{wb_public_token}" if wb_public_token else None
 
     return {
         "has_vehicle": True,
@@ -1531,10 +1531,11 @@ async def get_driver_active_waybill(current_user: Dict[str, Any] = Depends(get_c
         "fuel_type": waybill_row["fuelType"],
         "start_odometer": waybill_row["startOdometer"],
         "public_token": public_token,
-        "verification_url": verify_url,
+        "verification_url": f"https://uyushma.bmbrutto.uz/waybill/{public_token}",
     }
 
 
+@app.get("/waybill/{public_token}", response_class=HTMLResponse, summary="Davlat inspeksiyasi uchun yo'l varaqasini tekshirish")
 @app.get("/api/v1/public/waybill/{public_token}", response_class=HTMLResponse, summary="Davlat inspeksiyasi uchun yo'l varaqasini tekshirish")
 async def verify_waybill_public(public_token: str):
     async with db_pool.acquire() as conn:

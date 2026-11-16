@@ -14,6 +14,7 @@ import '../core/battery_optimizer.dart';
 import '../core/h02_protocol.dart';
 import 'login_screen.dart';
 import 'unified_profile.dart';
+import 'waybill_modal.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
@@ -484,6 +485,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.qr_code_2, color: Color(0xFF34D399)),
+            tooltip: "Elektron Yo'l Varaqasi",
+            onPressed: () {
+              showWaybillSheet(context, profileData: _profileData);
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.badge_outlined, color: Color(0xFF38BDF8)),
             tooltip: 'Yagona Profil',
             onPressed: () {
@@ -663,6 +671,80 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                 ],
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // 1.8. Rasmiy Elektron Yo'l Varaqasi Karta
+                    InkWell(
+                      onTap: () => showWaybillSheet(context, profileData: _profileData),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0F2B48), Color(0xFF1E293B)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.6), width: 1.2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF38BDF8)),
+                              ),
+                              child: const Icon(Icons.qr_code_2, color: Color(0xFF38BDF8), size: 28),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'ELEKTRON YO\'L VARAQASI',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: const Text('AMALDA', style: TextStyle(color: Color(0xFF34D399), fontSize: 9, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '№ ${_profileData?['waybill']?['number'] ?? 'YV-26-86964'} • QR-kod bilan',
+                                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'GAI / Transport Nazorati inspektoriga ko\'rsatish',
+                                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios, color: Color(0xFF64748B), size: 16),
                           ],
                         ),
                       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/api_service.dart';
+import 'waybill_modal.dart';
 
 class UnifiedProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? initialProfile;
@@ -41,136 +42,6 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     }
   }
 
-  void _showQrModal(
-    BuildContext context,
-    String plate,
-    String gpsId,
-    String driverName, {
-    String? wbNumber,
-    String? verifyUrl,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E293B),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 48,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF475569),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'Elektron Yo\'l Varaqasi QR-Kodi',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'YHXBB (GAI) yoki Transport Nazorati inspektoriga taqdim etish uchun',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-              ),
-              if (wbNumber != null && wbNumber.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'Rasmiy Yo\'l Varaqasi № $wbNumber',
-                    style: const TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: SizedBox(
-                  width: 180,
-                  height: 180,
-                  child: CustomPaint(
-                    painter: _QrPlaceholderPainter(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '$driverName • $plate',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Virtual GPS ID (H02): $gpsId',
-                style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              if (verifyUrl != null && verifyUrl.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      await launchUrl(Uri.parse(verifyUrl), mode: LaunchMode.externalApplication);
-                    } catch (_) {}
-                  },
-                  icon: const Icon(Icons.open_in_browser, size: 16, color: Color(0xFF38BDF8)),
-                  label: const Text(
-                    'Inspektor varaqasini ochish',
-                    style: TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF38BDF8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(ctx),
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Tushunarli'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final vehicle = _profile?['vehicle'];
@@ -204,19 +75,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF38BDF8)),
-            tooltip: 'QR Kod',
+            tooltip: 'Elektron Yo\'l Varaqasi',
             onPressed: () {
-              if (vehicle != null && driver != null) {
-                final waybill = _profile?['waybill'];
-                _showQrModal(
-                  context,
-                  vehicle['plate_number'] ?? '01A777AA',
-                  vehicle['virtual_gps_id'] ?? '9012345678',
-                  driver['full_name'] ?? 'Haydovchi',
-                  wbNumber: waybill?['number'],
-                  verifyUrl: waybill?['public_verification_url'],
-                );
-              }
+              showWaybillSheet(context, profileData: _profile);
             },
           ),
           IconButton(
@@ -252,6 +113,70 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
 
                     const SizedBox(height: 16),
 
+                    // 3.5. Elektron Yo'l Varaqasi Maxsus Karta
+                    InkWell(
+                      onTap: () => showWaybillSheet(context, profileData: _profile),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0F2B48), Color(0xFF1E293B)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.6), width: 1.2),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFF38BDF8)),
+                              ),
+                              child: const Icon(Icons.qr_code_2, color: Color(0xFF38BDF8), size: 26),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'ELEKTRON YO\'L VARAQASI',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: const Text('AMALDA', style: TextStyle(color: Color(0xFF34D399), fontSize: 9, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '№ ${_profile?['waybill']?['number'] ?? 'YV-26-86964'} • QR-kod bilan',
+                                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios, color: Color(0xFF64748B), size: 14),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
                     // 4. Kunlik Tibbiy va Texnik Ko'rik (Putyovka shtamplari)
                     _buildInspectionsCard(inspections),
 
@@ -263,27 +188,18 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                     const SizedBox(height: 20),
 
                     // 6. QR Kod ko'rsatish tugmasi
-                    OutlinedButton.icon(
+                    ElevatedButton.icon(
                       onPressed: () {
-                        if (vehicle != null && driver != null) {
-                          final waybill = _profile?['waybill'];
-                          _showQrModal(
-                            context,
-                            vehicle['plate_number'] ?? '01A777AA',
-                            vehicle['virtual_gps_id'] ?? '9012345678',
-                            driver['full_name'] ?? 'Haydovchi',
-                            wbNumber: waybill?['number'],
-                            verifyUrl: waybill?['public_verification_url'],
-                          );
-                        }
+                        showWaybillSheet(context, profileData: _profile);
                       },
-                      icon: const Icon(Icons.qr_code, color: Color(0xFF38BDF8)),
+                      icon: const Icon(Icons.qr_code_2, color: Colors.white, size: 22),
                       label: const Text(
-                        'Inspektorga QR-kod ko\'rsatish',
-                        style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
+                        'Elektron Yo\'l Varaqasi va QR-kod',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                       ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF0284C7)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
@@ -1171,40 +1087,3 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
   }
 }
 
-// Simple custom painter to draw a clean QR-like pattern without external libraries
-class _QrPlaceholderPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF0F172A)
-      ..style = PaintingStyle.fill;
-
-    // Corner Finder Patterns
-    _drawFinder(canvas, paint, 0, 0, 48);
-    _drawFinder(canvas, paint, size.width - 48, 0, 48);
-    _drawFinder(canvas, paint, 0, size.height - 48, 48);
-
-    // Decorative Data Blocks
-    final step = size.width / 12;
-    for (int r = 2; r < 10; r++) {
-      for (int c = 2; c < 10; c++) {
-        if ((r * c + r + c) % 3 == 0) {
-          canvas.drawRect(
-            Rect.fromLTWH(c * step + 2, r * step + 2, step - 4, step - 4),
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  void _drawFinder(Canvas canvas, Paint paint, double x, double y, double size) {
-    canvas.drawRect(Rect.fromLTWH(x, y, size, size), paint);
-    final whitePaint = Paint()..color = Colors.white;
-    canvas.drawRect(Rect.fromLTWH(x + 6, y + 6, size - 12, size - 12), whitePaint);
-    canvas.drawRect(Rect.fromLTWH(x + 12, y + 12, size - 24, size - 24), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
