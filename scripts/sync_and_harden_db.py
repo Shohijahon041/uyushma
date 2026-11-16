@@ -143,15 +143,15 @@ async def main():
 
     print(f"✓ Muvaffaqiyatli sinxronlashtirildi: {upserted_count} ta avtomobil!")
 
-    # 5. Create unique constraint / index on virtual_gps_id
+    # 5. Create unique constraint / index on virtual_gps_id and tenant_id + plate_number
     print("\n[STEP 4] Ensuring unique index on virtual_gps_id...")
     await conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_virtual_gps_id 
         ON vehicles (virtual_gps_id);
     """)
     await conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_plate_number 
-        ON vehicles (plate_number);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_tenant_plate 
+        ON vehicles (tenant_id, plate_number);
     """)
     print("✓ Unikal indekslar yaratildi.")
 
