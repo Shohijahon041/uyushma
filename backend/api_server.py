@@ -679,7 +679,110 @@ async def link_telegram_account(req: TelegramLinkRequest):
             pass
 
     logger.info("Telefon raqam Telegram chat_id bilan bog'landi: %s -> %s (@%s)", phone, chat_id, username)
+
+    # Telegram profil rasmini darhol olish va yangilash
+    try:
+        avatar_url = await fetch_and_cache_telegram_avatar(chat_id)
+        if avatar_url:
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE users SET photo_url = $1, telegram_photo_url = $1 WHERE phone = $2", avatar_url, phone)
+    except Exception as ex:
+        logger.debug("Telegram avatar yuklashda xato: %s", ex)
+
     return {"success": True, "message": "Telegram hisobi muvaffaqiyatli bog'landi"}
+
+
+# =============================================================================
+# TELEGRAM PROFIL RASMLARI KESHI VA SERVISI
+# =============================================================================
+AVATARS_DIR = "/opt/uyushma/uploads/avatars" if os.path.exists("/opt/uyushma") else os.path.join(os.path.dirname(__file__), "avatars")
+os.makedirs(AVATARS_DIR, exist_ok=True)
+
+
+async def fetch_and_cache_telegram_avatar(chat_id: Union[str, int]) -> Optional[str]:
+    """
+    Telegram Bot API orqali foydalanuvchining profil rasmini yuklab oladi va keshlaydi.
+    """
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        return None
+    clean_chat_id = str(chat_id).strip()
+    cache_path = os.path.join(AVATARS_DIR, f"{clean_chat_id}.jpg")
+
+    # Agar 24 soatdan yangi kesh mavjud bo'lsa
+    if os.path.exists(cache_path):
+        try:
+            mtime = os.path.getmtime(cache_path)
+            if (time.time() - mtime) < 86400 and os.path.getsize(cache_path) > 200:
+                return f"https://uyushma.bmbrutto.uz/api/v1/public/avatar/{clean_chat_id}"
+        except Exception:
+            pass
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            res = await client.get(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUserProfilePhotos",
+                params={"user_id": clean_chat_id, "limit": 1},
+            )
+            data = res.json()
+            if not data.get("ok") or not data.get("result", {}).get("photos"):
+                return None
+
+            photos = data["result"]["photos"][0]
+            if not photos:
+                return None
+            largest_photo = max(photos, key=lambda p: p.get("file_size", 0))
+            file_id = largest_photo["file_id"]
+
+            res_file = await client.get(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
+                params={"file_id": file_id},
+            )
+            file_data = res_file.json()
+            if not file_data.get("ok") or not file_data.get("result", {}).get("file_path"):
+                return None
+            file_path = file_data["result"]["file_path"]
+
+            dl_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+            res_dl = await client.get(dl_url)
+            if res_dl.status_code == 200 and len(res_dl.content) > 200:
+                with open(cache_path, "wb") as f:
+                    f.write(res_dl.content)
+                logger.info("[TG-AVATAR] Profil rasmi yuklandi: chat_id=%s, hajmi=%d", clean_chat_id, len(res_dl.content))
+
+                try:
+                    async with db_pool.acquire() as conn:
+                        await conn.execute(
+                            'UPDATE "Driver" SET "telegramPhotoFileId" = $1 WHERE "telegramChatId" = $2',
+                            file_id,
+                            int(clean_chat_id),
+                        )
+                except Exception:
+                    pass
+
+                return f"https://uyushma.bmbrutto.uz/api/v1/public/avatar/{clean_chat_id}"
+    except Exception as e:
+        logger.warning("[TG-AVATAR-ERR] %s uchun rasm olishda xato: %s", clean_chat_id, e)
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 200:
+            return f"https://uyushma.bmbrutto.uz/api/v1/public/avatar/{clean_chat_id}"
+    return None
+
+
+@app.get("/api/v1/public/avatar/{chat_id}", summary="Foydalanuvchining Telegram profil rasmi")
+@app.get("/api/v1/auth/avatar/{chat_id}", summary="Foydalanuvchining Telegram profil rasmi")
+async def get_user_avatar(chat_id: str):
+    clean_chat_id = str(chat_id).strip()
+    cache_path = os.path.join(AVATARS_DIR, f"{clean_chat_id}.jpg")
+    if not os.path.exists(cache_path) or os.path.getsize(cache_path) < 200:
+        url = await fetch_and_cache_telegram_avatar(clean_chat_id)
+        if not url or not os.path.exists(cache_path) or os.path.getsize(cache_path) < 200:
+            raise HTTPException(status_code=404, detail="Profil rasmi topilmadi")
+
+    return FileResponse(
+        cache_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 
 
@@ -821,6 +924,19 @@ async def verify_otp(req: VerifyOtpRequest):
         if user["tenant_id"]:
             tenant_info = await conn.fetchrow("SELECT * FROM tenants WHERE id = $1", user["tenant_id"])
 
+        # Telegram profil rasmini tekshirish va olish
+        tg_chat_id = user.get("telegram_chat_id") or (str(real_driver["telegramChatId"]) if (real_driver and real_driver.get("telegramChatId")) else None)
+        user_photo = user.get("photo_url")
+        if not user_photo and tg_chat_id:
+            try:
+                user_photo = await fetch_and_cache_telegram_avatar(tg_chat_id)
+                if user_photo:
+                    await conn.execute("UPDATE users SET photo_url = $1, telegram_photo_url = $1 WHERE id = $2", user_photo, user["id"])
+            except Exception:
+                pass
+        elif tg_chat_id and not user_photo:
+            user_photo = f"https://uyushma.bmbrutto.uz/api/v1/public/avatar/{tg_chat_id}"
+
     # 3. JWT Token yaratish
     token_payload = {
         "user_id": str(user["id"]),
@@ -840,6 +956,8 @@ async def verify_otp(req: VerifyOtpRequest):
             "full_name": user["full_name"],
             "role": user["role"],
             "is_blocked": user["is_blocked"],
+            "photo_url": user_photo,
+            "telegram_username": user.get("telegram_username") or (real_driver.get("telegramUsername") if real_driver else None),
         },
         "vehicle": {
             "id": str(real_vehicle["id"]) if real_vehicle else (str(legacy_vehicle["id"]) if legacy_vehicle else None),
@@ -1069,6 +1187,20 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
     license_num = real_driver["licenseNumber"] if (real_driver and real_driver["licenseNumber"]) else ""
     license_cat = real_driver["licenseCategories"] if (real_driver and real_driver["licenseCategories"]) else "B, BC"
 
+    # Telegram profil rasmini tekshirish va olish
+    tg_chat_id = user_info.get("telegram_chat_id") or (str(real_driver["telegramChatId"]) if (real_driver and real_driver.get("telegramChatId")) else None)
+    user_photo = user_info.get("photo_url")
+    if not user_photo and tg_chat_id:
+        try:
+            user_photo = await fetch_and_cache_telegram_avatar(tg_chat_id)
+            if user_photo:
+                async with db_pool.acquire() as conn:
+                    await conn.execute("UPDATE users SET photo_url = $1, telegram_photo_url = $1 WHERE id = $2", user_photo, user_info["id"])
+        except Exception:
+            pass
+    elif tg_chat_id and not user_photo:
+        user_photo = f"https://uyushma.bmbrutto.uz/api/v1/public/avatar/{tg_chat_id}"
+
     if not real_vehicle and not legacy_vehicle:
         return {
             "has_vehicle": False,
@@ -1081,6 +1213,8 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
                 "license_categories": license_cat,
                 "is_blocked": user_info["is_blocked"],
                 "verification_status": "TASDIQLANGAN",
+                "photo_url": user_photo,
+                "telegram_username": user_info.get("telegram_username") or (real_driver.get("telegramUsername") if real_driver else None),
             },
             "message": "Sizga hali transport vositasi biriktirilmagan.",
         }
@@ -1214,6 +1348,8 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             "verification_status": "TASDIQLANGAN",
             "is_blocked": user_info["is_blocked"],
             "block_reason": user_info["block_reason"],
+            "photo_url": user_photo,
+            "telegram_username": user_info.get("telegram_username") or (real_driver.get("telegramUsername") if real_driver else None),
         },
         "vehicle": {
             "id": str(real_vehicle["id"]) if real_vehicle else str(legacy_vehicle["id"]),

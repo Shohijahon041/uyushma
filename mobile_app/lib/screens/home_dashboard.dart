@@ -610,24 +610,33 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         child: Row(
                           children: [
                             Container(
-                              width: 50,
-                              height: 50,
+                              width: 52,
+                              height: 52,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
-                                ),
-                                border: Border.all(color: Colors.white, width: 1.5),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  _getInitials(driver?['full_name'] ?? 'Jamshid Karimov'),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
+                                border: Border.all(color: const Color(0xFF38BDF8), width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF38BDF8).withValues(alpha: 0.25),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 3),
                                   ),
-                                ),
+                                ],
+                              ),
+                              child: ClipOval(
+                                child: (driver?['photo_url'] != null && driver!['photo_url'].toString().isNotEmpty)
+                                    ? Image.network(
+                                        driver['photo_url'].toString(),
+                                        width: 52,
+                                        height: 52,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => _buildFallbackAvatar(driver?['full_name'] ?? 'H', 52),
+                                        loadingBuilder: (ctx, child, progress) {
+                                          if (progress == null) return child;
+                                          return _buildFallbackAvatar(driver?['full_name'] ?? 'H', 52);
+                                        },
+                                      )
+                                    : _buildFallbackAvatar(driver?['full_name'] ?? 'H', 52),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -995,6 +1004,31 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     if (parts.isEmpty) return 'H';
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Widget _buildFallbackAvatar(String name, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          _getInitials(name),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.38,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildMetric({

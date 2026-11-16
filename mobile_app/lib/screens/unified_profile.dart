@@ -302,27 +302,33 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                   children: [
                     // Avatar Circle with Ring
                     Container(
-                      width: 62,
-                      height: 62,
+                      width: 66,
+                      height: 66,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: Center(
-                        child: Text(
-                          _getInitials(fullName),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
+                        border: Border.all(color: const Color(0xFF38BDF8), width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
                           ),
-                        ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: (driver?['photo_url'] != null && driver!['photo_url'].toString().isNotEmpty)
+                            ? Image.network(
+                                driver['photo_url'].toString(),
+                                width: 66,
+                                height: 66,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _buildFallbackAvatar(fullName, 66),
+                                loadingBuilder: (ctx, child, progress) {
+                                  if (progress == null) return child;
+                                  return _buildFallbackAvatar(fullName, 66);
+                                },
+                              )
+                            : _buildFallbackAvatar(fullName, 66),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -1084,6 +1090,31 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     if (parts.isEmpty) return 'H';
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Widget _buildFallbackAvatar(String name, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          _getInitials(name),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.38,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
   }
 }
 
