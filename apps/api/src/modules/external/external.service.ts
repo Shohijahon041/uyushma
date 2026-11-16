@@ -563,18 +563,22 @@ export class ExternalService {
       tenantId,
       async (tx) => {
         const owner = await tx.user.findFirst({
-          where: { isActive: true, role: { in: ["OWNER", "ADMIN"] } },
+          where: { tenantId, isActive: true, role: { in: ["OWNER", "ADMIN"] } },
           orderBy: [{ role: "asc" }, { createdAt: "asc" }],
           select: { id: true },
         });
         const routes = await this.importRoutes(tx, tenantId, result);
-        const routeRows = await tx.route.findMany({ select: { id: true, name: true } });
+        const routeRows = await tx.route.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
         const routeByName = new Map(
           routeRows.map((route) => [routeKey(route.name), route.id]),
         );
         const routeIdFor = (name: string | null) =>
           name ? routeByName.get(routeKey(name)) ?? null : null;
         const nativeVehicles = await tx.vehicle.findMany({
+          where: { tenantId },
           select: { id: true, plateNumber: true, capacity: true, routeId: true },
         });
         const byPlate = new Map(
@@ -685,7 +689,10 @@ export class ExternalService {
       if (!names.has(key)) names.set(key, route.name);
     }
 
-    const existing = await tx.route.findMany({ select: { name: true } });
+    const existing = await tx.route.findMany({
+      where: { tenantId },
+      select: { name: true },
+    });
     const known = new Set(existing.map((route) => route.name.toLowerCase()));
 
     let created = 0;
@@ -718,6 +725,7 @@ export class ExternalService {
   ): Promise<{ total: number; created: number }> {
     if (drivers.length === 0) return { total: 0, created: 0 };
     const existing = await tx.driver.findMany({
+      where: { tenantId },
       select: {
         id: true,
         fullName: true,

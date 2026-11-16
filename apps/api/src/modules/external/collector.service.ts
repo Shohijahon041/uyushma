@@ -196,13 +196,13 @@ export class CollectorService {
       const owner = (await tx.user.findFirst({ where: { tenantId, role: "OWNER" } })) ?? (await tx.user.findFirst({ where: { tenantId } }));
       if (!owner) throw new Error("Tenant uchun egasi (owner) topilmadi");
 
-      const existingVehicles = await tx.vehicle.findMany({ select: { id: true, plateNumber: true } });
+      const existingVehicles = await tx.vehicle.findMany({ where: { tenantId }, select: { id: true, plateNumber: true } });
       const vehicleMap = new Map<string, string>();
       for (const v of existingVehicles) {
         vehicleMap.set(normalizePlate(v.plateNumber), v.id);
       }
 
-      const existingDrivers = await tx.driver.findMany({ select: { id: true, fullName: true, pinfl: true, phone: true } });
+      const existingDrivers = await tx.driver.findMany({ where: { tenantId }, select: { id: true, fullName: true, pinfl: true, phone: true } });
       const driverByPinfl = new Map<string, string>();
       const driverByPhone = new Map<string, string>();
       for (const d of existingDrivers) {
@@ -211,7 +211,7 @@ export class CollectorService {
       }
 
       const existingAssignments = await tx.vehicleAssignment.findMany({
-        where: { endDate: null },
+        where: { tenantId, endDate: null },
         select: { vehicleId: true, driverId: true },
       });
       const activeVehicleAssigned = new Set(existingAssignments.map((a: { vehicleId: string }) => a.vehicleId));

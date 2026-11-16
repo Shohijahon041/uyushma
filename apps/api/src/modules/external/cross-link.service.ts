@@ -481,14 +481,14 @@ export class ExternalCrossLinkService {
   async autoLinkAll(actor: AuthenticatedUser, ip: string | null) {
     return this.tenantPrisma.withTenant(actor.tenantId, async (tx) => {
       const owner = await tx.user.findFirst({
-        where: { role: "OWNER" },
+        where: { tenantId: actor.tenantId, role: "OWNER" },
         select: { id: true },
       });
 
       const [extVehicles, nativeVehicles, extRecords] = await Promise.all([
-        tx.externalVehicle.findMany(),
-        tx.vehicle.findMany({ select: { id: true, plateNumber: true, model: true } }),
-        tx.externalRecord.findMany({ where: { kind: "RENT_CONTRACT" } }),
+        tx.externalVehicle.findMany({ where: { tenantId: actor.tenantId } }),
+        tx.vehicle.findMany({ where: { tenantId: actor.tenantId }, select: { id: true, plateNumber: true, model: true } }),
+        tx.externalRecord.findMany({ where: { tenantId: actor.tenantId, kind: "RENT_CONTRACT" } }),
       ]);
 
       const nativeByPlate = new Map(

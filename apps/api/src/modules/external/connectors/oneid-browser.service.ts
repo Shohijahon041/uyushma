@@ -17,6 +17,14 @@ export class OneIdBrowserService {
   private readonly logger = new Logger(OneIdBrowserService.name);
 
   private readonly candidatePaths = [
+    "/opt/uyushma/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
+    "/root/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
+    "/opt/uyushma/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
