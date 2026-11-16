@@ -28,7 +28,7 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
 
   showModalBottomSheet(
     context: context,
-    backgroundColor: const Color(0xFF0F172A),
+    backgroundColor: const Color(0xFF070B14),
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -48,10 +48,10 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
               children: [
                 Center(
                   child: Container(
-                    width: 48,
-                    height: 5,
+                    width: 44,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF475569),
+                      color: const Color(0xFF334155),
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
@@ -62,9 +62,9 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFF0B1120),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF334155)),
+                    border: Border.all(color: const Color(0xFF1E293B)),
                   ),
                   child: Column(
                     children: [
@@ -111,15 +111,16 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                 // MARKAZIY HAQIQIY SKANERLANADIGAN QR-KOD
                 Center(
                   child: Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF38BDF8), width: 2),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.25),
+                          blurRadius: 18,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -174,9 +175,9 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFF0B1120),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF334155)),
+                    border: Border.all(color: const Color(0xFF1E293B)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,7 +186,7 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                         'KUNLIK MAJBURIY KO\'RIKLAR',
                         style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5),
                       ),
-                      const Divider(color: Color(0xFF334155), height: 16),
+                      const Divider(color: Color(0xFF1E293B), height: 16),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -263,7 +264,7 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                 ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF334155),
+                    backgroundColor: const Color(0xFF1E293B),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -284,9 +285,9 @@ Widget _buildInfoSection(String title, List<Widget> rows) {
   return Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFF1E293B),
+      color: const Color(0xFF0B1120),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF334155)),
+      border: Border.all(color: const Color(0xFF1E293B)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,7 +296,7 @@ Widget _buildInfoSection(String title, List<Widget> rows) {
           title.toUpperCase(),
           style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5),
         ),
-        const Divider(color: Color(0xFF334155), height: 14),
+        const Divider(color: Color(0xFF1E293B), height: 14),
         ...rows,
       ],
     ),

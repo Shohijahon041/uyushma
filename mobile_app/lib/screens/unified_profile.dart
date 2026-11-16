@@ -51,12 +51,19 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     final inspections = _profile?['inspections'];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF070B14),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: const Color(0xFF070B14),
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            color: const Color(0xFF1E293B),
+            height: 1,
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Column(
@@ -64,7 +71,7 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
           children: [
             Text(
               'Haydovchi Profili',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.3),
             ),
             Text(
               'Yagona Transport & Davlat Integratsiyalari',
@@ -74,26 +81,27 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF38BDF8)),
+            icon: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF38BDF8), size: 24),
             tooltip: 'Elektron Yo\'l Varaqasi',
             onPressed: () {
               showWaybillSheet(context, profileData: _profile);
             },
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF94A3B8)),
+            icon: const Icon(Icons.refresh_rounded, color: Color(0xFF94A3B8), size: 22),
             tooltip: 'Yangilash',
             onPressed: _fetchProfile,
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)))
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
           : RefreshIndicator(
               onRefresh: _fetchProfile,
-              color: const Color(0xFF3B82F6),
+              color: const Color(0xFF38BDF8),
+              backgroundColor: const Color(0xFF0B1120),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -121,23 +129,23 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF0F2B48), Color(0xFF1E293B)],
+                            colors: [Color(0xFF0C1D30), Color(0xFF0B1120)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.6), width: 1.2),
+                          border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.4)),
                         ),
                         child: Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                color: const Color(0xFF0284C7).withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFF38BDF8)),
+                                border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5)),
                               ),
-                              child: const Icon(Icons.qr_code_2, color: Color(0xFF38BDF8), size: 26),
+                              child: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF38BDF8), size: 26),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -148,7 +156,12 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                                     children: [
                                       const Text(
                                         'ELEKTRON YO\'L VARAQASI',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                       const SizedBox(width: 6),
                                       Container(
@@ -161,15 +174,15 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 3),
                                   Text(
-                                    '№ ${_profile?['waybill']?['number'] ?? 'YV-26-86964'} • QR-kod bilan',
+                                    '№ ${_profile?['waybill']?['number'] ?? 'YV-26-86964'} • QR tekshiruv',
                                     style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.w600),
                                   ),
                                 ],
                               ),
                             ),
-                            const Icon(Icons.arrow_forward_ios, color: Color(0xFF64748B), size: 14),
+                            const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF475569), size: 14),
                           ],
                         ),
                       ),
@@ -228,16 +241,16 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF0F172A)],
+          colors: [Color(0xFF0F1E36), Color(0xFF0B1120)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4), width: 1.5),
+        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -519,9 +532,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFF0B1120),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: const Color(0xFF1E293B)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,9 +699,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFF0B1120),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: const Color(0xFF1E293B)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -772,9 +785,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFF0B1120),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: const Color(0xFF1E293B)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -821,9 +834,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFF0B1120),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: const Color(0xFF1E293B)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -916,9 +929,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: const Color(0xFF0B1120),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isBlocked ? const Color(0xFFEF4444) : const Color(0xFF334155)),
+        border: Border.all(color: isBlocked ? const Color(0xFFEF4444) : const Color(0xFF1E293B)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -953,7 +966,7 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               ),
             ],
           ),
-          const Divider(color: Color(0xFF334155), height: 20),
+          const Divider(color: Color(0xFF1E293B), height: 20),
           _buildInfoRow('Oylik uyushma rejasi:', '${fee.toStringAsFixed(0)} so\'m', icon: Icons.calendar_month),
           if (coveredUntil != null)
             _buildInfoRow('To\'lov amal qilish muddati:', coveredUntil, icon: Icons.event_available, isHighlight: true, customColor: const Color(0xFF34D399)),
@@ -970,9 +983,9 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
+              color: const Color(0xFF070B14),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF334155)),
+              border: Border.all(color: const Color(0xFF1E293B)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
