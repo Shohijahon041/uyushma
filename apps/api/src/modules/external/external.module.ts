@@ -15,6 +15,9 @@ import { EImzoService } from "./connectors/eimzo.service";
 import { ExternalCrossLinkService } from "./cross-link.service";
 import { CollectorService } from "./collector.service";
 
+import { OneIdAutomatedTokenService } from "./connectors/oneid-automated-token.service";
+import { TokenWatchdogService } from "./token-watchdog.service";
+
 @Module({
   controllers: [
     ExternalSettingsController,
@@ -28,6 +31,8 @@ import { CollectorService } from "./collector.service";
     ExternalSyncQueueService,
     OneIdAuthService,
     OneIdBrowserService,
+    OneIdAutomatedTokenService,
+    TokenWatchdogService,
     EImzoService,
     ExternalCrossLinkService,
     CollectorService,
@@ -37,6 +42,8 @@ import { CollectorService } from "./collector.service";
     ExternalService,
     OneIdAuthService,
     OneIdBrowserService,
+    OneIdAutomatedTokenService,
+    TokenWatchdogService,
     EImzoService,
     ExternalCrossLinkService,
     CollectorService,

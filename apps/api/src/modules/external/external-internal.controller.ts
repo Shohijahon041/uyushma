@@ -4,6 +4,7 @@ import { IsIn, IsUUID } from "class-validator";
 import { Public } from "../../common/auth/decorators";
 import { InternalApiGuard } from "../../common/auth/service-guards";
 import { ExternalService } from "./external.service";
+import { TokenWatchdogService } from "./token-watchdog.service";
 
 class RunSyncDto {
   @IsUUID()
@@ -21,7 +22,10 @@ class RunSyncDto {
 @UseGuards(InternalApiGuard)
 @Controller("internal/external")
 export class ExternalInternalController {
-  constructor(private readonly external: ExternalService) {}
+  constructor(
+    private readonly external: ExternalService,
+    private readonly watchdog: TokenWatchdogService,
+  ) {}
 
   @Post("sync")
   sync(@Body() dto: RunSyncDto) {
@@ -31,5 +35,10 @@ export class ExternalInternalController {
   @Post("sync-all")
   syncAll() {
     return this.external.syncAll();
+  }
+
+  @Post("watchdog-tick")
+  watchdogTick() {
+    return this.watchdog.checkAndRenewAll();
   }
 }
