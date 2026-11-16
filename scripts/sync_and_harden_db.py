@@ -48,7 +48,9 @@ async def main():
         FROM "Company"
         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
     """)
-    print("✓ Tenants synchronized from Company.")
+    # Drop legacy foreign key pointing to users(id) so current_driver_id can point to "Driver"(id)
+    await conn.execute("ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_current_driver_id_fkey;")
+    print("✓ Tenants synchronized and legacy driver FK updated.")
 
     # 2. Fetch all real vehicles from "Vehicle"
     print("\n[STEP 2] Fetching real vehicles from \"Vehicle\"...")
