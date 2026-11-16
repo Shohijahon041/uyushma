@@ -80,12 +80,15 @@ export class ExternalCrossLinkService {
     return this.tenantPrisma.withTenant(tenantId, async (tx) => {
       const [extVehicles, extRecords, nativeVehicles] = await Promise.all([
         tx.externalVehicle.findMany({
+          where: { tenantId },
           orderBy: [{ plateNumber: "asc" }, { syncedAt: "desc" }],
         }),
         tx.externalRecord.findMany({
+          where: { tenantId },
           orderBy: { syncedAt: "desc" },
         }),
         tx.vehicle.findMany({
+          where: { tenantId },
           select: {
             id: true,
             plateNumber: true,

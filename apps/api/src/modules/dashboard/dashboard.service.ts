@@ -37,20 +37,21 @@ export class DashboardService {
         workedTodayRows,
         paidForTomorrowRows,
       ] = await Promise.all([
-        tx.vehicle.count({ where: { status: { not: "INACTIVE" } } }),
-        tx.contract.count({ where: { status: "ACTIVE" } }),
-        tx.route.count({ where: { isActive: true } }),
-        tx.user.count({ where: { isActive: true } }),
+        tx.vehicle.count({ where: { tenantId, status: { not: "INACTIVE" } } }),
+        tx.contract.count({ where: { tenantId, status: "ACTIVE" } }),
+        tx.route.count({ where: { tenantId, isActive: true } }),
+        tx.user.count({ where: { tenantId, isActive: true } }),
         tx.payment.aggregate({
-          where: { status: PaymentStatus.PENDING },
+          where: { tenantId, status: PaymentStatus.PENDING },
           _sum: { amount: true },
           _count: true,
         }),
         tx.payment.aggregate({
-          where: { status: PaymentStatus.PAID, paidAt: { gte: monthStart } },
+          where: { tenantId, status: PaymentStatus.PAID, paidAt: { gte: monthStart } },
           _sum: { amount: true },
         }),
         tx.payment.findMany({
+          where: { tenantId },
           orderBy: { createdAt: "desc" },
           take: 5,
           include: {
@@ -63,41 +64,44 @@ export class DashboardService {
           },
         }),
         tx.subscription.findFirst({
-          where: { status: { in: ["TRIAL", "ACTIVE", "PAST_DUE"] } },
+          where: { tenantId, status: { in: ["TRIAL", "ACTIVE", "PAST_DUE"] } },
           include: { plan: true },
         }),
         tx.subscriptionInvoice.count({
-          where: { status: { in: ["OPEN", "OVERDUE"] } },
+          where: { tenantId, status: { in: ["OPEN", "OVERDUE"] } },
         }),
-        tx.externalVehicle.count(),
+        tx.externalVehicle.count({ where: { tenantId } }),
         tx.externalRecord.groupBy({
           by: ["kind"],
+          where: { tenantId },
           _count: { _all: true },
         }),
         tx.externalRecord.count({
           where: {
+            tenantId,
             kind: "CERTIFICATE",
             expiresAt: { gte: now, lte: inThirtyDays },
           },
         }),
         tx.externalConnection.findFirst({
-          where: { lastSyncAt: { not: null } },
+          where: { tenantId, lastSyncAt: { not: null } },
           orderBy: { lastSyncAt: "desc" },
           select: { lastSyncAt: true, provider: true },
         }),
         tx.vehicleAssignment.count({
           where: {
+            tenantId,
             startDate: { lte: today },
             OR: [{ endDate: null }, { endDate: { gte: today } }],
           },
         }),
         tx.driverPayment.groupBy({
           by: ["driverId"],
-          where: { coveredFrom: { lte: today }, coveredUntil: { gte: today } },
+          where: { tenantId, coveredFrom: { lte: today }, coveredUntil: { gte: today } },
         }),
         tx.driverPayment.groupBy({
           by: ["driverId"],
-          where: { coveredFrom: { lte: tomorrow }, coveredUntil: { gte: tomorrow } },
+          where: { tenantId, coveredFrom: { lte: tomorrow }, coveredUntil: { gte: tomorrow } },
         }),
       ]);
 
