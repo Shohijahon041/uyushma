@@ -680,7 +680,7 @@ async def verify_otp(req: VerifyOtpRequest):
     async with db_pool.acquire() as conn:
         real_driver = await conn.fetchrow(
             """
-            SELECT d.*, c.name as company_name, c.phone as company_phone
+            SELECT d.*, c.name as company_name
             FROM "Driver" d
             LEFT JOIN "Company" c ON c.id = d."tenantId"
             WHERE d.phone = $1 OR d.phone = $2
@@ -824,7 +824,7 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
         # 1. Real "Driver" jadvalidan qidirish
         real_driver = await conn.fetchrow(
             """
-            SELECT d.*, c.name as company_name, c.phone as company_phone
+            SELECT d.*, c.name as company_name
             FROM "Driver" d
             LEFT JOIN "Company" c ON c.id = d."tenantId"
             WHERE d.phone = $1 OR d.phone = $2
