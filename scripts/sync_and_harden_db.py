@@ -37,6 +37,7 @@ async def main():
     print("\n[STEP 1] Cleaning up mock/dirty test records...")
     await conn.execute("DELETE FROM vehicles WHERE id = '00000000-0000-0000-0000-000000000004' OR plate_number = '01A777AA';")
     await conn.execute("DELETE FROM users WHERE phone IN ('+9989112', '+998911111111', '+998901112233');")
+    await conn.execute("DELETE FROM \"VehicleAssignment\" WHERE \"driverId\" = '2eb06731-9765-4779-8ec5-79ffe3507ddb';")
     await conn.execute("DELETE FROM \"Driver\" WHERE phone = '+998911111111' AND \"fullName\" = 'Sergey Sergevich';")
     print("✓ Dirty test records removed.")
 
