@@ -45,7 +45,7 @@ async def main():
     vehicles = await conn.fetch("""
         SELECT v.id, v."tenantId" as tenant_id, v."plateNumber" as plate_number, 
                v.model, v."monthlyFee" as monthly_fee, v.status,
-               c."fullName" as owner_name, c.pinfl as owner_pinfl,
+               c.name as owner_name,
                r.name as route_name
         FROM "Vehicle" v
         LEFT JOIN "Company" c ON v."ownerId" = c.id
@@ -76,7 +76,7 @@ async def main():
         monthly_fee = float(v["monthly_fee"] or 500000.0)
         current_driver_id = veh_to_driver.get(v_id_str)
         owner_name = v["owner_name"] or "Tashkilot mulki"
-        owner_pinfl = v["owner_pinfl"] or ""
+        owner_pinfl = ""
         route_name = v["route_name"] or "Shahar yo'nalishi"
 
         # Virtual GPS ID unikal bo'lishi shart
