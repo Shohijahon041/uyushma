@@ -1,10 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/api_service.dart';
 import '../core/background_tracker.dart';
+import '../core/h02_protocol.dart';
 import 'login_screen.dart';
 import 'unified_profile.dart';
 
@@ -27,6 +33,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   int _packetsSent = 0;
   bool _isServerConnected = false;
 
+  // To'g'ridan-to'g'ri faol telemetriya
+  Timer? _liveTelemetryTimer;
+  Socket? _liveSocket;
+  StreamSubscription<Position>? _positionStreamSub;
+
   @override
   void initState() {
     super.initState();
@@ -35,11 +46,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     _listenBackgroundService();
   }
 
+  @override
+  void dispose() {
+    _stopLiveTelemetry();
+    super.dispose();
+  }
+
   Future<void> _checkInitialShiftState() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isShiftActive = prefs.getBool('pref_is_shift_active') ?? false;
-    });
+    final isActive = prefs.getBool('pref_is_shift_active') ?? false;
+    final virtualGpsId = prefs.getString('pref_virtual_gps_id') ?? '9012345678';
+    if (mounted) {
+      setState(() {
+        _isShiftActive = isActive;
+      });
+    }
+    if (isActive) {
+      _startLiveTelemetry(virtualGpsId);
+    }
   }
 
   void _listenBackgroundService() {
@@ -50,10 +74,154 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           _longitude = event['longitude'] ?? _longitude;
           _currentSpeed = event['speed'] ?? _currentSpeed;
           _packetsSent = event['packets'] ?? _packetsSent;
-          _isServerConnected = event['connected'] ?? false;
+          _isServerConnected = event['connected'] ?? _isServerConnected;
         });
       }
     });
+  }
+
+  Future<void> _startLiveTelemetry(String virtualGpsId) async {
+    _stopLiveTelemetry();
+
+    // 1. Darhol birinchi ulanish va paketni uzatish
+    await _sendTelemetryOnce(virtualGpsId);
+
+    // 2. Har 5 soniyada muntazam yuborib turish
+    _liveTelemetryTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!_isShiftActive || !mounted) return;
+      await _sendTelemetryOnce(virtualGpsId);
+    });
+
+    // 3. Geolocator stream orqali harakat va tezlikni real vaqtda kuzatish
+    try {
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+      );
+      _positionStreamSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen((pos) {
+        if (!mounted || !_isShiftActive) return;
+        setState(() {
+          _latitude = pos.latitude;
+          _longitude = pos.longitude;
+          _currentSpeed = (pos.speed * 3.6).clamp(0.0, 250.0);
+        });
+      }, onError: (err) {
+        debugPrint('[GEO-STREAM-ERR] $err');
+      });
+    } catch (e) {
+      debugPrint('[GEO-STREAM-INIT-ERR] $e');
+    }
+  }
+
+  void _stopLiveTelemetry() {
+    _liveTelemetryTimer?.cancel();
+    _liveTelemetryTimer = null;
+    _positionStreamSub?.cancel();
+    _positionStreamSub = null;
+    _liveSocket?.destroy();
+    _liveSocket = null;
+  }
+
+  Future<void> _sendTelemetryOnce(String virtualGpsId) async {
+    try {
+      Position? pos;
+      try {
+        pos = await Geolocator.getLastKnownPosition();
+      } catch (_) {}
+
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 3),
+          );
+        } catch (_) {}
+      }
+
+      final double lat = pos?.latitude ?? _latitude;
+      final double lon = pos?.longitude ?? _longitude;
+      final double speed = pos != null ? (pos.speed * 3.6).clamp(0.0, 250.0) : _currentSpeed;
+      final double course = pos?.heading ?? 0.0;
+      final DateTime time = pos?.timestamp ?? DateTime.now();
+
+      final String packet = H02Protocol.buildPacket(
+        virtualGpsId: virtualGpsId,
+        latitude: lat,
+        longitude: lon,
+        speedKmh: speed,
+        course: course,
+        timestamp: time,
+        isValid: true,
+      );
+
+      bool connected = false;
+
+      // 1-bosqich: To'g'ridan-to'g'ri SinoTrack H02 TCP soketi (port 20335)
+      try {
+        if (_liveSocket == null) {
+          _liveSocket = await Socket.connect('189.74.100.25', 20335, timeout: const Duration(seconds: 3));
+          _liveSocket!.listen(
+            (data) {
+              debugPrint('[H02-LIVE-RESP] ${utf8.decode(data, allowMalformed: true)}');
+            },
+            onError: (err) {
+              _liveSocket?.destroy();
+              _liveSocket = null;
+            },
+            onDone: () {
+              _liveSocket?.destroy();
+              _liveSocket = null;
+            },
+            cancelOnError: true,
+          );
+        }
+
+        if (_liveSocket != null) {
+          _liveSocket!.add(utf8.encode(packet));
+          await _liveSocket!.flush();
+          connected = true;
+        }
+      } catch (tcpErr) {
+        _liveSocket?.destroy();
+        _liveSocket = null;
+      }
+
+      // 2-bosqich: Zaxira HTTPS API (port 443)
+      if (!connected) {
+        try {
+          final res = await http.post(
+            Uri.parse('https://uyushma.bmbrutto.uz/api/v1/gps/ping'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'virtual_gps_id': virtualGpsId,
+              'latitude': lat,
+              'longitude': lon,
+              'speed_kmh': speed,
+              'course': course,
+              'is_valid': true,
+            }),
+          ).timeout(const Duration(seconds: 3));
+
+          if (res.statusCode == 200) {
+            connected = true;
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _latitude = lat;
+          _longitude = lon;
+          _currentSpeed = speed;
+          if (connected) {
+            _packetsSent++;
+            _isServerConnected = true;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[LIVE-TELEMETRY-ERR] $e');
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -77,21 +245,25 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Future<void> _toggleShift(bool value) async {
     if (value) {
       // 1. Ruxsatlarni tekshirish
-      final locationStatus = await Permission.locationAlways.request();
-      if (!locationStatus.isGranted) {
-        final whenInUse = await Permission.locationWhenInUse.request();
-        if (!whenInUse.isGranted) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Joylashuv (GPS) ruxsati berilmadi!"),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return;
-        }
+      var locStatus = await Permission.locationWhenInUse.status;
+      if (!locStatus.isGranted) {
+        locStatus = await Permission.locationWhenInUse.request();
       }
+      if (!locStatus.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Joylashuv (GPS) ruxsati berilmadi!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      try {
+        await Permission.locationAlways.request();
+      } catch (_) {}
 
       // 2. Bloklanganlik tekshiruvi
       final isBlocked = _profileData?['driver']?['is_blocked'] ?? false;
@@ -103,13 +275,19 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       }
 
       final virtualGpsId = _profileData?['vehicle']?['virtual_gps_id'] ?? '9012345678';
-      await BackgroundTrackerManager.startShift(virtualGpsId: virtualGpsId);
-      await ApiService().logShiftStarted(virtualGpsId);
-
       setState(() {
         _isShiftActive = true;
+        _isServerConnected = false;
       });
+
+      // To'g'ridan-to'g'ri faol telemetriyani boshlash
+      _startLiveTelemetry(virtualGpsId);
+
+      // Fon xizmatini yoqish
+      await BackgroundTrackerManager.startShift(virtualGpsId: virtualGpsId);
+      await ApiService().logShiftStarted(virtualGpsId);
     } else {
+      _stopLiveTelemetry();
       await BackgroundTrackerManager.stopShift();
       setState(() {
         _isShiftActive = false;
