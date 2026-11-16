@@ -2196,8 +2196,10 @@ async def get_live_vehicles(tenant_id: Optional[str] = None):
                    v.real_owner_name, v.is_blocked, v.block_reason, v.balance,
                    v.rental_contract_number, v.license_sheet_number, v.insurance_policy_number,
                    v.last_gps_time, v.last_latitude, v.last_longitude, v.last_speed_kmh, v.last_course,
-                   u.full_name as driver_name, u.phone as driver_phone
+                   COALESCE(d."fullName", u.full_name, 'Biriktirilmagan') as driver_name,
+                   COALESCE(d.phone, u.phone, '—') as driver_phone
             FROM vehicles v
+            LEFT JOIN "Driver" d ON d.id = v.current_driver_id
             LEFT JOIN users u ON u.id = v.current_driver_id
         """
         if tenant_id:
