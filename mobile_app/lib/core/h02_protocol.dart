@@ -68,8 +68,15 @@ class H02Protocol {
     final String courseStr = formatCourse(course);
     final String validChar = isValid ? 'A' : 'V';
 
-    // 10 xonali virtual GPS ID tekshirish
-    final String cleanGpsId = virtualGpsId.trim().padLeft(10, '0');
+    // 10 xonali GPS IMEI tekshirish (shablon: 9170XXXXXX, masalan 9170121311)
+    String cleanGpsId = virtualGpsId.replaceAll(RegExp(r'\D'), '').trim();
+    if (cleanGpsId.length == 10) {
+      // 10 xonali to'g'ri IMEI
+    } else if (cleanGpsId.length > 10) {
+      cleanGpsId = cleanGpsId.substring(cleanGpsId.length - 10);
+    } else {
+      cleanGpsId = '9170${cleanGpsId.padLeft(6, '0').substring(0, 6)}';
+    }
 
     // SinoTrack ST-901M standart status baytlari (ACC ON = FFFFFBFF)
     const String statusHex = 'FFFFFBFF';

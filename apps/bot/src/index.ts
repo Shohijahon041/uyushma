@@ -1092,13 +1092,13 @@ bot.start(async (ctx) => {
       });
     } catch (_) {}
 
-    // 2. Kodni olish (yoki mavjud faol kodni qaytarish)
+    // 2. Kodni olish (yoki mavjud faol kodni qaytarish) - bot_direct orqali takroriy xabar yuborilmaydi
     let code = "";
     try {
       const res = await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone, channel: "telegram" }),
+        body: JSON.stringify({ phone: cleanPhone, channel: "bot_direct" }),
       });
       const data: any = await res.json();
       if (data && data.code) code = String(data.code);
@@ -1258,7 +1258,7 @@ async function handleDriverLoginCode(ctx: Context) {
       const res = await fetch("http://127.0.0.1:8020/api/v1/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, channel: "telegram" }),
+        body: JSON.stringify({ phone, channel: "bot_direct" }),
       });
       const data: any = await res.json();
       if (data && data.code) {

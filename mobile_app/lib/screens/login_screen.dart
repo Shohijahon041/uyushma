@@ -127,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final res = await ApiService().requestOtp(phone, channel: channelToUse);
+      final isTelegramLinked = res['telegram_linked'] == true;
       setState(() {
         _isCodeSent = true;
         _isLoading = false;
@@ -137,9 +138,19 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       _startCountdown();
 
-      // Telegram tanlangan bo'lsa, zudlik bilan botga o'tkazish
-      if (channelToUse == 'telegram') {
+      // Faqatgina agar hisob hali Telegram botga ulanmagan bo'lsa (birinchi marta),
+      // botni avtomatik ochib START bosdiramiz.
+      // Agar allaqachon ulangan bo'lsa, kod to'g'ridan-to'g'ri Telegram bildirishnomasi bo'lib keladi.
+      if (!isTelegramLinked && channelToUse == 'telegram') {
         _openTelegramBot();
+      } else if (isTelegramLinked && channelToUse == 'telegram' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("5 xonali kod Telegram botingizga (@$_botUsername) yuborildi!"),
+            backgroundColor: const Color(0xFF0284C7),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } catch (e) {
       setState(() {

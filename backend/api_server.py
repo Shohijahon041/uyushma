@@ -382,6 +382,29 @@ async def send_eskiz_sms(phone: str, code: str):
     return True
 
 
+def get_or_generate_imei(plate_number: Optional[str], external_imei: Optional[str] = None, seed_id: Optional[str] = None) -> str:
+    """
+    Standart 10 xonali GPS IMEI (shablon: 9170XXXXXX, masalan 9170121311).
+    1. Agar tashqi real IMEI mavjud bo'lsa va 10 xonali bo'lsa - o'sha olinadi.
+    2. Bo'lmasa, davlat raqami va ID asosida takrorlanmas, unikal 9170XXXXXX IMEI hosil qilinadi.
+    """
+    if external_imei:
+        digits = re.sub(r"\D", "", str(external_imei).strip())
+        if len(digits) == 10 and digits.startswith("9170"):
+            return digits
+        elif len(digits) == 10:
+            return digits
+        elif len(digits) > 10:
+            return f"9170{digits[-6:]}"
+
+    clean_plate = re.sub(r"[^A-Za-z0-9]", "", (plate_number or "").upper())
+    seed = f"{clean_plate}:{seed_id or ''}"
+    # MD5 hash orqali 6 xonali barqaror unikal son (100000..999999)
+    h = int(hashlib.md5(seed.encode("utf-8")).hexdigest()[:8], 16)
+    suffix = str((h % 900000) + 100000)
+    return f"9170{suffix}"
+
+
 async def send_telegram_otp(phone: str, code: str) -> bool:
     """
     5 xonali tasdiqlash kodini haydovchining Telegram hisobiga (uyushma_saas_bot orqali) yuborish.
@@ -508,19 +531,23 @@ async def request_otp(req: RequestOtpRequest, background_tasks: BackgroundTasks)
     preferred_channel = req.channel.lower() if req.channel else "auto"
     telegram_sent = False
 
-    # 1. Telegram orqali yuborishga urinish
-    if preferred_channel in ("telegram", "auto"):
-        telegram_sent = await send_telegram_otp(formatted_phone, code)
+    # 1. Telegram orqali yuborish (agar botning o'zi so'ramagan bo'lsa)
+    if preferred_channel != "bot_direct":
+        if preferred_channel in ("telegram", "auto"):
+            telegram_sent = await send_telegram_otp(formatted_phone, code)
 
-    # 2. Agar Telegramga ulanmagan bo'lsa yoki preferred_channel 'sms' bo'lsa, SMS yuborish
-    if not telegram_sent:
-        background_tasks.add_task(send_eskiz_sms, formatted_phone, code)
+        # 2. Agar Telegramga ulanmagan bo'lsa yoki preferred_channel 'sms' bo'lsa, SMS yuborish
+        if not telegram_sent and preferred_channel == "sms":
+            background_tasks.add_task(send_eskiz_sms, formatted_phone, code)
 
     bot_deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start=otp_{clean_digits}"
 
     if telegram_sent:
         used_channel = "telegram"
         msg = f"5 xonali tasdiqlash kodi Telegram botingiz (@{TELEGRAM_BOT_USERNAME}) ga yuborildi"
+    elif preferred_channel == "bot_direct":
+        used_channel = "telegram"
+        msg = "Tasdiqlash kodi bot orqali taqdim etilmoqda"
     else:
         used_channel = "telegram" if preferred_channel == "telegram" else "sms"
         if preferred_channel == "telegram":
@@ -761,7 +788,11 @@ async def verify_otp(req: VerifyOtpRequest):
             if ext_row:
                 ext_gps = ext_row["gpsImei"]
 
-        gps_id = ext_gps or (legacy_vehicle["virtual_gps_id"] if legacy_vehicle else (f"GPS-{plate_num.replace(' ', '')}" if plate_num else f"GPS-{clean_digits[-4:]}"))
+        gps_id = get_or_generate_imei(
+            plate_num or clean_digits,
+            ext_gps or (legacy_vehicle["virtual_gps_id"] if legacy_vehicle else None),
+            str(real_vehicle["id"]) if real_vehicle else None,
+        )
 
         tenant_info = None
         if user["tenant_id"]:
@@ -999,16 +1030,20 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
         route_name = etender_record["title"] or ""
         route_number = etender_record["number"] or ""
 
-    # GPS identifikatori
-    gps_imei = ""
+    # GPS identifikatori (10 xonali IMEI: 9170XXXXXX shabloni)
+    raw_ext_imei = None
     if autopark_veh and autopark_veh["gpsImei"]:
-        gps_imei = autopark_veh["gpsImei"]
+        raw_ext_imei = autopark_veh["gpsImei"]
     elif etender_veh and etender_veh["gpsImei"]:
-        gps_imei = etender_veh["gpsImei"]
+        raw_ext_imei = etender_veh["gpsImei"]
     elif legacy_vehicle and legacy_vehicle["virtual_gps_id"]:
-        gps_imei = legacy_vehicle["virtual_gps_id"]
-    else:
-        gps_imei = f"GPS-{plate_number.replace(' ', '')}"
+        raw_ext_imei = legacy_vehicle["virtual_gps_id"]
+
+    gps_imei = get_or_generate_imei(
+        plate_number,
+        raw_ext_imei,
+        str(real_vehicle["id"]) if real_vehicle else None,
+    )
 
     # Model va rang
     model_name = ""
