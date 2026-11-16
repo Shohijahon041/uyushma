@@ -62,6 +62,8 @@ logger = logging.getLogger("api_server")
 
 # Konfiguratsiya parametrlari
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/uyushma")
+if "?" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("?")[0]
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-uyushma-jwt-key-2026-production")
 JWT_ALGORITHM = "HS256"

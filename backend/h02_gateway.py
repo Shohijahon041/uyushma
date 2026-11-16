@@ -53,6 +53,8 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@127.0.0.1:5432/uyushma",
 )
+if "?" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("?")[0]
 
 # Batching va High-Load parametrlari
 DB_BATCH_SIZE = int(os.getenv("DB_BATCH_SIZE", "1000"))
