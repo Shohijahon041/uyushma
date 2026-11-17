@@ -245,7 +245,7 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                         # Agar oldin aktiv smena bo'lsa, to'xtatish
                         cur.execute("""
                             UPDATE "DriverShift"
-                            SET status = 'FORCE_CLOSED', "endedAt" = NOW(), notes = 'Qarzdorlik sababli majburiy to''xtatildi'
+                            SET status = 'COMPLETED', "endedAt" = NOW(), notes = 'Qarzdorlik sababli majburiy to''xtatildi'
                             WHERE "vehicleId" = %s AND status = 'ACTIVE';
                         """, (veh["prisma_id"] or v_id,))
 
