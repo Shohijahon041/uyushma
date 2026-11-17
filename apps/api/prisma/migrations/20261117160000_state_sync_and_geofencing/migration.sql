@@ -127,3 +127,4 @@ END $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON "SystemAlert" TO uyushma_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "SystemAlert" TO postgres;
+

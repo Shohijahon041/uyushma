@@ -14,6 +14,11 @@ import json
 import time
 import urllib.request
 import urllib.error
+import ssl
+
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
 
 BASE_URL = "https://uyushma.bmbrutto.uz/api/v1"
 
@@ -21,7 +26,7 @@ def http_json(url: str, method: str = "GET", data: dict = None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
     body = json.dumps(data).encode("utf-8") if data is not None else None
-    with urllib.request.urlopen(req, data=body, timeout=15) as resp:
+    with urllib.request.urlopen(req, data=body, timeout=15, context=ctx) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 def main():
@@ -107,6 +112,7 @@ def main():
     # 5. GPS Ping 1: Koridor ichida (Chorsu bekati ustida)
     ping1 = http_json(f"{BASE_URL}/gps/ping", method="POST", data={
         "virtual_gps_id": "9170121311",
+        "plate_number": plate,
         "latitude": 41.311081,
         "longitude": 69.240562,
         "speed_kmh": 45.0,
@@ -123,6 +129,7 @@ def main():
     for i in range(1, 4):
         p_res = http_json(f"{BASE_URL}/gps/ping", method="POST", data={
             "virtual_gps_id": "9170121311",
+            "plate_number": plate,
             "latitude": 41.350000,
             "longitude": 69.350000,
             "speed_kmh": 50.0,
@@ -150,6 +157,7 @@ def main():
     # 8. GPS Ping 5: Koridorga qaytish (Recovery)
     ping_recovery = http_json(f"{BASE_URL}/gps/ping", method="POST", data={
         "virtual_gps_id": "9170121311",
+        "plate_number": plate,
         "latitude": 41.311081,
         "longitude": 69.240562,
         "speed_kmh": 35.0,
@@ -182,3 +190,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

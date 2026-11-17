@@ -155,6 +155,7 @@ class SpatialEngine:
         # In-memory marshrutlar va bekatlar keshi (TTL 300s)
         self._route_cache: Dict[str, Dict[str, Any]] = {}
         self._vehicle_route_cache: Dict[str, Dict[str, Any]] = {}
+        self._imei_to_plate: Dict[str, str] = {}
         self._cache_expires_at: float = 0.0
 
     async def _ensure_cache_warm(self):
@@ -264,12 +265,29 @@ class SpatialEngine:
 
                 self._route_cache = new_route_cache
                 self._vehicle_route_cache = new_veh_cache
+
+                # 4. GPS IMEI / virtual_gps_id -> Plate mapping
+                new_imei_cache = {}
+                try:
+                    legacy_rows = await conn.fetch("""
+                        SELECT virtual_gps_id, plate_number 
+                        FROM vehicles 
+                        WHERE virtual_gps_id IS NOT NULL;
+                    """)
+                    for lr in legacy_rows:
+                        if lr["virtual_gps_id"]:
+                            new_imei_cache[str(lr["virtual_gps_id"]).strip()] = (lr["plate_number"] or "").replace(" ", "").upper()
+                except Exception as ex:
+                    logger.debug("Legacy vehicles table load error: %s", ex)
+                self._imei_to_plate = new_imei_cache
+
                 self._cache_expires_at = now + 300.0  # 5 daqiqa TTL
                 logger.info(
-                    "SpatialEngine kesh yangilandi: %d marshrut, %d bekat, %d avtomobil",
+                    "SpatialEngine kesh yangilandi: %d marshrut, %d bekat, %d avtomobil, %d GPS qurilma",
                     len(new_route_cache),
                     len(stops_rows),
                     len(new_veh_cache),
+                    len(new_imei_cache),
                 )
 
         except Exception as e:
@@ -294,6 +312,9 @@ class SpatialEngine:
         await self._ensure_cache_warm()
 
         norm_plate = (plate_number or "").replace(" ", "").upper()
+        if not norm_plate and virtual_gps_id:
+            norm_plate = self._imei_to_plate.get(str(virtual_gps_id).strip(), "")
+
         veh_info = self._vehicle_route_cache.get(norm_plate)
 
         # Agar plate_number topilmasa, virtual_gps_id dan izlash
@@ -573,3 +594,4 @@ class SpatialEngine:
                 await client.post(url, json=payload)
         except Exception as e:
             logger.debug("Telegram API asinxron xato: %s", e)
+

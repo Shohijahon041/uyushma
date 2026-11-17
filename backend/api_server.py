@@ -141,6 +141,7 @@ class GpsPingRequest(BaseModel):
     course: Optional[float] = 0.0
     time: Optional[str] = None
     is_valid: Optional[bool] = True
+    plate_number: Optional[str] = None
 
 
 class GpsPointItem(BaseModel):
@@ -2174,7 +2175,7 @@ async def receive_gps_ping(req: GpsPingRequest):
         try:
             spatial_result = await spatial_engine.evaluate_gps_point(
                 virtual_gps_id=req.virtual_gps_id,
-                plate_number=None,
+                plate_number=req.plate_number,
                 lat=req.latitude,
                 lon=req.longitude,
                 speed_kmh=req.speed_kmh or 0.0,
