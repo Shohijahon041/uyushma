@@ -46,9 +46,9 @@ logger = logging.getLogger("hybrid_state_sync")
 # Muhit o'zgaruvchilarini yuklash
 def load_environment():
     candidate_envs = [
-        Path("/opt/uyushma/.env"),
         BASE_DIR / ".env",
-        BASE_DIR.parent / ".env"
+        BASE_DIR.parent / ".env",
+        Path("/opt/uyushma/.env")  # Asosiy production env ustun turishi shart
     ]
     env_vars = {}
     for p in candidate_envs:
@@ -64,6 +64,8 @@ def load_environment():
 ENV = load_environment()
 
 DATABASE_URL = os.getenv("DATABASE_URL") or ENV.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/uyushma")
+if "uyushma_unified" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("uyushma_unified", "uyushma")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY") or ENV.get("INTERNAL_API_KEY", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN") or ENV.get("BOT_TOKEN") or ENV.get("TELEGRAM_BOT_TOKEN", "9234982190:AAFVINsJhZRNtiJalATRo6JLLzDlTZNBiN4")
 TELEGRAM_MONITORING_CHAT = os.getenv("TELEGRAM_MONITORING_CHAT_ID") or ENV.get("TELEGRAM_CHAT_ID") or "1821045481"
