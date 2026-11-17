@@ -2609,7 +2609,7 @@ async def override_vehicle_block(vehicle_id: str, req: VehicleOverrideRequest):
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database mavjud emas")
     now = datetime.datetime.now(datetime.timezone.utc)
-    until = now + datetime.timedelta(hours=req.hours or 24)
+    until = (now + datetime.timedelta(hours=req.hours or 24)).replace(tzinfo=None)
 
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow("""

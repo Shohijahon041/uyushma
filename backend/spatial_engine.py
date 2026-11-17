@@ -492,7 +492,7 @@ class SpatialEngine:
                         ) VALUES (
                             $1, $2, $3, $4::"AlertType", $5::"AlertSeverity", $6, $7, $8, false, CURRENT_TIMESTAMP
                         );
-                    """, (
+                    """,
                         uuid.UUID(alert_payload["id"]),
                         uuid.UUID(veh_info["tenant_id"]),
                         uuid.UUID(veh_info["vehicle_id"]),
@@ -501,7 +501,7 @@ class SpatialEngine:
                         title,
                         msg,
                         json.dumps(alert_payload["metadata"]),
-                    ))
+                    )
             except Exception as e:
                 logger.error("DB ga SystemAlert yozishda xato: %s", e)
 
@@ -567,14 +567,14 @@ class SpatialEngine:
                         ) VALUES (
                             $1, $2, $3, 'SPEED_EXCEEDED'::"AlertType", 'WARNING'::"AlertSeverity", $4, $5, $6, false, CURRENT_TIMESTAMP
                         );
-                    """, (
+                    """,
                         uuid.uuid4(),
                         uuid.UUID(veh_info["tenant_id"]),
                         uuid.UUID(veh_info["vehicle_id"]),
                         f"Tezlik me'yori oshirildi: {plate}",
                         f"{plate} ({company}) avtomobili tezlikni {speed} km/soat ga yetkazdi (ruxsat: 70 km/soat).",
                         json.dumps({"plate": plate, "speed": speed, "lat": lat, "lon": lon}),
-                    ))
+                    )
             except Exception as e:
                 logger.error("DB ga SPEED_EXCEEDED yozishda xato: %s", e)
 
