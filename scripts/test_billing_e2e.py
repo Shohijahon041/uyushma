@@ -95,15 +95,16 @@ def main():
     print(f"[3] Kunlik billing tranzaksiyasi: {tx_row['provider_trans_id']} | Summa: {tx_row['amount']} | Status: {tx_row['status']}")
     assert tx_row and tx_row["status"] == "SUCCESS"
 
-    # 4. Sun'iy ravishda 5 kunlik qarz kiritish va override ni tozalash
+    # 4. Sun'iy ravishda 8 kunlik qarz kiritish va override ni tozalash
     daily_rate = float(veh["monthly_fee"] or 500000.0) / 30.0
-    debt_amount = -6.0 * daily_rate
+    debt_amount = -8.0 * daily_rate
     cur.execute("UPDATE vehicles SET balance = %s, is_blocked = false WHERE id = %s;", (debt_amount, veh_id))
     cur.execute('UPDATE "Vehicle" SET "isBlocked" = false, "manualOverrideUntil" = NULL, "overrideReason" = NULL WHERE id = %s;', (veh_id,))
     print(f"[4] Sinov uchun qarz belgilandi: {debt_amount:,.2f} so'm (Manual override tozalandi)")
 
     # Qayta ishga tushirish (bloklash tekshiruvi uchun)
-    subprocess.run(cmd, capture_output=True, text=True)
+    run2 = subprocess.run(cmd, capture_output=True, text=True)
+    assert run2.returncode == 0, f"Daemon run 2 failed: {run2.stderr}"
 
     cur.execute('SELECT "is_blocked", "block_reason" FROM vehicles WHERE id = %s;', (veh_id,))
     v_blocked = cur.fetchone()

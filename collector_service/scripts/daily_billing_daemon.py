@@ -199,7 +199,7 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
 
             # Manfiy balans (Qarzdorlik)
             debt = abs(new_balance)
-            overdue_days = int(debt / daily_rate) if daily_rate > 0 else 1
+            overdue_days = int(round(debt / daily_rate)) if daily_rate > 0 else 1
 
             if overdue_days <= 3:
                 # 1-3 kunlik qarz: INFO / Ogohlantirish
