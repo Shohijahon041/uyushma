@@ -51,6 +51,9 @@ from pydantic import BaseModel, Field
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from security import encrypt_credential, decrypt_credential, mask_sensitive
+from spatial_engine import SpatialEngine
+
+spatial_engine: Optional[SpatialEngine] = None
 
 # .env yuklash (agar mavjud bo'lsa)
 load_dotenv("/opt/uyushma/.env")
@@ -266,7 +269,7 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db_pool, redis_client
+    global db_pool, redis_client, spatial_engine
     logger.info("FastAPI server boshlanmoqda (High-Load 100K Connection Pool)...")
     
     # 100,000 ta faol transport uchun optimallashtirilgan AsyncPG connection pool
@@ -284,6 +287,7 @@ async def lifespan(app: FastAPI):
         decode_responses=True,
         max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "200")),
     )
+    spatial_engine = SpatialEngine(db_pool, redis_client)
     cron_task = asyncio.create_task(cron_nightly_checker())
     
     # Telegram ustunlarini users jadvaliga avtomatik qo'shish
@@ -2164,7 +2168,22 @@ async def receive_gps_ping(req: GpsPingRequest):
         except Exception as e:
             logger.warning("DB ping update error: %s", e)
 
-    return {"status": "ok", "ack": "ON", "time": now.isoformat()}
+    # 3. In-Memory Spatial Engine: marshrutdan chetga chiqish va bekatlar geofencing
+    spatial_result = None
+    if spatial_engine:
+        try:
+            spatial_result = await spatial_engine.evaluate_gps_point(
+                virtual_gps_id=req.virtual_gps_id,
+                plate_number=None,
+                lat=req.latitude,
+                lon=req.longitude,
+                speed_kmh=req.speed_kmh or 0.0,
+                timestamp=now,
+            )
+        except Exception as e:
+            logger.debug("Spatial engine evaluation error: %s", e)
+
+    return {"status": "ok", "ack": "ON", "time": now.isoformat(), "spatial": spatial_result}
 
 
 @app.post("/api/v1/gps/bulk", summary="Oflayn navbatdan to'plangan GPS nuqtalarini ommaviy sinxronlash (Bulk Sync)")
@@ -2397,6 +2416,223 @@ async def websocket_dispatcher_endpoint(websocket: WebSocket):
     finally:
         await pubsub.unsubscribe("gps_stream")
         await pubsub.close()
+
+
+# =============================================================================
+# MARSHRUT KORIDORI, GEOFENCING VA TIZIM OGOHLANTIRISHLARI ENDPOINTLARI
+# =============================================================================
+
+class RouteCorridorUpdate(BaseModel):
+    corridorPolyline: Any  # GeoJSON Feature, LineString coordinates: [[lon, lat], ...]
+    corridorWidthMeters: Optional[int] = 150
+
+class RouteStopCreate(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    radiusMeters: Optional[int] = 100
+    orderIndex: Optional[int] = 0
+    isMandatory: Optional[bool] = True
+
+class VehicleOverrideRequest(BaseModel):
+    hours: Optional[int] = 24
+    reason: str
+
+@app.get("/api/v1/routes/{route_id}/corridor", summary="Marshrut koridori va bekatlarini olish")
+async def get_route_corridor(route_id: str):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        r = await conn.fetchrow("""
+            SELECT id, "tenantId", name, origin, destination, "corridorPolyline", "corridorWidthMeters"
+            FROM "Route" WHERE id = $1
+        """, uuid.UUID(route_id))
+        if not r:
+            raise HTTPException(status_code=404, detail="Marshrut topilmadi")
+
+        stops = await conn.fetch("""
+            SELECT id, name, latitude, longitude, "radiusMeters", "orderIndex", "isMandatory"
+            FROM "RouteStop" WHERE "routeId" = $1 ORDER BY "orderIndex" ASC
+        """, uuid.UUID(route_id))
+
+        polyline = r["corridorPolyline"]
+        if isinstance(polyline, str):
+            try:
+                polyline = json.loads(polyline)
+            except Exception:
+                pass
+
+        return {
+            "id": str(r["id"]),
+            "tenantId": str(r["tenantId"]),
+            "name": r["name"],
+            "origin": r["origin"],
+            "destination": r["destination"],
+            "corridorPolyline": polyline,
+            "corridorWidthMeters": r["corridorWidthMeters"] or 150,
+            "stops": [
+                {
+                    "id": str(s["id"]),
+                    "name": s["name"],
+                    "latitude": float(s["latitude"]),
+                    "longitude": float(s["longitude"]),
+                    "radiusMeters": s["radiusMeters"],
+                    "orderIndex": s["orderIndex"],
+                    "isMandatory": s["isMandatory"],
+                }
+                for s in stops
+            ]
+        }
+
+@app.put("/api/v1/routes/{route_id}/corridor", summary="Marshrut koridori va bufer kengligini saqlash")
+async def update_route_corridor(route_id: str, data: RouteCorridorUpdate):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        coords_json = json.dumps(data.corridorPolyline)
+        await conn.execute("""
+            UPDATE "Route"
+            SET "corridorPolyline" = $1::jsonb,
+                "corridorWidthMeters" = $2,
+                "updatedAt" = CURRENT_TIMESTAMP
+            WHERE id = $3
+        """, coords_json, data.corridorWidthMeters or 150, uuid.UUID(route_id))
+
+    if spatial_engine:
+        spatial_engine._cache_expires_at = 0  # Keshni darhol yangilash
+
+    return {"status": "ok", "message": "Marshrut koridori saqlandi"}
+
+@app.post("/api/v1/routes/{route_id}/stops", summary="Marshrutga yangi bekat qo'shish")
+async def create_route_stop(route_id: str, data: RouteStopCreate):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        r = await conn.fetchrow('SELECT "tenantId" FROM "Route" WHERE id = $1', uuid.UUID(route_id))
+        if not r:
+            raise HTTPException(status_code=404, detail="Marshrut topilmadi")
+
+        stop_id = uuid.uuid4()
+        await conn.execute("""
+            INSERT INTO "RouteStop" (
+                id, "tenantId", "routeId", name, latitude, longitude, "radiusMeters", "orderIndex", "isMandatory", "updatedAt"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+        """, stop_id, r["tenantId"], uuid.UUID(route_id), data.name, data.latitude, data.longitude, data.radiusMeters or 100, data.orderIndex or 0, data.isMandatory)
+
+    if spatial_engine:
+        spatial_engine._cache_expires_at = 0
+
+    return {"status": "ok", "id": str(stop_id)}
+
+@app.delete("/api/v1/routes/stops/{stop_id}", summary="Marshrut bekatini o'chirish")
+async def delete_route_stop(stop_id: str):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        await conn.execute('DELETE FROM "RouteStop" WHERE id = $1', uuid.UUID(stop_id))
+
+    if spatial_engine:
+        spatial_engine._cache_expires_at = 0
+
+    return {"status": "ok"}
+
+@app.get("/api/v1/alerts", summary="Tizim ogohlantirishlarini olish (HUD & Monitoring)")
+async def get_system_alerts(
+    type: Optional[str] = None,
+    severity: Optional[str] = None,
+    is_resolved: Optional[bool] = False,
+    limit: int = 50
+):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        query = """
+            SELECT 
+                a.id, a."tenantId", a."vehicleId", a."driverId",
+                a.type, a.severity, a.title, a.message, a.metadata,
+                a."isResolved", a."resolvedAt", a."resolvedBy", a."createdAt",
+                v."plateNumber", c.name as "companyName"
+            FROM "SystemAlert" a
+            JOIN "Company" c ON c.id = a."tenantId"
+            LEFT JOIN "Vehicle" v ON v.id = a."vehicleId"
+            WHERE 1=1
+        """
+        params = []
+        if is_resolved is not None:
+            params.append(is_resolved)
+            query += f' AND a."isResolved" = ${len(params)}'
+        if type:
+            params.append(type)
+            query += f' AND a.type = ${len(params)}::"AlertType"'
+        if severity:
+            params.append(severity)
+            query += f' AND a.severity = ${len(params)}::"AlertSeverity"'
+
+        query += f' ORDER BY a."createdAt" DESC LIMIT {limit}'
+        rows = await conn.fetch(query, *params)
+
+        return [
+            {
+                "id": str(r["id"]),
+                "tenantId": str(r["tenantId"]),
+                "companyName": r["companyName"],
+                "vehicleId": str(r["vehicleId"]) if r["vehicleId"] else None,
+                "plateNumber": r["plateNumber"],
+                "type": r["type"],
+                "severity": r["severity"],
+                "title": r["title"],
+                "message": r["message"],
+                "metadata": json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],
+                "isResolved": r["isResolved"],
+                "resolvedAt": r["resolvedAt"].isoformat() if r["resolvedAt"] else None,
+                "resolvedBy": r["resolvedBy"],
+                "createdAt": r["createdAt"].isoformat() if r["createdAt"] else None,
+            }
+            for r in rows
+        ]
+
+@app.post("/api/v1/alerts/{alert_id}/resolve", summary="Ogohlantirishni bartaraf etildi deb belgilash")
+async def resolve_system_alert(alert_id: str, resolved_by: Optional[str] = "Dispetcher"):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE "SystemAlert"
+            SET "isResolved" = true, "resolvedAt" = CURRENT_TIMESTAMP, "resolvedBy" = $1
+            WHERE id = $2
+        """, resolved_by, uuid.UUID(alert_id))
+    return {"status": "ok", "message": "Ogohlantirish yopildi"}
+
+@app.post("/api/v1/vehicles/{vehicle_id}/override", summary="Transport vositasiga vaqtincha 24 soatlik ruxsat (Manual Override) berish")
+async def override_vehicle_block(vehicle_id: str, req: VehicleOverrideRequest):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database mavjud emas")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    until = now + datetime.timedelta(hours=req.hours or 24)
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            UPDATE "Vehicle"
+            SET "isBlocked" = false,
+                "manualOverrideUntil" = $1,
+                "overrideReason" = $2,
+                "updatedAt" = CURRENT_TIMESTAMP
+            WHERE id = $3
+            RETURNING "plateNumber"
+        """, until, req.reason, uuid.UUID(vehicle_id))
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Transport vositasi topilmadi")
+
+    if spatial_engine:
+        spatial_engine._cache_expires_at = 0
+
+    return {
+        "status": "ok",
+        "plateNumber": row["plateNumber"],
+        "overrideUntil": until.isoformat(),
+        "reason": req.reason,
+    }
 
 
 @app.get("/map", response_class=HTMLResponse, summary="Dispetcher xaritasi")

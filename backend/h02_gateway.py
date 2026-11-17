@@ -69,6 +69,9 @@ redis_client: Optional[aioredis.Redis] = None
 log_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
 running = True
 
+from spatial_engine import SpatialEngine
+spatial_engine: Optional[SpatialEngine] = None
+
 
 # H02 protokoli uchun regex
 # Format: *HQ,<10_digits>,V1,<HHMMSS>,<A/V>,<Lat>,<N/S>,<Lon>,<E/W>,<Speed>,<Course>,<DDMMYY>,<Status>#
@@ -411,13 +414,24 @@ async def handle_h02_client(reader: asyncio.StreamReader, writer: asyncio.Stream
                             pipe.publish("gps_stream", json_str)
                             await pipe.execute()
 
-                    # 4. TimescaleDB batch navbatiga kiritish
+                    # 4. In-Memory Spatial Engine: marshrutdan chetga chiqish, tezlik va geofencing tahlili
+                    if spatial_engine:
+                        asyncio.create_task(spatial_engine.evaluate_gps_point(
+                            virtual_gps_id=virtual_gps_id,
+                            plate_number=None,
+                            lat=parsed["latitude"],
+                            lon=parsed["longitude"],
+                            speed_kmh=parsed["speed_kmh"],
+                            timestamp=parsed["time"],
+                        ))
+
+                    # 5. TimescaleDB batch navbatiga kiritish
                     if not log_queue.full():
                         log_queue.put_nowait(parsed)
                     else:
                         logger.warning("DB navbati to'lgan! Paket tashlab ketildi: %s", virtual_gps_id)
 
-                    # 5. Ilovaga standart SinoTrack H02 javobini qaytarish
+                    # 6. Ilovaga standart SinoTrack H02 javobini qaytarish
                     writer.write(b"ON\r\n")
                     await writer.drain()
 
@@ -434,7 +448,7 @@ async def handle_h02_client(reader: asyncio.StreamReader, writer: asyncio.Stream
 
 
 async def main():
-    global db_pool, redis_client, running
+    global db_pool, redis_client, spatial_engine, running
 
     logger.info("=== H02 TCP PROXY GATEWAY ISHGA TUSHMOQDA (HIGH-LOAD 100K) ===")
     logger.info("Tinglash manzili: %s:%d", GATEWAY_HOST, GATEWAY_PORT)
@@ -465,6 +479,9 @@ async def main():
         logger.info("PostgreSQL/TimescaleDB pool yaratildi (min=20, max=100, statement_cache=0).")
     except Exception as e:
         logger.error("Database pool yaratishda xato: %s", e)
+
+    # In-Memory Spatial Engine initialization
+    spatial_engine = SpatialEngine(db_pool, redis_client)
 
     # 3. Davlat portali forward workerini ishga tushirish
     gov_forwarder.start()

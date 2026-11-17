@@ -7,6 +7,7 @@ import { useApi } from "@/lib/use-api";
 import type { RouteItem } from "@/lib/types";
 import { Alert, EmptyState, Loading, PageHeader, StatusBadge } from "@/components/ui";
 import { RoutePlanInput, normalizeMoneyInput } from "@/components/route-plan-input";
+import { RouteCorridorModal } from "@/components/route-corridor-modal";
 
 /**
  * Directions imported from e-tender come without a distance, so the cell turns
@@ -87,6 +88,7 @@ export default function RoutesPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedRouteForCorridor, setSelectedRouteForCorridor] = useState<RouteItem | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -270,13 +272,23 @@ export default function RoutesPage() {
                       />
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn-ghost text-xs"
-                        onClick={() => void toggle(route)}
-                      >
-                        {route.isActive ? t("deactivate") : t("activate")}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-400 hover:bg-sky-500/20 transition"
+                          onClick={() => setSelectedRouteForCorridor(route)}
+                          title="Marshrut koridori va bekatlarini tahrirlash"
+                        >
+                          🗺️ Koridor
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost text-xs"
+                          onClick={() => void toggle(route)}
+                        >
+                          {route.isActive ? t("deactivate") : t("activate")}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -285,6 +297,18 @@ export default function RoutesPage() {
           </div>
         )}
       </div>
+
+      {selectedRouteForCorridor && (
+        <RouteCorridorModal
+          routeId={selectedRouteForCorridor.id}
+          routeName={selectedRouteForCorridor.name}
+          onClose={() => setSelectedRouteForCorridor(null)}
+          onSaved={async () => {
+            setNotice("Marshrut koridori va geofence muvaffaqiyatli saqlandi!");
+            await reload();
+          }}
+        />
+      )}
     </>
   );
 }
