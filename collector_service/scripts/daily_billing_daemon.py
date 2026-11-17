@@ -146,17 +146,17 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                         WHERE id = %s;
                     """, (new_balance, v_id))
 
-                    # Tranzaksiyani yozish
+                    # Tranzaksiyani yozish (driver_id = None, chunki bu avtomobilga nisbatan tizimli hisob-kitob)
                     cur.execute("""
                         INSERT INTO transactions (
                             tenant_id, vehicle_id, driver_id, provider, provider_trans_id,
                             amount, status, raw_payload, created_at, updated_at
                         ) VALUES (
-                            %s, %s, %s, 'SYSTEM', %s,
+                            %s, %s, NULL, 'SYSTEM', %s,
                             %s, 'SUCCESS', %s, NOW(), NOW()
                         );
                     """, (
-                        tenant_id, v_id, driver_id, trans_key,
+                        tenant_id, v_id, trans_key,
                         -daily_rate,
                         json.dumps({
                             "type": "DAILY_SUBSCRIPTION",
@@ -214,12 +214,12 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                         INSERT INTO "SystemAlert" (
                             id, "tenantId", "vehicleId", "driverId", type, severity, title, message, metadata, "isResolved", "createdAt"
                         ) VALUES (
-                            %s, %s, %s, %s, 'FINANCIAL_DEBT'::"AlertType", 'WARNING'::"AlertSeverity",
+                            %s, %s, %s, NULL, 'FINANCIAL_DEBT'::"AlertType", 'WARNING'::"AlertSeverity",
                             %s, %s, %s, false, NOW()
                         )
                         ON CONFLICT DO NOTHING;
                     """, (
-                        str(uuid.uuid4()), tenant_id, veh["prisma_id"] or v_id, driver_id,
+                        str(uuid.uuid4()), tenant_id, veh["prisma_id"] or v_id,
                         alert_title, alert_msg,
                         json.dumps({"plate": plate, "debt": debt, "overdue_days": overdue_days})
                     ))
@@ -256,11 +256,11 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                             INSERT INTO "SystemAlert" (
                                 id, "tenantId", "vehicleId", "driverId", type, severity, title, message, metadata, "isResolved", "createdAt"
                             ) VALUES (
-                                %s, %s, %s, %s, 'FINANCIAL_DEBT'::"AlertType", 'CRITICAL'::"AlertSeverity",
+                                %s, %s, %s, NULL, 'FINANCIAL_DEBT'::"AlertType", 'CRITICAL'::"AlertSeverity",
                                 %s, %s, %s, false, NOW()
                             );
                         """, (
-                            str(uuid.uuid4()), tenant_id, veh["prisma_id"] or v_id, driver_id,
+                            str(uuid.uuid4()), tenant_id, veh["prisma_id"] or v_id,
                             alert_title, alert_msg,
                             json.dumps({"plate": plate, "debt": debt, "overdue_days": overdue_days, "auto_blocked": True})
                         ))
