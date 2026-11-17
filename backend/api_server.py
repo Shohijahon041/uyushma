@@ -1978,6 +1978,34 @@ async def click_webhook(request: Request):
                 json.dumps(data),
             )
 
+            # Prisma "Vehicle" ni ham sinxron yangilash va unblock qilish
+            await conn.execute(
+                """
+                UPDATE "Vehicle"
+                SET "isBlocked" = CASE WHEN $1 THEN FALSE ELSE "isBlocked" END,
+                    "blockReason" = CASE WHEN $1 THEN NULL ELSE "blockReason" END,
+                    "updatedAt" = CURRENT_TIMESTAMP
+                WHERE id = $2 OR "plateNumber" = $3
+                """,
+                unblock,
+                vehicle["id"],
+                vehicle["plate_number"],
+            )
+
+            # Agar blokdan chiqsa, FINANCIAL_DEBT SystemAlert ni yopish
+            if unblock:
+                await conn.execute(
+                    """
+                    UPDATE "SystemAlert"
+                    SET "isResolved" = true, "resolvedAt" = CURRENT_TIMESTAMP, "resolvedBy" = 'CLICK_PAYMENT'
+                    WHERE "vehicleId" = $1 AND type = 'FINANCIAL_DEBT' AND "isResolved" = false
+                    """,
+                    vehicle["id"],
+                )
+
+            if spatial_engine:
+                spatial_engine._cache_expires_at = 0
+
             return {
                 "click_trans_id": click_trans_id,
                 "merchant_trans_id": merchant_trans_id,
@@ -2088,6 +2116,33 @@ async def payme_webhook(request: Request):
                 await conn.execute(
                     "UPDATE transactions SET status = 'SUCCESS', perform_time = NOW() WHERE id = $1", tx["id"]
                 )
+
+                # Prisma "Vehicle" ni ham sinxron yangilash va unblock qilish
+                await conn.execute(
+                    """
+                    UPDATE "Vehicle"
+                    SET "isBlocked" = CASE WHEN $1 THEN FALSE ELSE "isBlocked" END,
+                        "blockReason" = CASE WHEN $1 THEN NULL ELSE "blockReason" END,
+                        "updatedAt" = CURRENT_TIMESTAMP
+                    WHERE id = $2 OR "plateNumber" = $3
+                    """,
+                    unblock,
+                    vehicle_id,
+                    vehicle["plate_number"],
+                )
+
+                if unblock:
+                    await conn.execute(
+                        """
+                        UPDATE "SystemAlert"
+                        SET "isResolved" = true, "resolvedAt" = CURRENT_TIMESTAMP, "resolvedBy" = 'PAYME_PAYMENT'
+                        WHERE "vehicleId" = $1 AND type = 'FINANCIAL_DEBT' AND "isResolved" = false
+                        """,
+                        vehicle_id,
+                    )
+
+                if spatial_engine:
+                    spatial_engine._cache_expires_at = 0
 
             perform_time = int(datetime.datetime.now().timestamp() * 1000)
             return {

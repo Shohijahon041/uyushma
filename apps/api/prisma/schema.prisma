@@ -1225,6 +1225,7 @@ enum AlertType {
   SPEED_EXCEEDED
   SOS_PANIC
   DEVICE_OFFLINE
+  FINANCIAL_DEBT
 }
 
 model SystemAlert {
