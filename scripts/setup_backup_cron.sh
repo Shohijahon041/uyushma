@@ -39,3 +39,4 @@ crontab -l | grep "backup_db.sh"
 # Zaxira skriptini darhol 1 marta sinab ko'rish
 bash "$BACKUP_SCRIPT"
 ls -lh "$BACKUP_DIR"
+

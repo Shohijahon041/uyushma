@@ -11,3 +11,4 @@ with urllib.request.urlopen(url) as response:
     print("\nSample 5 assigned vehicles:")
     for v in assigned[:5]:
         print(f" - Plate: {v['plate_number']} | Model: {v['model']} | Driver: {v['driver_name']} | GPS ID: {v['virtual_gps_id']}")
+

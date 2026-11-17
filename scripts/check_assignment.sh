@@ -5,3 +5,4 @@ FROM \"VehicleAssignment\" va
 JOIN \"Vehicle\" v ON v.id = va.\"vehicleId\"
 WHERE va.\"driverId\" = '15672774-dcb9-4d94-afd6-f6731c1fa0a0';
 "
+

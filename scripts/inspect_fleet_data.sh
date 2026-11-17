@@ -12,3 +12,4 @@ sudo -u postgres psql -d uyushma -c 'SELECT count(*) FROM "VehicleAssignment" WH
 
 echo "=== Sample 5 vehicles from \"Vehicle\": ==="
 sudo -u postgres psql -d uyushma -c 'SELECT id, "tenantId", "plateNumber", model, "monthlyFee" FROM "Vehicle" LIMIT 5;'
+

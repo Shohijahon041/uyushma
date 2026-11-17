@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -24,7 +25,35 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
   final String routeName = routeInfo['name'] ?? 'Узумзор автостанцияси-Иттифоқ';
   final String doctorName = waybill['medical_doctor'] ?? 'Dr. Rahimova N. (Katta shifokor)';
   final String mechanicName = waybill['mechanic_name'] ?? 'U. Saidov (Katta mexanik)';
-  final String companyName = companyInfo['name'] ?? 'CARLUX';
+  final String companyName = companyInfo['name'] ?? 'CARLUX MCHJ';
+
+  // Muddatni hisoblash (Validity engine)
+  String wbStatusText = 'RASMIY VA AMALDA';
+  Color wbStatusColor = const Color(0xFF10B981);
+  Color wbBadgeBg = const Color(0xFF10B981).withValues(alpha: 0.15);
+  IconData wbStatusIcon = Icons.verified;
+
+  final now = DateTime.now();
+  DateTime? dateObj;
+  try {
+    dateObj = DateTime.parse(wbDate);
+  } catch (_) {}
+
+  if (dateObj != null) {
+    final todayDate = DateTime(now.year, now.month, now.day);
+    final wbDay = DateTime(dateObj.year, dateObj.month, dateObj.day);
+    if (wbDay.isBefore(todayDate)) {
+      wbStatusText = 'MUDDATI O\'TGAN';
+      wbStatusColor = const Color(0xFFEF4444);
+      wbBadgeBg = const Color(0xFFEF4444).withValues(alpha: 0.15);
+      wbStatusIcon = Icons.error_outline;
+    } else if (now.hour >= 22) {
+      wbStatusText = 'MUDDATI BUGUN TUGAYDI (23:59)';
+      wbStatusColor = const Color(0xFFF59E0B);
+      wbBadgeBg = const Color(0xFFF59E0B).withValues(alpha: 0.15);
+      wbStatusIcon = Icons.access_time;
+    }
+  }
 
   showModalBottomSheet(
     context: context,
@@ -69,20 +98,20 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                   child: Column(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                          color: wbBadgeBg,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFF10B981)),
+                          border: Border.all(color: wbStatusColor),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.verified, color: Color(0xFF34D399), size: 14),
-                            SizedBox(width: 6),
+                            Icon(wbStatusIcon, color: wbStatusColor, size: 14),
+                            const SizedBox(width: 6),
                             Text(
-                              'RASMIY VA AMALDA',
-                              style: TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 11),
+                              wbStatusText,
+                              style: TextStyle(color: wbStatusColor, fontWeight: FontWeight.bold, fontSize: 11),
                             ),
                           ],
                         ),
@@ -108,27 +137,55 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
 
                 const SizedBox(height: 16),
 
-                // MARKAZIY HAQIQIY SKANERLANADIGAN QR-KOD
+                // MARKAZIY HAQIQIY SKANERLANADIGAN QR-KOD (Bosganda to'liq ekran)
                 Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF38BDF8), width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF38BDF8).withValues(alpha: 0.25),
-                          blurRadius: 18,
-                          offset: const Offset(0, 4),
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      _showFullscreenQr(
+                        context,
+                        verifyUrl: verifyUrl ?? 'https://uyushma.bmbrutto.uz/waybill',
+                        wbNumber: wbNumber,
+                        plateNumber: plateNumber,
+                        driverName: driverName,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF38BDF8), width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF38BDF8).withValues(alpha: 0.25),
+                                blurRadius: 18,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: QrImageView(
+                            data: verifyUrl ?? 'https://uyushma.bmbrutto.uz/waybill',
+                            version: QrVersions.auto,
+                            size: 190.0,
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                        Container(
+                          margin: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF070B14).withValues(alpha: 0.85),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFF38BDF8)),
+                          ),
+                          child: const Icon(Icons.fullscreen_rounded, color: Color(0xFF38BDF8), size: 18),
                         ),
                       ],
-                    ),
-                    child: QrImageView(
-                      data: verifyUrl ?? 'https://uyushma.bmbrutto.uz/waybill',
-                      version: QrVersions.auto,
-                      size: 200.0,
-                      backgroundColor: Colors.white,
                     ),
                   ),
                 ),
@@ -143,7 +200,7 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'YHXBB (GAI) yoki Transport Nazorati inspektoriga taqdim etish uchun',
+                        'Kattalashtirish uchun QR kod ustiga bosing\n(YHXBB yoki Transport Nazorati inspektoriga taqdim etish uchun)',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
                       ),
@@ -281,6 +338,95 @@ void showWaybillSheet(BuildContext context, {required Map<String, dynamic>? prof
   );
 }
 
+void _showFullscreenQr(
+  BuildContext context, {
+  required String verifyUrl,
+  required String wbNumber,
+  required String plateNumber,
+  required String driverName,
+}) {
+  showDialog(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: const Color(0xFF070B14),
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('RASMIY YO\'L VARAQASI', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(wbNumber, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF38BDF8).withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: QrImageView(
+                data: verifyUrl,
+                version: QrVersions.auto,
+                size: 260.0,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B1120),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF1E293B)),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    plateNumber,
+                    style: const TextStyle(color: Color(0xFFFACC15), fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1),
+                  ),
+                  Text(
+                    driverName,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'YHXBB (GAI) yoki Transport Nazorati inspektori skanerlashi uchun ekran yorqinligini oshiring',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _buildInfoSection(String title, List<Widget> rows) {
   return Container(
     padding: const EdgeInsets.all(14),
@@ -322,4 +468,3 @@ Widget _buildRow(String label, String value, {bool isHighlight = false, Color? c
     ),
   );
 }
-

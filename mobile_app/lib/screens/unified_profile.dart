@@ -1058,6 +1058,35 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                HapticFeedback.lightImpact();
+                final tgUri = Uri.parse('tg://resolve?domain=uyushma_saas_bot');
+                final webUri = Uri.parse('https://t.me/uyushma_saas_bot');
+                try {
+                  final opened = await launchUrl(tgUri, mode: LaunchMode.externalNonBrowserApplication);
+                  if (!opened) {
+                    await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                  }
+                } catch (_) {
+                  await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                }
+              },
+              icon: const Icon(Icons.send_rounded, color: Color(0xFF38BDF8), size: 16),
+              label: const Text(
+                'To\'lov chekini Telegram botga yuborish',
+                style: TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF0284C7)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
         ],
       ),
     );

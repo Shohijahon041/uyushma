@@ -9,3 +9,4 @@ echo "COUNT(users):"
 sudo -u postgres psql -d uyushma -c 'SELECT count(*) FROM users;'
 echo "COUNT(\"User\"):"
 sudo -u postgres psql -d uyushma -c 'SELECT count(*) FROM "User";'
+

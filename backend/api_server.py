@@ -1178,6 +1178,26 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
                 )
                 waybill_row = await conn.fetchrow('SELECT * FROM "Waybill" WHERE id = $1', wb_id)
 
+        active_shift_row = None
+        last_shift_row = None
+        if real_driver:
+            active_shift_row = await conn.fetchrow(
+                """
+                SELECT * FROM "DriverShift"
+                WHERE "driverId" = $1::uuid AND status = 'ACTIVE'
+                ORDER BY "startedAt" DESC LIMIT 1
+                """,
+                real_driver["id"],
+            )
+            last_shift_row = await conn.fetchrow(
+                """
+                SELECT * FROM "DriverShift"
+                WHERE "driverId" = $1::uuid
+                ORDER BY "startedAt" DESC LIMIT 1
+                """,
+                real_driver["id"],
+            )
+
     today = datetime.date.today()
 
     def check_validity(exp_date: Any) -> Dict[str, Any]:
@@ -1359,6 +1379,14 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
     wb_public_token = waybill_row["publicToken"] if waybill_row else None
     wb_url = f"https://uyushma.bmbrutto.uz/waybill/{wb_public_token}" if wb_public_token else None
 
+    last_odometer = 145000
+    if last_shift_row and last_shift_row.get("endOdometer"):
+        last_odometer = last_shift_row["endOdometer"]
+    elif last_shift_row and last_shift_row.get("startOdometer"):
+        last_odometer = last_shift_row["startOdometer"]
+    elif waybill_row and waybill_row.get("startOdometer"):
+        last_odometer = waybill_row["startOdometer"]
+
     return {
         "has_vehicle": True,
         "driver": {
@@ -1482,6 +1510,13 @@ async def get_driver_unified_profile(current_user: Dict[str, Any] = Depends(get_
             "name": company_name,
             "dispatcher_phone": company_phone,
         },
+        "active_shift": {
+            "id": str(active_shift_row["id"]) if active_shift_row else None,
+            "is_active": active_shift_row is not None,
+            "started_at": active_shift_row["startedAt"].isoformat() if active_shift_row else None,
+            "start_odometer": active_shift_row["startOdometer"] if active_shift_row else None,
+            "last_odometer": last_odometer,
+        },
     }
 
 
@@ -1524,23 +1559,38 @@ async def start_driver_shift(req: StartShiftRequest, current_user: Dict[str, Any
                 real_driver["id"],
             )
 
-        shift_id = uuid.uuid4()
-        tenant_id = (real_driver["tenantId"] if real_driver else None) or (real_vehicle["tenantId"] if real_vehicle else None)
-        await conn.execute(
-            """
-            INSERT INTO "DriverShift" (
-                id, "tenantId", "driverId", "vehicleId", "startedAt", "startOdometer", status, note, "createdAt", "updatedAt"
-            ) VALUES (
-                $1, $2, $3, $4, NOW(), $5, 'ACTIVE', $6, NOW(), NOW()
+        active_shift = None
+        if real_driver:
+            active_shift = await conn.fetchrow(
+                'SELECT * FROM "DriverShift" WHERE "driverId" = $1::uuid AND status = \'ACTIVE\' ORDER BY "startedAt" DESC LIMIT 1',
+                real_driver["id"],
             )
-            """,
-            shift_id,
-            tenant_id,
-            real_driver["id"] if real_driver else None,
-            real_vehicle["id"] if real_vehicle else None,
-            req.odometer,
-            req.note or "Mobil ilovadan smena boshlandi",
-        )
+
+        if active_shift:
+            shift_id = active_shift["id"]
+            if req.odometer is not None:
+                await conn.execute(
+                    'UPDATE "DriverShift" SET "startOdometer" = COALESCE($1, "startOdometer"), note = COALESCE($2, note), "updatedAt" = NOW() WHERE id = $3',
+                    req.odometer, req.note, shift_id
+                )
+        else:
+            shift_id = uuid.uuid4()
+            tenant_id = (real_driver["tenantId"] if real_driver else None) or (real_vehicle["tenantId"] if real_vehicle else None)
+            await conn.execute(
+                """
+                INSERT INTO "DriverShift" (
+                    id, "tenantId", "driverId", "vehicleId", "startedAt", "startOdometer", status, note, "createdAt", "updatedAt"
+                ) VALUES (
+                    $1, $2, $3, $4, NOW(), $5, 'ACTIVE', $6, NOW(), NOW()
+                )
+                """,
+                shift_id,
+                tenant_id,
+                real_driver["id"] if real_driver else None,
+                real_vehicle["id"] if real_vehicle else None,
+                req.odometer,
+                req.note or "Mobil ilovadan smena boshlandi",
+            )
 
     # Redis holatini yangilash va dispetcherlarga xabar berish
     if redis_client:
@@ -1568,19 +1618,30 @@ async def stop_driver_shift(req: StopShiftRequest, current_user: Dict[str, Any] 
     clean_digits = re.sub(r"\D", "", phone)
     phone_with_plus = f"+{clean_digits}" if clean_digits.startswith("998") else f"+998{clean_digits}"
 
+    distance_km = None
     async with db_pool.acquire() as conn:
         real_driver = await conn.fetchrow(
             'SELECT * FROM "Driver" WHERE phone = $1 OR phone = $2 LIMIT 1',
             phone_with_plus, clean_digits,
         )
         if real_driver:
+            active_shift = await conn.fetchrow(
+                'SELECT * FROM "DriverShift" WHERE "driverId" = $1::uuid AND status = \'ACTIVE\' ORDER BY "startedAt" DESC LIMIT 1',
+                real_driver["id"],
+            )
+            if active_shift and active_shift.get("startOdometer") and req.odometer:
+                start_odo = active_shift["startOdometer"]
+                if req.odometer >= start_odo:
+                    distance_km = req.odometer - start_odo
+
             await conn.execute(
                 """
                 UPDATE "DriverShift"
-                SET status = 'COMPLETED', "endedAt" = NOW(), "endOdometer" = COALESCE($1, "endOdometer"), "updatedAt" = NOW()
-                WHERE "driverId" = $2::uuid AND status = 'ACTIVE'
+                SET status = 'COMPLETED', "endedAt" = NOW(), "endOdometer" = COALESCE($1, "endOdometer"), note = COALESCE($2, note), "updatedAt" = NOW()
+                WHERE "driverId" = $3::uuid AND status = 'ACTIVE'
                 """,
                 req.odometer,
+                req.note,
                 real_driver["id"],
             )
 
@@ -1598,8 +1659,13 @@ async def stop_driver_shift(req: StopShiftRequest, current_user: Dict[str, Any] 
         except Exception:
             pass
 
-    logger.info("[SHIFT-STOP] Smena tugatildi: gps_id=%s, driver=%s", req.virtual_gps_id, current_user.get("full_name"))
-    return {"success": True, "status": "COMPLETED", "message": "Smena muvaffaqiyatli yakunlandi"}
+    logger.info("[SHIFT-STOP] Smena tugatildi: gps_id=%s, driver=%s, distance=%s", req.virtual_gps_id, current_user.get("full_name"), distance_km)
+    return {
+        "success": True,
+        "status": "COMPLETED",
+        "distance_km": distance_km,
+        "message": "Smena muvaffaqiyatli yakunlandi",
+    }
 
 
 @app.get("/api/v1/driver/waybill", summary="Faol Elektron Yo'l Varaqasini olish")
