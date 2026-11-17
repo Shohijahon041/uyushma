@@ -219,6 +219,8 @@ model Company {
   driverShifts            DriverShift[]
   driverIncidents         DriverIncident[]
   waybills                Waybill[]
+  routeStops              RouteStop[]
+  systemAlerts            SystemAlert[]
 
   @@index([status])
 }
@@ -327,21 +329,24 @@ model PasswordResetToken {
 }
 
 model Route {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  name        String   @db.VarChar(160)
-  origin      String   @db.VarChar(160)
-  destination String   @db.VarChar(160)
-  distanceKm  Decimal  @db.Decimal(10, 2)
-  monthlyPlan Decimal  @default(0) @db.Decimal(18, 2)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String      @id @default(uuid()) @db.Uuid
+  tenantId            String      @db.Uuid
+  name                String      @db.VarChar(160)
+  origin              String      @db.VarChar(160)
+  destination         String      @db.VarChar(160)
+  distanceKm          Decimal     @db.Decimal(10, 2)
+  monthlyPlan         Decimal     @default(0) @db.Decimal(18, 2)
+  isActive            Boolean     @default(true)
+  corridorPolyline    Json?
+  corridorWidthMeters Int         @default(150)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
-  company  Company   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company  Company     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tariffs  Tariff[]
   vehicles Vehicle[]
   waybills Waybill[]
+  stops    RouteStop[]
 
   @@unique([tenantId, name])
   @@unique([id, tenantId])
@@ -349,17 +354,21 @@ model Route {
 }
 
 model Vehicle {
-  id          String        @id @default(uuid()) @db.Uuid
-  tenantId    String        @db.Uuid
-  ownerId     String        @db.Uuid
-  plateNumber String        @db.VarChar(20)
-  model       String        @db.VarChar(120)
-  capacity    Int           @default(0)
-  monthlyFee  Decimal       @default(0) @db.Decimal(18, 2)
-  routeId     String?       @db.Uuid
-  status      VehicleStatus @default(ACTIVE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                  String               @id @default(uuid()) @db.Uuid
+  tenantId            String               @db.Uuid
+  ownerId             String               @db.Uuid
+  plateNumber         String               @db.VarChar(20)
+  model               String               @db.VarChar(120)
+  capacity            Int                  @default(0)
+  monthlyFee          Decimal              @default(0) @db.Decimal(18, 2)
+  routeId             String?              @db.Uuid
+  status              VehicleStatus        @default(ACTIVE)
+  isBlocked           Boolean              @default(false)
+  blockReason         String?              @db.VarChar(255)
+  manualOverrideUntil DateTime?
+  overrideReason      String?              @db.VarChar(255)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   company          Company              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   route            Route?               @relation(fields: [routeId, tenantId], references: [id, tenantId], onDelete: Restrict, map: "Vehicle_routeId_tenantId_fkey")
@@ -373,12 +382,14 @@ model Vehicle {
   shifts           DriverShift[]
   incidents        DriverIncident[]
   waybills         Waybill[]
+  systemAlerts     SystemAlert[]
 
   @@unique([tenantId, plateNumber])
   @@unique([id, tenantId])
   @@index([tenantId, ownerId])
   @@index([tenantId, status])
   @@index([tenantId, routeId])
+  @@index([tenantId, isBlocked])
 }
 
 // Haydovchi — o'z profili va Telegram akkaunti bilan. Kunlik to'lovlar
@@ -420,6 +431,7 @@ model Driver {
   shifts       DriverShift[]
   incidents    DriverIncident[]
   waybills     Waybill[]
+  systemAlerts SystemAlert[]
 
   @@unique([tenantId, phone])
   @@unique([id, tenantId])
@@ -1170,3 +1182,74 @@ model Waybill {
   @@index([tenantId, vehicleId, date])
   @@index([publicToken])
 }
+
+// ---------------------------------------------------------------------------
+// Marshrut bekatlari (Route Stops).
+// Geofence radiusi, tartib raqami va majburiy to'xtash joylari.
+// ---------------------------------------------------------------------------
+
+model RouteStop {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  routeId      String   @db.Uuid
+  name         String   @db.VarChar(160)
+  latitude     Float
+  longitude    Float
+  radiusMeters Int      @default(100)
+  orderIndex   Int      @default(0)
+  isMandatory  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  route        Route    @relation(fields: [routeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, routeId, orderIndex])
+}
+
+// ---------------------------------------------------------------------------
+// Tizim ogohlantirishlari (System Alerts).
+// Davlat portallari integratsiyasi, marshrutdan chetga chiqish, tezlik oshishi.
+// ---------------------------------------------------------------------------
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertType {
+  STATE_SYNC_EXPIRY
+  ROUTE_DEVIATION
+  SPEED_EXCEEDED
+  SOS_PANIC
+  DEVICE_OFFLINE
+}
+
+model SystemAlert {
+  id         String        @id @default(uuid()) @db.Uuid
+  tenantId   String        @db.Uuid
+  vehicleId  String?       @db.Uuid
+  driverId   String?       @db.Uuid
+  type       AlertType
+  severity   AlertSeverity @default(INFO)
+  title      String        @db.VarChar(160)
+  message    String        @db.VarChar(500)
+  metadata   Json?
+  isResolved Boolean       @default(false)
+  resolvedAt DateTime?
+  resolvedBy String?       @db.VarChar(160)
+  createdAt  DateTime      @default(now())
+
+  company    Company       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle?      @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driver     Driver?       @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, isResolved, createdAt])
+  @@index([tenantId, type, createdAt])
+  @@index([tenantId, vehicleId])
+  @@index([tenantId, driverId])
+}
+
