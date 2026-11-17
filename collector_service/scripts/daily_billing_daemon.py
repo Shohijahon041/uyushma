@@ -182,19 +182,19 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                             SET is_blocked = false, block_reason = NULL, updated_at = NOW()
                             WHERE id = %s;
                         """, (v_id,))
-                        if veh["prisma_id"]:
-                            cur.execute("""
-                                UPDATE "Vehicle"
-                                SET "isBlocked" = false, "blockReason" = NULL, "updatedAt" = NOW()
-                                WHERE id = %s;
-                            """, (veh["prisma_id"],))
+                        target_prisma_id = veh["prisma_id"] or v_id
+                        cur.execute("""
+                            UPDATE "Vehicle"
+                            SET "isBlocked" = false, "blockReason" = NULL, "updatedAt" = NOW()
+                            WHERE id = %s OR "plateNumber" = %s;
+                        """, (target_prisma_id, plate))
 
                         # Faol SystemAlert ni yopish
                         cur.execute("""
                             UPDATE "SystemAlert"
                             SET "isResolved" = true, "resolvedAt" = NOW(), "resolvedBy" = 'BILLING_ENGINE'
-                            WHERE "vehicleId" = %s AND type = 'FINANCIAL_DEBT' AND "isResolved" = false;
-                        """, (veh["prisma_id"] or v_id,))
+                            WHERE ("vehicleId" = %s OR "vehicleId" = %s) AND type = 'FINANCIAL_DEBT' AND "isResolved" = false;
+                        """, (target_prisma_id, v_id))
                 continue
 
             # Manfiy balans (Qarzdorlik)
@@ -235,12 +235,12 @@ def run_daily_billing(dry_run: bool = False, target_date: datetime.date = None):
                             WHERE id = %s;
                         """, (block_msg, v_id))
 
-                        if veh["prisma_id"]:
-                            cur.execute("""
-                                UPDATE "Vehicle"
-                                SET "isBlocked" = true, "blockReason" = %s, "updatedAt" = NOW()
-                                WHERE id = %s;
-                            """, (block_msg, veh["prisma_id"]))
+                        target_prisma_id = veh["prisma_id"] or v_id
+                        cur.execute("""
+                            UPDATE "Vehicle"
+                            SET "isBlocked" = true, "blockReason" = %s, "updatedAt" = NOW()
+                            WHERE id = %s OR "plateNumber" = %s;
+                        """, (block_msg, target_prisma_id, plate))
 
                         # Agar oldin aktiv smena bo'lsa, to'xtatish
                         cur.execute("""
