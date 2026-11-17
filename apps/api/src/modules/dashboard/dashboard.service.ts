@@ -144,17 +144,17 @@ export class DashboardService {
             status: payment.status,
             method: payment.method,
             createdAt: payment.createdAt,
-            vehicle: payment.contract.vehicle.plateNumber,
-            owner: payment.contract.owner.fullName,
+            vehicle: payment.contract?.vehicle?.plateNumber ?? "—",
+            owner: payment.contract?.owner?.fullName ?? "—",
           })),
         },
         subscription: subscription
           ? {
               status: subscription.status,
               planId: subscription.planId,
-              planName: subscription.plan.name,
+              planName: subscription.plan?.name ?? "Standart",
               currentPeriodEnd: subscription.currentPeriodEnd,
-              monthlyFee: (subscription.monthlyFee ?? subscription.plan.monthlyPrice).toFixed(2),
+              monthlyFee: (subscription.monthlyFee ?? subscription.plan?.monthlyPrice ?? 0).toFixed(2),
               hasContract: subscription.monthlyFee !== null,
               openInvoices: openSubscriptionInvoices,
             }
